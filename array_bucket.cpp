@@ -106,7 +106,7 @@ class array_bucket {
 
         if (found.second) {
             // found the target, return the value reference
-            return get_val_ref(arr_buffer + found.first);
+            return get_val_ref(found.first);
 
         } else {
             std::cout << "not found, start realloc" << std::endl;
@@ -127,7 +127,7 @@ class array_bucket {
 
             append_impl(target, keysize, arr_buffer + found.first, value);
 
-            return get_val_ref(arr_buffer + found.first);
+            return get_val_ref(found.first);
         }
     }
 
@@ -150,7 +150,8 @@ class array_bucket {
         std::memcpy(buffer_append_pos, &end_of_bucket, sizeof(end_of_bucket));
     }
 
-    T& get_val_ref(CharT* entry_start_pos) {
+    T& get_val_ref(size_t val_pos) {
+        CharT* entry_start_pos = arr_buffer + val_pos;
         size_t length = read_key_size(entry_start_pos);
         CharT* valAddress = entry_start_pos + sizeof(KeySizeT) + length;
         return *((T*)valAddress);
@@ -176,6 +177,29 @@ class array_bucket {
         std::cout << "END read: |" << (int)*(buf) << "| finish " << std::endl;
         std::cout << "-----------------------------\n\n";
     }
+
+    std::vector<std::pair<std::string, T>> get_item_in_array_bucket() {
+        std::cout << "\n\n-----------------------------\ncall "
+                     "get_item_in_array_bucket\n";
+        std::vector<std::pair<std::string, T>> res;
+        CharT* buf = arr_buffer;
+        while (!is_end_of_bucket(buf)) {
+            size_t length = read_key_size(buf);
+
+            char* temp = (char*)malloc(length);
+            std::memcpy(temp, buf + sizeof(KeySizeT), length);
+            std::string item(temp);
+            free(temp);
+
+            // move ptr to next header, skip keysize, string, value
+            buf = buf + sizeof(KeySizeT) + length;
+            T v = *((T*)buf);
+
+            res.push_back(std::pair<std::string, T>(item, v));
+            buf = buf + sizeof(T);
+        }
+        return res;
+    }
 };
 
 int main() {
@@ -194,18 +218,18 @@ int main() {
 
     int val1 = 1;
     cout << "testing: data:" << test1 << " size:" << test1.size() << endl;
-    ab.append(test1.data(), test1.size(), val1);
+    ab.append(test1.data(), test1.size(), val1) = 6;
 
     ab.read_array_bucket();
 
     std::string test2 = "hah2";
     cout << "testing: data:" << test2 << " size:" << test2.size() << endl;
-    ab.append(test2.data(), test2.size(), val1);
+    ab.append(test2.data(), test2.size(), val1) = 8;
     ab.read_array_bucket();
 
     std::string test3 = "hah3";
     cout << "testing: data:" << test3 << " size:" << test3.size() << endl;
-    ab.append(test3.data(), test3.size(), val1);
+    ab.append(test3.data(), test3.size(), val1) = 10;
     ab.read_array_bucket();
 
     char test[] = {'a', 'b', 'c'};
@@ -224,4 +248,11 @@ int main() {
     // }
 
     ab.read_array_bucket();
+
+    std::vector<std::pair<std::string, int>> res =
+        ab.get_item_in_array_bucket();
+
+    for (auto it = res.begin(); it != res.end(); it++) {
+        cout << it->first << "-" << it->second << endl;
+    }
 }
