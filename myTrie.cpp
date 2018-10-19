@@ -126,19 +126,19 @@ class htrie_map {
             hash_node* targetNode = this;
 
             // TODO: burst if hash_node have too many element
-            if (need_burst()) {
-                std::vector<std::pair<std::string, T>> elements;
-                for (auto it = kvs.begin(); it != kvs.end(); it++) {
-                    // TODO: use the reference to reduce the extra copy
-                    std::vector<std::pair<std::string, T>> bucket_element =
-                        it->get_item_in_array_bucket();
-                    elements.insert(elements.end(), bucket_element.begin(),
-                                    bucket_element.end());
-                }
+            // if (need_burst()) {
+            //     std::vector<std::pair<std::string, T>> elements;
+            //     for (auto it = kvs.begin(); it != kvs.end(); it++) {
+            //         // TODO: use the reference to reduce the extra copy
+            //         std::vector<std::pair<std::string, T>> bucket_element =
+            //             it->get_item_in_array_bucket();
+            //         elements.insert(elements.end(), bucket_element.begin(),
+            //                         bucket_element.end());
+            //     }
 
-                // update the targetNode
-                targetNode = node_after_burst(elements, key, keysize);
-            }
+            //     // update the targetNode
+            //     targetNode = node_after_burst(elements, key, keysize);
+            // }
 
             size_t hashval = myTrie::hashRelative::hash<CharT>(key, keysize);
             std::cout << "bucket_id: " << hashval << std::endl;
@@ -150,7 +150,7 @@ class htrie_map {
             const CharT* key, size_t keysize) {
             if (kv_need_burst.size() < burst_threshold) {
                 hash_node* target = new hash_node(burst_threshold);
-                        }
+            }
             std::map<CharT, std::vector<std::pair<std::string, T>>> newChilds;
             for (int i = 0; i != kv_need_burst.size(); i++) {
                 std::pair<std::string, T> elem = kv_need_burst[i];
@@ -188,6 +188,7 @@ class htrie_map {
             arr_buffer = (CharT*)std::malloc(sizeof(END_OF_BUCKET));
             std::memcpy(arr_buffer, &END_OF_BUCKET, sizeof(END_OF_BUCKET));
             buffer_size = sizeof(END_OF_BUCKET);
+            std::cout << "init array_bucket" << (void*)arr_buffer << "\n";
         }
 
         bool is_end_of_bucket(const CharT* buffer) {
@@ -205,6 +206,7 @@ class htrie_map {
         // if not found, return (inserting_pos, false)
         std::pair<size_t, bool> find_in_bucket(const CharT* key,
                                                size_t keysize) {
+            std::cout << (void*)arr_buffer << "\n";
             CharT* buffer_ptr = arr_buffer;
             size_t pos = 0;
             while (!is_end_of_bucket(buffer_ptr)) {
@@ -245,6 +247,10 @@ class htrie_map {
                 if (new_buffer == nullptr) {
                     std::cout << "realloc failed!!!!!!!!!1" << std::endl;
                     exit(-1);
+                } else {
+                    std::cout
+                        << "realloc success: new_buffer:" << (void*)new_buffer
+                        << std::endl;
                 }
                 arr_buffer = new_buffer;
                 buffer_size = new_size;
@@ -452,4 +458,6 @@ int main() {
         hm[*it] = it - tests.begin();
     std::cout << "------------------------\n";
     print_htrie_map<char, int>(hm, tests);
+    while (1) {
+    }
 }
