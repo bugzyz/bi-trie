@@ -76,9 +76,10 @@ class htrie_map {
         // store the suffix of hash_node or trie_node
         std::map<CharT, anode*> childs;
 
-        trie_node(CharT c) {
+        trie_node(CharT c, trie_node* p) {
             anode::_node_type = node_type::TRIE_NODE;
             anode::myChar = c;
+            anode::parent = p;
         }
 
         std::map<CharT, anode*> getChildsMap() { return childs; }
@@ -126,23 +127,58 @@ class htrie_map {
             hash_node* targetNode = this;
 
             // TODO: burst if hash_node have too many element
-            // if (need_burst()) {
-            //     std::vector<std::pair<std::string, T>> elements;
-            //     for (auto it = kvs.begin(); it != kvs.end(); it++) {
-            //         // TODO: use the reference to reduce the extra copy
-            //         std::vector<std::pair<std::string, T>> bucket_element =
-            //             it->get_item_in_array_bucket();
-            //         elements.insert(elements.end(), bucket_element.begin(),
-            //                         bucket_element.end());
-            //     }
+            if (need_burst()) {
+                std::vector<std::pair<std::string, T>> elements;
+                for (auto it = kvs.begin(); it != kvs.end(); it++) {
+                    // TODO: use the reference to reduce the extra copy
+                    std::vector<std::pair<std::string, T>> bucket_element =
+                        it->get_item_in_array_bucket();
+                    elements.insert(elements.end(), bucket_element.begin(),
+                                    bucket_element.end());
+                }
 
-            //     // update the targetNode
-            //     targetNode = node_after_burst(elements, key, keysize);
-            // }
+                // update the targetNode
+                targetNode = burst(elements, key, keysize);
+            }
 
             size_t hashval = myTrie::hashRelative::hash<CharT>(key, keysize);
             std::cout << "bucket_id: " << hashval << std::endl;
             return targetNode->kvs[hashval].access_kv_in_bucket(key, keysize);
+        }
+
+        std::pair<std::string, T> getSubedKV(
+            std::pair<std::string, T>& element) {
+            return std::pair<std::string, T>(element.first.substr(1),
+                                             element.second);
+        }
+
+        // TODO:
+        // construct a new trie by the elements and return the target
+        // hash_node
+        hash_node* burst(std::vector<std::pair<std::string, T>>& elements,
+                         const CharT* key, size_t keysize) {
+            trie_node* new_trie_node = new trie_node('\0', this->anode::parent);
+            trie_node* current_trie_node = new_trie_node;
+
+            do {
+                std::map<CharT, std::vector<std::pair<std::string, T>>>
+                    splitElements;
+                for (int i = 0; i != elements.size(); i++) {
+                    splitElements[(elements[i].first)[0]].push_back(
+                        getSubedKV(elements[i]));
+                }
+                for (auto it = splitElements.begin(); it != splitElements.end();
+                     it++) {
+                    trie_node* child_trie_node =
+                        new trie_node(it->first, current_trie_node);
+                    hash_node* hnode = new hash_node(burst_threshold);
+                    for (auto itt = (it->second).begin();
+                         itt != (it->second).end(); itt++) {
+                        hnode->access_kv_in_hashnode(((itt->first)).data(),
+                                                     (itt->first).size());
+                    }
+                }
+            } while (true);
         }
 
         hash_node* node_after_burst(
