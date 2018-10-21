@@ -36,6 +36,16 @@ std::size_t hash(const CharT* key, std::size_t key_size) {
 template <class CharT>
 bool keyEqual(const CharT* key_lhs, std::size_t key_size_lhs,
               const CharT* key_rhs, std::size_t key_size_rhs) {
+    std::cout << "==comparing: ";
+    for (size_t i = 0; i != key_size_lhs; i++) {
+        std::cout << *(key_lhs + i);
+    }
+    std::cout << " and ";
+    for (size_t i = 0; i != key_size_rhs; i++) {
+        std::cout << *(key_rhs + i);
+    }
+    std::cout << std::endl;
+
     if (key_size_lhs != key_size_rhs) {
         return false;
     } else {
@@ -52,7 +62,7 @@ class htrie_map {
    public:
     // TODO: burst_threshold should be set to be greater than 26 for 26 alaphbet
     // and ", @ .etc.
-    static const size_t DEFAULT_BURST_THRESHOLD = 2;
+    static const size_t DEFAULT_BURST_THRESHOLD = 3;
     size_t burst_threshold;
 
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
@@ -69,12 +79,13 @@ class htrie_map {
         bool isHashNode() { return _node_type == node_type::HASH_NODE; }
         bool isTrieNode() { return _node_type == node_type::TRIE_NODE; }
         void setParent(trie_node* p) { parent = p; }
-        void setParent(CharT c) { myChar = c; }
+        void setChar(CharT c) { myChar = c; }
     };
     class trie_node : public anode {
        public:
         // store the suffix of hash_node or trie_node
         std::map<CharT, anode*> childs;
+        hash_node* onlyHashNode;
 
         trie_node(CharT c, trie_node* p) {
             anode::_node_type = node_type::TRIE_NODE;
@@ -85,15 +96,28 @@ class htrie_map {
         std::map<CharT, anode*> getChildsMap() { return childs; }
 
         anode* findChildNode(CharT c) {
+            for (auto it = childs.begin(); it != childs.end(); it++) {
+                std::cout << (void*)this << " have child: " << it->first
+                          << std::endl;
+            }
             auto found = childs.find(c);
             if (found != childs.end()) {
                 return found->second;
             } else {
+                if (childs.size() == 0) {
+                    return onlyHashNode;
+                }
                 return nullptr;
             }
         }
 
-        void addChildNode(CharT c, anode* node) { childs[c] = node; }
+        void setOnlyHashNode(hash_node* node) { onlyHashNode = node; }
+
+        hash_node* getOnlyHashNode() { return onlyHashNode; }
+
+        void addChildTrieNode(trie_node* node) {
+            childs[node->anode::myChar] = node;
+        }
 
         void addChileNode(std::vector<std::pair<CharT, anode*>> newChilds) {
             for (int i = 0; i != newChilds.size(); i++) {
@@ -112,19 +136,26 @@ class htrie_map {
             anode::parent = nullptr;
             kvs = std::vector<array_bucket>(BUCKET_INIT_COUNT);
             burst_threshold = customized_burst_threshold;
+            std::cout << "new hash_node is init, burst_threshold set to be "
+                      << burst_threshold << std::endl;
         }
 
         bool need_burst() {
-            size_t node_element_count;
+            size_t node_element_count = 0;
             for (auto it = kvs.begin(); it != kvs.end(); it++) {
                 node_element_count += it->bucket_element_count;
             }
+            std::cout << "node element count: " << node_element_count
+                      << std::endl;
+            std::cout << "burst_threshold: " << burst_threshold << std::endl;
             return node_element_count >= burst_threshold;
         }
 
         // find the key with keysize in its kvs
-        T& access_kv_in_hashnode(const CharT* key, size_t keysize) {
+        T& access_kv_in_hashnode(const CharT* key, size_t keysize,
+                                 anode*& t_root) {
             hash_node* targetNode = this;
+            size_t move_pos = 0;
 
             // TODO: burst if hash_node have too many element
             if (need_burst()) {
@@ -137,66 +168,113 @@ class htrie_map {
                                     bucket_element.end());
                 }
 
+                elements.push_back(
+                    std::pair<std::string, T>(std::string(key, keysize), T{}));
+
+                std::cout << "bursting" << std::endl;
+                size_t burstPos = 0;
                 // update the targetNode
-                targetNode = burst(elements, key, keysize);
+                targetNode = burst(elements, key, keysize, this->anode::parent,
+                                   t_root, move_pos);
+                std::cout << "target_node found: " << (void*)targetNode
+                          << std::endl;
+                free(this);
             }
 
-            size_t hashval = myTrie::hashRelative::hash<CharT>(key, keysize);
+            size_t hashval = myTrie::hashRelative::hash<CharT>(
+                key + move_pos, keysize - move_pos);
             std::cout << "bucket_id: " << hashval << std::endl;
-            return targetNode->kvs[hashval].access_kv_in_bucket(key, keysize);
+            return targetNode->kvs[hashval].access_kv_in_bucket(
+                key + move_pos, keysize - move_pos);
         }
 
-        std::pair<std::string, T> getSubedKV(
-            std::pair<std::string, T>& element) {
-            return std::pair<std::string, T>(element.first.substr(1),
+        std::pair<std::string, T> getSubStr(std::pair<std::string, T>& element,
+                                            size_t sub_pos = 1) {
+            return std::pair<std::string, T>(element.first.substr(sub_pos),
                                              element.second);
         }
 
         // TODO:
-        // construct a new trie by the elements and return the target
-        // hash_node
+        // this func is to turn this(a hashnode) to n childs of trie_node
+        // linking their child(hashnode or trienode)
         hash_node* burst(std::vector<std::pair<std::string, T>>& elements,
-                         const CharT* key, size_t keysize) {
-            trie_node* new_trie_node = new trie_node('\0', this->anode::parent);
-            trie_node* current_trie_node = new_trie_node;
+                         const CharT* key, size_t keysize, trie_node* p,
+                         anode*& t_root, size_t& move_pos) {
+            hash_node* target_hashNode = nullptr;
+            trie_node* cur_trie_node;
 
-            do {
-                std::map<CharT, std::vector<std::pair<std::string, T>>>
-                    splitElements;
-                for (int i = 0; i != elements.size(); i++) {
-                    splitElements[(elements[i].first)[0]].push_back(
-                        getSubedKV(elements[i]));
+            std::map<CharT, std::vector<std::pair<std::string, T>>>
+                splitElements;
+            for (int i = 0; i != elements.size(); i++) {
+                splitElements[(elements[i].first)[0]].push_back(
+                    getSubStr(elements[i]));
+            }
+            for (auto it = splitElements.begin(); it != splitElements.end();
+                 it++) {
+                if (t_root->isHashNode()) {
+                    // the t_root is update to a empty trie_node
+                    t_root = new trie_node('\0', nullptr);
+                    std::cout << "NOW THE T_ROOT IS" << (void*)t_root
+                              << std::endl;
+                    cur_trie_node = new trie_node('\0', (trie_node*)t_root);
+                    std::cout << "create new t_root" << std::endl;
+                } else {
+                    cur_trie_node = new trie_node('\0', p);
                 }
-                for (auto it = splitElements.begin(); it != splitElements.end();
-                     it++) {
-                    trie_node* child_trie_node =
-                        new trie_node(it->first, current_trie_node);
+                cur_trie_node->anode::setChar(it->first);
+
+                if (p == nullptr) {
+                    ((trie_node*)t_root)->addChildTrieNode(cur_trie_node);
+                    std::cout << "root add new child: " << it->first
+                              << std::endl;
+                } else {
+                    p->addChildTrieNode(cur_trie_node);
+                    std::cout << "not-root: " << (void*)p
+                              << " add new child: " << it->first << std::endl;
+                }
+
+                std::cout << "set new trie_node:" << (void*)cur_trie_node
+                          << " with char: " << it->first << std::endl;
+                // TODO: move_pos
+                if (it->first == *(key + move_pos)) {
+                    move_pos++;
+                    std::cout << "move_pos++ match the first char" << std::endl;
+                }
+
+                std::vector<std::pair<std::string, T>>& curKV = it->second;
+                if (curKV.size() > burst_threshold) {
+                    // move 1 char
+                    hash_node* hnode = burst(curKV, key + 1, keysize - 1,
+                                             cur_trie_node, t_root, move_pos);
+                    if (hnode != nullptr) {
+                        target_hashNode = hnode;
+                    }
+                } else {
                     hash_node* hnode = new hash_node(burst_threshold);
-                    for (auto itt = (it->second).begin();
-                         itt != (it->second).end(); itt++) {
-                        hnode->access_kv_in_hashnode(((itt->first)).data(),
-                                                     (itt->first).size());
+                    std::cout
+                        << "cur_trie_node:" << (void*)cur_trie_node
+                        << " at the step of adding hashnode with childnum "
+                        << cur_trie_node->childs.size() << std::endl;
+                    cur_trie_node->setOnlyHashNode(hnode);
+                    for (int i = 0; i != curKV.size(); i++) {
+                        std::cout << "working on string " << curKV[i].first
+                                  << std::endl;
+                        std::string& temp = curKV[i].first;
+                        size_t hashval = myTrie::hashRelative::hash<CharT>(
+                            temp.data(), temp.size());
+                        // write the value to the entry
+                        hnode->kvs[hashval].access_kv_in_bucket(
+                            temp.data(), temp.size()) = curKV[i].second;
+                        std::cout << "move_pos is " << move_pos << std::endl;
+                        if (myTrie::hashRelative::keyEqual(
+                                temp.data(), temp.size(), key + move_pos,
+                                keysize - move_pos)) {
+                            target_hashNode = hnode;
+                        }
                     }
                 }
-            } while (true);
-        }
-
-        hash_node* node_after_burst(
-            std::vector<std::pair<std::string, T>> kv_need_burst,
-            const CharT* key, size_t keysize) {
-            if (kv_need_burst.size() < burst_threshold) {
-                hash_node* target = new hash_node(burst_threshold);
             }
-            std::map<CharT, std::vector<std::pair<std::string, T>>> newChilds;
-            for (int i = 0; i != kv_need_burst.size(); i++) {
-                std::pair<std::string, T> elem = kv_need_burst[i];
-                newChilds[(elem.first)[0]].push_back(std::pair<std::string, T>(
-                    elem.first.substr(1), elem.second));
-            }
-            for (auto it = newChilds.begin(); it != newChilds.end(); it++) {
-                node_after_burst(it->second, key + 1, keysize - 1);
-            }
-            // TODO
+            return target_hashNode;
         }
 
         // debug
@@ -224,7 +302,7 @@ class htrie_map {
             arr_buffer = (CharT*)std::malloc(sizeof(END_OF_BUCKET));
             std::memcpy(arr_buffer, &END_OF_BUCKET, sizeof(END_OF_BUCKET));
             buffer_size = sizeof(END_OF_BUCKET);
-            std::cout << "init array_bucket" << (void*)arr_buffer << "\n";
+            std::cout << "init array_bucket: " << (void*)arr_buffer << "\n";
         }
 
         bool is_end_of_bucket(const CharT* buffer) {
@@ -242,7 +320,7 @@ class htrie_map {
         // if not found, return (inserting_pos, false)
         std::pair<size_t, bool> find_in_bucket(const CharT* key,
                                                size_t keysize) {
-            std::cout << (void*)arr_buffer << "\n";
+            std::cout << "find in bucket: " << (void*)arr_buffer << "\n";
             CharT* buffer_ptr = arr_buffer;
             size_t pos = 0;
             while (!is_end_of_bucket(buffer_ptr)) {
@@ -389,7 +467,7 @@ class htrie_map {
     //     size_t buf_pos;
     // };
     htrie_map(size_t customized_burst_threshold = DEFAULT_BURST_THRESHOLD) {
-        t_root = new hash_node(burst_threshold);
+        t_root = new hash_node(customized_burst_threshold);
         burst_threshold = customized_burst_threshold;
     }
 
@@ -402,27 +480,64 @@ class htrie_map {
     }
 
     T& access_operator(const CharT* key, size_t key_size) {
+        std::cout << "-------------->accessing ";
+        for (size_t i = 0; i != key_size; i++) {
+            std::cout << *(key + i);
+        }
+        std::cout << std::endl;
         return find(key, key_size);
     }
 
     T& find(const CharT* key, size_t key_size) {
         anode* current_node = t_root;
-
+        std::cout << "start finding: root is hashnode:"
+                  << (t_root->isHashNode() ? "true" : "false") << " with "
+                  << (void*)t_root << std::endl;
         for (size_t pos = 0; pos < key_size; pos++) {
             // didn't reach the leaf
-            // TODO: if a key end at a trie_node
             if (current_node->isTrieNode()) {
+                std::cout << "current_node is trienode" << std::endl;
+
                 current_node =
                     ((trie_node*)current_node)->findChildNode(key[pos]);
+                std::cout << "finding child node of char: " << key[pos]
+                          << std::endl;
+                std::cout << "found-current_node add: " << (void*)current_node
+                          << " with type:"
+                          << (current_node->anode::isTrieNode() ? "trie"
+                                                                : "hash")
+                          << std::endl;
+                if (current_node->isHashNode()) {
+                    return ((hash_node*)current_node)
+                        ->access_kv_in_hashnode(key + pos, key_size - pos,
+                                                t_root);
+                }
                 // can't find
                 if (current_node == nullptr) {
+                    std::cout << "--current_node is hashnode" << std::endl;
+                    std::cout << "looking for ";
+                    for (size_t i = 0; i != key_size; i++) {
+                        std::cout << *(key + i + pos);
+                    }
+                    std::cout << std::endl;
+                    current_node =
+                        ((trie_node*)current_node)->getOnlyHashNode();
+                    return ((hash_node*)current_node)
+                        ->access_kv_in_hashnode(key + pos, key_size - pos,
+                                                t_root);
                 }
             } else {
+                std::cout << "current_node is hashnode" << std::endl;
+                std::cout << "looking for ";
+                for (size_t i = 0; i != key_size; i++) {
+                    std::cout << *(key + i + pos);
+                }
+                std::cout << std::endl;
                 // find a key in hash_node
                 // if find: return the v reference
                 // if notfind: write the key and return the v reference
                 return ((hash_node*)current_node)
-                    ->access_kv_in_hashnode(key + pos, key_size - pos);
+                    ->access_kv_in_hashnode(key + pos, key_size - pos, t_root);
             }
         }
     }
@@ -432,8 +547,12 @@ using std::cout;
 using std::endl;
 template <class CharT, class T>
 void print_tree_struct(typename myTrie::htrie_map<CharT, T>::anode* root) {
+    cout << "in node: " << (void*)root
+         << " with type: " << (root->isHashNode() ? "hash" : "trie")
+         << std::endl;
     // print bucket
     if (root->isHashNode()) {
+        std::cout << "searching in hashnode" << endl;
         std::map<size_t, std::vector<std::pair<std::string, T>>> buckets_info =
             ((typename myTrie::htrie_map<CharT, T>::hash_node*)root)
                 ->get_hash_nodes_buckets_info();
@@ -453,8 +572,16 @@ void print_tree_struct(typename myTrie::htrie_map<CharT, T>::anode* root) {
             cout << it->first << "\t\t";
         }
         cout << "\nnext level:\n";
-        for (auto it = childs.begin(); it != childs.end(); it++) {
-            print_tree_struct<CharT, T>(it->second);
+        if (childs.size() == 0) {
+            for (auto it = childs.begin(); it != childs.end(); it++) {
+                print_tree_struct<CharT, T>(it->second);
+            }
+        } else {
+            cout << "size of child is 0" << endl;
+            cout << "fake_root is " << (void*)root << endl;
+            // print_tree_struct<CharT, T>(
+            //     ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)
+            //         ->getOnlyHashNode());
         }
     } else {
         cout << "node is not trie nor hash node\n";
@@ -485,15 +612,15 @@ int main() {
     vector<string> tests;
     tests.push_back("abc");
     tests.push_back("abcd");
-    tests.push_back("abcd");
+    tests.push_back("bbcd");
+    tests.push_back("bcde");
 
-    tests.push_back("abcde");
+    // tests.push_back("bcdef");
+    // tests.push_back("bcded");
 
     htrie_map<char, int> hm;
     for (auto it = tests.begin(); it != tests.end(); it++)
         hm[*it] = it - tests.begin();
     std::cout << "------------------------\n";
     print_htrie_map<char, int>(hm, tests);
-    while (1) {
-    }
 }
