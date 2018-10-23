@@ -178,6 +178,7 @@ class htrie_map {
             burst_threshold = customized_burst_threshold;
             std::cout << "new hash_node is init, burst_threshold set to be "
                       << burst_threshold << std::endl;
+            onlyValue = 999;
         }
 
         bool need_burst() {
@@ -200,6 +201,8 @@ class htrie_map {
             // TODO: burst if hash_node have too many element
             if (need_burst()) {
                 std::vector<std::pair<std::string, T>> elements;
+                elements.push_back(
+                    std::pair<std::string, T>(std::string(key, keysize), T{}));
                 for (auto it = kvs.begin(); it != kvs.end(); it++) {
                     // TODO: use the reference to reduce the extra copy
                     std::vector<std::pair<std::string, T>> bucket_element =
@@ -207,8 +210,6 @@ class htrie_map {
                     elements.insert(elements.end(), bucket_element.begin(),
                                     bucket_element.end());
                 }
-                elements.push_back(
-                    std::pair<std::string, T>(std::string(key, keysize), T{}));
 
                 for (auto it = elements.begin(); it != elements.end(); it++) {
                     std::cout << "elements: " << it->first
@@ -915,6 +916,16 @@ int main() {
                << " from hm , actual value: " << v << std::endl;
         }
     }
+    std::cout << "myTrie use time: usec: " << sta - end << std::endl;
+    std::fstream f4("str_normal");
+    std::map<std::string, uint32_t> m;
+    sta = get_usec();
+    while (f4 >> url >> v) {
+        m[url] = v;
+    }
+    end = get_usec();
+    std::cout << "std::map use time: usec: " << sta - end << std::endl;
+
     f2.close();
     f3.close();
 }
