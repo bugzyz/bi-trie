@@ -39,6 +39,10 @@ std::size_t hash(const CharT* key, std::size_t key_size) {
 template <class CharT>
 bool keyEqual(const CharT* key_lhs, std::size_t key_size_lhs,
               const CharT* key_rhs, std::size_t key_size_rhs) {
+    // TODO: is it neccessary?
+    if (key_size_lhs == 0 && key_size_rhs == 0) {
+        return true;
+    }
     if (key_size_lhs != key_size_rhs) {
         std::cout << "size not equal" << std::endl;
         return false;
@@ -126,7 +130,6 @@ class htrie_map {
                 std::cout << (void*)this << " have child: " << it->first
                           << " at " << (void*)it->second << std::endl;
             }
-            std::cout << "finish printing\n";
             auto found = childs.find(c);
             if (found != childs.end()) {
                 return found->second;
@@ -166,6 +169,7 @@ class htrie_map {
        public:
         std::vector<array_bucket> kvs;
         size_t burst_threshold;
+        T onlyValue;
 
         hash_node(size_t customized_burst_threshold) {
             anode::_node_type = node_type::HASH_NODE;
@@ -218,6 +222,10 @@ class htrie_map {
                 std::cout << "target_node found: " << (void*)targetNode
                           << std::endl;
                 delete this;
+            }
+
+            if (keysize == 0) {
+                return onlyValue;
             }
 
             size_t hashval = myTrie::hashRelative::hash<CharT>(
@@ -289,11 +297,25 @@ class htrie_map {
                           << std::endl;
 
                 for (int i = 0; i != curKV.size(); i++) {
+                    std::string& temp = curKV[i].first;
+
+                    if (temp.size() == 0) {
+                        hnode->onlyValue = curKV[i].second;
+                        if (myTrie::hashRelative::keyEqual(temp.data(),
+                                                           temp.size(), key + 1,
+                                                           keysize - 1)) {
+                            std::cout << ">>>>>>>>>>>>>>>find the 0-size "
+                                         "target_node !!!\n ";
+                            target_hashNode = hnode;
+                        }
+                        continue;
+                    }
                     std::cout << "=============for loop=======" << std::endl;
                     std::cout << "working on string " << curKV[i].first
                               << " with value: " << curKV[i].second
                               << std::endl;
-                    std::string& temp = curKV[i].first;
+                    std::cout << "curKV[i] size: " << curKV[i].first.size()
+                              << std::endl;
                     size_t hashval = myTrie::hashRelative::hash<CharT>(
                         temp.data(), temp.size());
                     std::cout << "rewrite to hnode: " << temp << std::endl;
@@ -307,40 +329,49 @@ class htrie_map {
                     // temp.size(),
                     //                                    key, keysize)) {
                     //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key, keysize, true);
+                    //         temp.data(), temp.size(), key, keysize,
+                    //         true);
 
                     //     std::cout << ">>>>>>>>>>>>>>>find the
                     //     target_node!!!\n"; target_hashNode = hnode;
                     // } else {
                     //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key, keysize, false);
+                    //         temp.data(), temp.size(), key, keysize,
+                    //         false);
                     // }
 
-                    if (myTrie::hashRelative::keyEqual(temp.data(), temp.size(),
+                    if (*(CharT*)key == cur_trie_node->anode::myChar &&
+                        myTrie::hashRelative::keyEqual(temp.data(), temp.size(),
                                                        key + 1, keysize - 1)) {
                         // myTrie::hashRelative::printDiff(temp.data(),
-                        //                                 temp.size(), key + 1,
-                        //                                 keysize - 1, true);
+                        //                                 temp.size(), key
+                        //                                 + 1, keysize - 1,
+                        //                                 true);
 
                         std::cout
+                            << "father char compared: " << *(CharT*)key << " - "
+                            << cur_trie_node->anode::myChar
                             << ">>>>>>>>>>>>>>>find the target_node !!!\n ";
                         target_hashNode = hnode;
                     } else {
                         // myTrie::hashRelative::printDiff(temp.data(),
-                        //                                 temp.size(), key + 1,
-                        //                                 keysize - 1, false);
+                        //                                 temp.size(), key
+                        //                                 + 1, keysize - 1,
+                        //                                 false);
                     }
 
                     // if (myTrie::hashRelative::keyEqual(temp.data(),
                     // temp.size(),
                     //                                    key + move_pos,
-                    //                                    keysize - move_pos)) {
+                    //                                    keysize -
+                    //                                    move_pos)) {
                     //     myTrie::hashRelative::printDiff(
                     //         temp.data(), temp.size(), key + move_pos,
                     //         keysize - move_pos, true);
 
                     //     std::cout
-                    //         << ">>>>>>>>>>>>>>>find the target_node !!!\n ";
+                    //         << ">>>>>>>>>>>>>>>find the target_node !!!\n
+                    //         ";
                     //     target_hashNode = hnode;
                     // } else {
                     //     myTrie::hashRelative::printDiff(
@@ -463,11 +494,6 @@ class htrie_map {
 
         void append_impl(const CharT* target, size_t keysize,
                          CharT* buffer_append_pos, T& value) {
-            if (keysize == 0) {
-                fstream f("append_0");
-                f << (CharT)*target << " append 0" << std::endl;
-                f.close();
-            }
             // append key_size
             std::memcpy(buffer_append_pos, &keysize, sizeof(KeySizeT));
             buffer_append_pos += sizeof(KeySizeT);
@@ -595,7 +621,8 @@ class htrie_map {
                 current_node =
                     ((trie_node*)current_node)->findChildNode(key[pos]);
 
-                // can't find, need to create a trie_node with a hashtable child
+                // can't find, need to create a trie_node with a hashtable
+                // child
                 if (current_node == nullptr) {
                     current_node = ((trie_node*)father_node)
                                        ->createAHashNodeWith(key[pos]);
@@ -625,7 +652,10 @@ class htrie_map {
                     std::cout << "pos: " << pos << " keysize: " << key_size
                               << std::endl;
                     if (current_node->isHashNode()) {
-                        std::cout << "-current_node is hashnode: dir access!\n";
+                        std::cout
+                            << "-current_node is hashnode: dir access! only T"
+                            << ((hash_node*)current_node)->onlyValue
+                            << std::endl;
                         std::cout << "-current_node is hashnode: "
                                   << (void*)current_node << std::endl;
                         std::cout << "pos:" << pos
@@ -642,14 +672,15 @@ class htrie_map {
                     }
                 }
                 // else if (current_node->isHashNode()) {
-                //     std::cout << "-current_node is hashnode" << std::endl;
-                //     std::cout << "looking for ";
-                //     for (size_t i = 0; i != key_size; i++) {
+                //     std::cout << "-current_node is hashnode" <<
+                //     std::endl; std::cout << "looking for "; for (size_t i
+                //     = 0; i != key_size; i++) {
                 //         std::cout << *(key + i + pos);
                 //     }
                 //     std::cout << std::endl;
                 //     return ((hash_node*)current_node)
-                //         ->access_kv_in_hashnode(key + pos, key_size - pos,
+                //         ->access_kv_in_hashnode(key + pos, key_size -
+                //         pos,
                 //                                 this);
                 // }
 
@@ -678,7 +709,8 @@ class htrie_map {
                 }
             }
         }
-        // TODO: when reach the '<'
+        std::cout << "return the only value" << std::endl;
+        return ((trie_node*)current_node)->getOnlyHashNode()->onlyValue;
     }
 };
 
@@ -788,7 +820,6 @@ void print_htrie_map(htrie_map<CharT, T> hm,
     // print_tree_struct<CharT, T>(hm.t_root);
 }
 }  // namespace myTrie
-
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -835,6 +866,10 @@ int main() {
     // }
     streambuf* coutBuf = cout.rdbuf();
     ofstream of("out.txt");
+    ofstream cc("checkAP9.txt");
+
+    streambuf* fileBufcc = cc.rdbuf();
+
     streambuf* fileBuf = of.rdbuf();
     cout.rdbuf(fileBuf);
     std::fstream f("str_normal");
@@ -861,8 +896,12 @@ int main() {
     cout << "finish constructing\n";
 
     while (true) {
+        cout.rdbuf(fileBufcc);
+
         cin >> url;
         cout << "check url: " << url << " got " << hm[url] << endl;
+
+        cout.rdbuf(coutBuf);
     }
 
     std::fstream f1("str_normal");
