@@ -14,6 +14,9 @@
 using std::fstream;
 #include <iostream>
 
+// #define BUCKET_INIT_COUNT 32
+// #define BURST_POINT 16384
+
 #define BUCKET_INIT_COUNT 5
 #define BURST_POINT 80
 
@@ -200,15 +203,18 @@ class htrie_map {
 
             // TODO: burst if hash_node have too many element
             if (need_burst()) {
-                std::vector<std::pair<std::string, T>> elements;
-                elements.push_back(
-                    std::pair<std::string, T>(std::string(key, keysize), T{}));
+                std::map<std::string, T> elements;
+                // add new or existed key, if existed, it will be overwritten at
+                // the loop below
+                elements[std::string(key, keysize)] = T{};
                 for (auto it = kvs.begin(); it != kvs.end(); it++) {
                     // TODO: use the reference to reduce the extra copy
                     std::vector<std::pair<std::string, T>> bucket_element =
                         it->get_item_in_array_bucket();
-                    elements.insert(elements.end(), bucket_element.begin(),
-                                    bucket_element.end());
+                    for (auto itt = bucket_element.begin();
+                         itt != bucket_element.end(); itt++) {
+                        elements[itt->first] = itt->second;
+                    }
                 }
 
                 for (auto it = elements.begin(); it != elements.end(); it++) {
@@ -229,6 +235,11 @@ class htrie_map {
                 return onlyValue;
             }
 
+            // TODO: replace the empty onlyValue
+            if (targetNode->onlyValue != 999) {
+                return targetNode->onlyValue;
+            }
+
             size_t hashval = myTrie::hashRelative::hash<CharT>(
                 key + move_pos, keysize - move_pos);
             std::cout << "bucket_id: " << hashval << std::endl;
@@ -242,23 +253,55 @@ class htrie_map {
                                              element.second);
         }
 
-        // TODO:
         // this func is to turn this(a hashnode) to n childs of trie_node
         // linking their child(hashnode or trienode)
-        hash_node* burst(std::vector<std::pair<std::string, T>>& elements,
-                         const CharT* key, size_t keysize, trie_node* p,
-                         size_t& move_pos, htrie_map* hm) {
+        hash_node* burst(std::map<std::string, T>& elements, const CharT* key,
+                         size_t keysize, trie_node* p, size_t& move_pos,
+                         htrie_map* hm) {
             std::cout << "bursting with parent: " << (void*)p << std::endl;
             std::cout << "key now at " << (void*)key << " which is " << *key
                       << std::endl;
             hash_node* target_hashNode = nullptr;
 
-            std::map<CharT, std::vector<std::pair<std::string, T>>>
-                splitElements;
-            for (int i = 0; i != elements.size(); i++) {
-                splitElements[(elements[i].first)[0]].push_back(
-                    getSubStr(elements[i]));
+            std::map<CharT, std::map<std::string, T>> splitElements;
+            for (auto it = elements.begin(); it != elements.end(); it++) {
+                splitElements[(it->first)[0]][it->first.substr(1)] = it->second;
             }
+
+            // TODO: improve
+            if (splitElements.size() == 1) {
+                CharT k = splitElements.begin()->first;
+                std::map<std::string, T> newElement =
+                    splitElements.begin()->second;
+                trie_node* cur_trie_node = new trie_node(k, nullptr);
+
+                if (p == nullptr) {
+                    // bursting in a root hashnode
+                    // the t_root is update to a empty trie_node
+                    hm->t_root = new trie_node('\0', nullptr);
+                    std::cout << "create new t_root: NOW THE T_ROOT IS  "
+                              << (void*)hm->t_root << std::endl;
+                    cur_trie_node->anode::setParent((trie_node*)hm->t_root);
+                    ((trie_node*)hm->t_root)->addChildTrieNode(cur_trie_node);
+                    std::cout << "root add new child: "
+                              << cur_trie_node->anode::myChar << std::endl;
+                    p = (trie_node*)hm->t_root;
+                } else {
+                    // bursting in a normal hashnode
+                    cur_trie_node->anode::setParent(p);
+                    p->addChildTrieNode(cur_trie_node);
+                    std::cout << "not-root: " << (void*)p << " add new child: "
+                              << cur_trie_node->anode::myChar << std::endl;
+                }
+
+                if (k == *(key)) {
+                    move_pos++;
+                }
+
+                return burst(newElement, key + 1, keysize - 1, cur_trie_node,
+                             move_pos, hm);
+            }
+
             for (auto it = splitElements.begin(); it != splitElements.end();
                  it++) {
                 trie_node* cur_trie_node = new trie_node(it->first, nullptr);
@@ -290,19 +333,20 @@ class htrie_map {
                     move_pos++;
                 }
 
-                std::vector<std::pair<std::string, T>>& curKV = it->second;
+                std::map<std::string, T>& curKV = it->second;
                 hash_node* hnode = new hash_node(burst_threshold);
                 hnode->anode::setParent(cur_trie_node);
                 cur_trie_node->setOnlyHashNode(hnode);
                 std::cout << "create new hashnode: " << (void*)hnode
                           << std::endl;
 
-                for (int i = 0; i != curKV.size(); i++) {
-                    std::string& temp = curKV[i].first;
+                for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
+                    std::string temp = itt->first;
 
                     if (temp.size() == 0) {
-                        hnode->onlyValue = curKV[i].second;
-                        if (myTrie::hashRelative::keyEqual(temp.data(),
+                        hnode->onlyValue = itt->second;
+                        if (*(CharT*)key == cur_trie_node->anode::myChar &&
+                            myTrie::hashRelative::keyEqual(temp.data(),
                                                            temp.size(), key + 1,
                                                            keysize - 1)) {
                             std::cout << ">>>>>>>>>>>>>>>find the 0-size "
@@ -312,10 +356,9 @@ class htrie_map {
                         continue;
                     }
                     std::cout << "=============for loop=======" << std::endl;
-                    std::cout << "working on string " << curKV[i].first
-                              << " with value: " << curKV[i].second
-                              << std::endl;
-                    std::cout << "curKV[i] size: " << curKV[i].first.size()
+                    std::cout << "working on string " << itt->first
+                              << " with value: " << itt->second << std::endl;
+                    std::cout << "curKV[i] size: " << itt->first.size()
                               << std::endl;
                     size_t hashval = myTrie::hashRelative::hash<CharT>(
                         temp.data(), temp.size());
@@ -323,7 +366,7 @@ class htrie_map {
 
                     // write the value to the entry
                     hnode->kvs[hashval].access_kv_in_bucket(
-                        temp.data(), temp.size()) = curKV[i].second;
+                        temp.data(), temp.size()) = itt->second;
                     std::cout << "move_pos is " << move_pos << std::endl;
 
                     // if (myTrie::hashRelative::keyEqual(temp.data(),
@@ -894,29 +937,9 @@ int main() {
     cout.rdbuf(coutBuf);
     f.close();
     uint64_t end = get_usec();
-    cout << "finish constructing\n";
+    cout << "finish trie_map constructing\n";
 
-    while (true) {
-        cout.rdbuf(fileBufcc);
-
-        cin >> url;
-        cout << "check url: " << url << " got " << hm[url] << endl;
-
-        cout.rdbuf(coutBuf);
-    }
-
-    std::fstream f1("str_normal");
-    std::fstream f2("test_res_good", std::ios::out);
-    std::fstream f3("test_res_wrong", std::ios::out);
-    while (f1 >> url >> v) {
-        if (hm[url] == v) {
-            f2 << "good: " << url << std::endl;
-        } else {
-            f3 << "wrong answer: " << url << " got " << hm[url]
-               << " from hm , actual value: " << v << std::endl;
-        }
-    }
-    std::cout << "myTrie use time: usec: " << sta - end << std::endl;
+    std::cout << "myTrie use time: usec: " << end - sta << std::endl;
     std::fstream f4("str_normal");
     std::map<std::string, uint32_t> m;
     sta = get_usec();
@@ -924,8 +947,46 @@ int main() {
         m[url] = v;
     }
     end = get_usec();
-    std::cout << "std::map use time: usec: " << sta - end << std::endl;
+    std::cout << "std::map use time: usec: " << end - sta << std::endl;
+    f4.close();
 
+    // checking:
+    std::fstream f2("test_res_good", std::ios::out);
+    std::fstream f3("test_res_wrong", std::ios::out);
+    for (auto it = m.begin(); it != m.end(); it++) {
+        if (hm[it->first] == it->second) {
+            f2 << "good: " << it->first << std::endl;
+        } else {
+            f3 << "wrong answer: " << it->first << " got " << hm[it->first]
+               << " from hm , actual value: " << it->second << std::endl;
+            uint32_t v = it->second;
+            f3 << "got from hm: ";
+            for (size_t i = 0; i != sizeof(v); i++) {
+                f3 << (unsigned int)*(
+                          (char*)(&(hm[it->first]) + sizeof(char) * i))
+                   << ",";
+            }
+            f3 << "\ngot from file: ";
+            for (size_t i = 0; i != sizeof(v); i++) {
+                f3 << (unsigned int)*((char*)(&v + sizeof(char) * i)) << ",";
+            }
+            f3 << std::endl;
+            f3.flush();
+        }
+    }
     f2.close();
     f3.close();
+
+    std::cout << "finish checking and printed correct/wrong res\n";
+
+    while (true) {
+        cout.rdbuf(fileBufcc);
+        cout << "check url: ";
+        cin >> url;
+        sta = get_usec();
+        cout << "check url: " << url << " got " << hm[url] << endl;
+        end = get_usec();
+        cout << "use " << (end - sta) / 1000 << "ms" << endl;
+        cout.rdbuf(coutBuf);
+    }
 }
