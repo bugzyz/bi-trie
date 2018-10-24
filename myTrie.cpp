@@ -86,8 +86,8 @@ namespace myTrie {
 template <class CharT, class T, class KeySizeT = std::uint16_t>
 class htrie_map {
    public:
-    // TODO: burst_threshold should be set to be greater than 26 for 26 alaphbet
-    // and ", @ .etc.
+    // burst_threshold should be set to be greater than 26 for 26 alaphbet
+    // and ", @ .etc.(the test in lubm40 shows that it has 50 char species)
     static const size_t DEFAULT_BURST_THRESHOLD = BURST_POINT;
     size_t burst_threshold;
 
@@ -207,7 +207,7 @@ class htrie_map {
             hash_node* targetNode = this;
             size_t move_pos = 0;
 
-            // TODO: burst if hash_node have too many element
+            // burst if hash_node have too many element
             if (need_burst()) {
                 std::map<std::string, T> elements;
                 // add new or existed key, if existed, it will be overwritten at
@@ -274,7 +274,7 @@ class htrie_map {
                 splitElements[(it->first)[0]][it->first.substr(1)] = it->second;
             }
 
-            // TODO: improve
+            // TODO: refine
             if (splitElements.size() == 1) {
                 CharT k = splitElements.begin()->first;
                 std::map<std::string, T> newElement =
@@ -338,7 +338,6 @@ class htrie_map {
                 debugStream << "set new trie_node:" << (void*)cur_trie_node
                             << " with char: " << it->first << std::endl;
 
-                // TODO: move_pos
                 if (it->first == *(key)) {
                     move_pos++;
                 }
@@ -379,59 +378,15 @@ class htrie_map {
                         temp.data(), temp.size()) = itt->second;
                     debugStream << "move_pos is " << move_pos << std::endl;
 
-                    // if (myTrie::hashRelative::keyEqual(temp.data(),
-                    // temp.size(),
-                    //                                    key, keysize)) {
-                    //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key, keysize,
-                    //         true);
-
-                    //     debugStream << ">>>>>>>>>>>>>>>find the
-                    //     target_node!!!\n"; target_hashNode = hnode;
-                    // } else {
-                    //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key, keysize,
-                    //         false);
-                    // }
-
                     if (*(CharT*)key == cur_trie_node->anode::myChar &&
                         myTrie::hashRelative::keyEqual(temp.data(), temp.size(),
                                                        key + 1, keysize - 1)) {
-                        // myTrie::hashRelative::printDiff(temp.data(),
-                        //                                 temp.size(), key
-                        //                                 + 1, keysize - 1,
-                        //                                 true);
-
                         debugStream
                             << "father char compared: " << *(CharT*)key << " - "
                             << cur_trie_node->anode::myChar
                             << ">>>>>>>>>>>>>>>find the target_node !!!\n ";
                         target_hashNode = hnode;
-                    } else {
-                        // myTrie::hashRelative::printDiff(temp.data(),
-                        //                                 temp.size(), key
-                        //                                 + 1, keysize - 1,
-                        //                                 false);
                     }
-
-                    // if (myTrie::hashRelative::keyEqual(temp.data(),
-                    // temp.size(),
-                    //                                    key + move_pos,
-                    //                                    keysize -
-                    //                                    move_pos)) {
-                    //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key + move_pos,
-                    //         keysize - move_pos, true);
-
-                    //     debugStream
-                    //         << ">>>>>>>>>>>>>>>find the target_node !!!\n
-                    //         ";
-                    //     target_hashNode = hnode;
-                    // } else {
-                    //     myTrie::hashRelative::printDiff(
-                    //         temp.data(), temp.size(), key + move_pos,
-                    //         keysize - move_pos, false);
-                    // }
                 }
 
                 if (hnode->need_burst()) {
@@ -529,7 +484,7 @@ class htrie_map {
                 CharT* new_buffer =
                     (CharT*)(std::realloc(arr_buffer, new_size));
                 if (new_buffer == nullptr) {
-                    debugStream << "realloc failed!!!!!!!!!1" << std::endl;
+                    std::cerr << "realloc failed!!!!!!!!!1" << std::endl;
                     exit(-1);
                 } else {
                     debugStream
@@ -596,8 +551,6 @@ class htrie_map {
         }
 
         std::vector<std::pair<std::string, T>> get_item_in_array_bucket() {
-            // debugStream << "\n\n-----------------------------\ncall "
-            //              "get_item_in_array_bucket\n";
             std::vector<std::pair<std::string, T>> res;
             CharT* buf = arr_buffer;
             while (!is_end_of_bucket(buf)) {
@@ -615,12 +568,6 @@ class htrie_map {
 
                 res.push_back(std::pair<std::string, T>(item, v));
                 buf = buf + sizeof(T);
-                // debugStream << "get_item: " << item;
-                // debugStream << " with size: " << item.size()
-                //           << " with length: " << length
-                //           << " with index4: " << (unsigned
-                //           int)item[length]
-                //           << "\n";
             }
             return res;
         }
@@ -628,14 +575,6 @@ class htrie_map {
 
    public:
     anode* t_root;
-    // class iterator {
-    //    public:
-    //     // trie_node* current_trie_node;
-    //     hash_node* current_hash_node;
-
-    //     size_t bucket_id;
-    //     size_t buf_pos;
-    // };
     htrie_map(size_t customized_burst_threshold = DEFAULT_BURST_THRESHOLD) {
         t_root = new hash_node(customized_burst_threshold);
         burst_threshold = customized_burst_threshold;
@@ -727,19 +666,6 @@ class htrie_map {
                     } else {
                     }
                 }
-                // else if (current_node->isHashNode()) {
-                //     debugStream << "-current_node is hashnode" <<
-                //     std::endl; debugStream << "looking for "; for (size_t i
-                //     = 0; i != key_size; i++) {
-                //         debugStream << *(key + i + pos);
-                //     }
-                //     debugStream << std::endl;
-                //     return ((hash_node*)current_node)
-                //         ->access_kv_in_hashnode(key + pos, key_size -
-                //         pos,
-                //                                 this);
-                // }
-
             } else {
                 debugStream
                     << "---current_node is hashnode: " << (void*)current_node
@@ -770,6 +696,11 @@ class htrie_map {
         return ((trie_node*)current_node)->getOnlyHashNode()->onlyValue;
     }
 };
+
+
+
+
+//------------------------DEBUG, CORRECTNESS CHECK------------------------------
 
 using std::cout;
 using std::endl;
@@ -877,6 +808,8 @@ void print_htrie_map(htrie_map<CharT, T> hm,
     // print_tree_struct<CharT, T>(hm.t_root);
 }
 }  // namespace myTrie
+
+
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
