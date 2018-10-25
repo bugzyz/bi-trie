@@ -57,7 +57,7 @@ int main() {
     while (f >> url >> v) {
         m[url] = v;
         // todo
-        // m2[v] = url;
+        m2[v] = url;
         count++;
     }
     end = get_usec();
@@ -75,7 +75,8 @@ int main() {
             // cout << "---------------------------------------> working on
             // num."
             //      << count << " url: " << url << " set value: " << v << endl;
-            hm[url] = v;
+            // hm[url] = v;
+            hm.insertKV(url, v);
         }
         f1.close();
 
@@ -93,7 +94,7 @@ int main() {
         std::fstream f3("test_res_wrong", std::ios::out);
         for (auto it = m.begin(); it != m.end(); it++) {
             int64_t hm_get_start = get_usec();
-            uint32_t gotfromhm = hm[it->first];
+            uint32_t gotfromhm = hm.searchByKey[it->first];
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
@@ -126,6 +127,48 @@ int main() {
         cout << "compare to unordered_map: accessing cost diff: "
              << um_hm / count << endl;;
         ff << std::endl;
+
+// ------------------------------------------------------------
+
+        um_hm = 0;
+        // checking:
+        std::fstream f3("test_res_wrong", std::ios::out);
+        for (auto it = m2.begin(); it != m2.end(); it++) {
+            int64_t hm_get_start = get_usec();
+            std::string gotfromhm = hm.searchByValue[it->first];
+            int64_t hm_get_end = get_usec();
+
+            int64_t um_get_start = get_usec();
+            uint32_t gotfromum = m2[it->first];
+            int64_t um_get_end = get_usec();
+
+            um_hm += (um_get_end - um_get_start) - (hm_get_end - hm_get_start);
+
+            if (gotfromhm == it->second) {
+            } else {
+                f3 << "wrong answer: " << it->first << " got " << hm[it->first]
+                   << " from hm , actual value: " << it->second << std::endl;
+                uint32_t v = it->second;
+                f3 << "got from hm: ";
+                for (size_t i = 0; i != sizeof(v); i++) {
+                    f3 << (unsigned int)*(
+                              (char*)(&(hm[it->first]) + sizeof(char) * i))
+                       << ",";
+                }
+                f3 << "\ngot from file: ";
+                for (size_t i = 0; i != sizeof(v); i++) {
+                    f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
+                       << ",";
+                }
+                f3 << std::endl;
+                f3.flush();
+            }
+        }
+        f3.close();
+        cout << "compare to unordered_map: accessing cost diff: "
+             << um_hm / count << endl;;
+        ff << std::endl;
+
 
         //--------------printing wrong result-------------------
         std::ifstream fofwrong("test_res_wrong", std::ios::in);
