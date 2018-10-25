@@ -19,7 +19,6 @@ using std::fstream;
     } else          \
         std::cout
 
-
 // #define BUCKET_INIT_COUNT 32
 // #define BURST_POINT 16384
 
@@ -119,7 +118,7 @@ class htrie_map {
             anode::parent = p;
         }
 
-        hash_node* createAHashNodeWith(CharT key) {
+        trie_node* createAHashNodeWith(CharT key) {
             trie_node* new_trie_node = new trie_node(key, this);
             // TODO: remove the hard code
             new_trie_node->onlyHashNode = new hash_node(BURST_POINT);
@@ -129,7 +128,7 @@ class htrie_map {
                         << " create a new trie_node: " << (void*)new_trie_node
                         << " return the onlyHahsNode: "
                         << (void*)new_trie_node->onlyHashNode << std::endl;
-            return new_trie_node->onlyHashNode;
+            return new_trie_node;
         }
 
         std::map<CharT, anode*> getChildsMap() { return childs; }
@@ -604,13 +603,17 @@ class htrie_map {
         debugStream << "start finding: root is hashnode:"
                     << (t_root->isHashNode() ? "true" : "false") << " with "
                     << (void*)t_root << std::endl;
+
+        if (t_root->isHashNode()) {
+            // find a key in hash_node
+            // if find: return the v reference
+            // if notfind: write the key and return the v reference
+            return ((hash_node*)current_node)
+                ->access_kv_in_hashnode(key, key_size, this);
+        }
+
         for (size_t pos = 0; pos < key_size; pos++) {
-            // didn't reach the leaf
             if (current_node->isTrieNode()) {
-                debugStream
-                    << "current_node is trienode: " << (void*)current_node
-                    << " with char: " << current_node->anode::myChar
-                    << std::endl;
                 anode* father_node = current_node;
                 current_node =
                     ((trie_node*)current_node)->findChildNode(key[pos]);
@@ -620,85 +623,17 @@ class htrie_map {
                 if (current_node == nullptr) {
                     current_node = ((trie_node*)father_node)
                                        ->createAHashNodeWith(key[pos]);
-                    pos++;
-                    debugStream
-                        << "--current_node is hashnode: " << (void*)current_node
-                        << std::endl;
-                    debugStream << "pos:" << pos
-                                << " key_size - pos: " << key_size - pos
-                                << " looking for ";
-                    for (size_t i = 0; i != key_size - pos; i++) {
-                        debugStream << *(key + i + pos);
-                    }
-                    debugStream << std::endl;
-
-                    // find a key in hash_node
-                    // if find: return the v reference
-                    // if notfind: write the key and return the v reference
-                    return ((hash_node*)current_node)
-                        ->access_kv_in_hashnode(key + pos, key_size - pos,
-                                                this);
-                } else {
-                    debugStream
-                        << "find chilld res: " << (void*)current_node
-                        << " is a "
-                        << (current_node->isHashNode() ? "hash" : "trie")
-                        << std::endl;
-                    debugStream << "pos: " << pos << " keysize: " << key_size
-                                << std::endl;
-                    if (current_node->isHashNode()) {
-                        debugStream
-                            << "-current_node is hashnode: dir access! only T"
-                            << ((hash_node*)current_node)->onlyValue
-                            << std::endl;
-                        debugStream << "-current_node is hashnode: "
-                                    << (void*)current_node << std::endl;
-                        debugStream << "pos:" << pos
-                                    << " key_size - pos: " << key_size - pos
-                                    << " looking for ";
-                        for (size_t i = 0; i != key_size - pos; i++) {
-                            debugStream << *(key + i + pos);
-                        }
-                        debugStream << std::endl;
-                        return ((hash_node*)current_node)
-                            ->access_kv_in_hashnode(key + pos, key_size - pos,
-                                                    this);
-                    } else {
-                    }
+                } else if (current_node->isHashNode()) {
+                    pos--;
                 }
             } else {
-                debugStream
-                    << "---current_node is hashnode: " << (void*)current_node
-                    << std::endl;
-                debugStream << "pos:" << pos
-                            << " key_size - pos: " << key_size - pos
-                            << " looking for ";
-                for (size_t i = 0; i != key_size - pos; i++) {
-                    debugStream << *(key + i + pos);
-                }
-                debugStream << std::endl;
-
-                if (pos == 0) {
-                    // find a key in hash_node
-                    // if find: return the v reference
-                    // if notfind: write the key and return the v reference
-                    return ((hash_node*)current_node)
-                        ->access_kv_in_hashnode(key + pos, key_size - pos,
-                                                this);
-                } else {
-                    return ((hash_node*)current_node)
-                        ->access_kv_in_hashnode(key + pos - 1,
-                                                key_size - pos + 1, this);
-                }
+                return ((hash_node*)current_node)
+                    ->access_kv_in_hashnode(key + pos, key_size - pos, this);
             }
         }
-        debugStream << "return the only value" << std::endl;
         return ((trie_node*)current_node)->getOnlyHashNode()->onlyValue;
     }
-};
-
-
-
+};  // namespace myTrie
 
 //------------------------DEBUG, CORRECTNESS CHECK------------------------------
 
@@ -809,7 +744,6 @@ void print_htrie_map(htrie_map<CharT, T> hm,
 }
 }  // namespace myTrie
 
-
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -882,12 +816,16 @@ int main() {
     f4.close();
     cout.rdbuf(&null_buffer);
 
+    m.begin()->second = 123456;
+
     // checking:
     std::fstream f2("test_res_good", std::ios::out);
     std::fstream f3("test_res_wrong", std::ios::out);
     for (auto it = m.begin(); it != m.end(); it++) {
-        if (hm[it->first] == it->second) {
-            f2 << "good: " << it->first << std::endl;
+        uint32_t gotfromhm = hm[it->first];
+        if (gotfromhm == it->second) {
+            f2 << "good: " << it->first << " hm: " << gotfromhm
+               << " map: " << it->second << std::endl;
         } else {
             f3 << "wrong answer: " << it->first << " got " << hm[it->first]
                << " from hm , actual value: " << it->second << std::endl;
@@ -910,11 +848,16 @@ int main() {
     f3.close();
     cout.rdbuf(coutBuf);
 
+    std::ifstream fofwrong("test_res_wrong", std::ios::in);
+    char line[1024] = {0};
+    while (fofwrong.getline(line, sizeof(line))) {
+        std::cerr << line << std::endl;
+    }
     cout << "finish checking and printed correct/wrong res\n";
 
     while (true) {
-        cout.rdbuf(fileBufcc);
         cout << "check url: ";
+        cout.rdbuf(fileBufcc);
         cin >> url;
         sta = get_usec();
         cout << "check url: " << url << " got " << hm[url] << endl;
