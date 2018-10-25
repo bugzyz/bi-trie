@@ -118,7 +118,7 @@ class htrie_map {
             anode::parent = p;
         }
 
-        trie_node* createAHashNodeWith(CharT key) {
+        trie_node* create_trienode_With(CharT key) {
             trie_node* new_trie_node = new trie_node(key, this);
             // TODO: remove the hard code
             new_trie_node->onlyHashNode = new hash_node(BURST_POINT);
@@ -178,6 +178,7 @@ class htrie_map {
         std::vector<array_bucket> kvs;
         size_t burst_threshold;
         T onlyValue;
+        bool haveValue;
 
         hash_node(size_t customized_burst_threshold) {
             anode::_node_type = node_type::HASH_NODE;
@@ -186,7 +187,8 @@ class htrie_map {
             burst_threshold = customized_burst_threshold;
             debugStream << "new hash_node is init, burst_threshold set to be "
                         << burst_threshold << std::endl;
-            onlyValue = 999;
+            onlyValue = T();
+            haveValue = false;
         }
 
         bool need_burst() {
@@ -198,6 +200,11 @@ class htrie_map {
                         << std::endl;
             debugStream << "burst_threshold: " << burst_threshold << std::endl;
             return node_element_count > burst_threshold;
+        }
+
+        T& access_onlyValue_in_hashnode(htrie_map* hm) {
+            haveValue = true;
+            return onlyValue;
         }
 
         // find the key with keysize in its kvs
@@ -212,10 +219,11 @@ class htrie_map {
                 // add new or existed key, if existed, it will be overwritten at
                 // the loop below
                 elements[std::string(key, keysize)] = T{};
+
+                // gather elements in 'this' hash_node to burst
                 for (auto it = kvs.begin(); it != kvs.end(); it++) {
-                    // TODO: use the reference to reduce the extra copy
-                    std::vector<std::pair<std::string, T>> bucket_element =
-                        it->get_item_in_array_bucket();
+                    std::vector<std::pair<std::string, T>> bucket_element;
+                    it->get_item_in_array_bucket(bucket_element);
                     for (auto itt = bucket_element.begin();
                          itt != bucket_element.end(); itt++) {
                         elements[itt->first] = itt->second;
@@ -227,22 +235,20 @@ class htrie_map {
                                 << " with value: " << it->second << std::endl;
                 }
                 debugStream << "bursting in " << (void*)this << std::endl;
-                size_t burstPos = 0;
+
                 // update the targetNode
                 targetNode = burst(elements, key, keysize, this->anode::parent,
                                    move_pos, hm);
                 debugStream << "target_node found: " << (void*)targetNode
                             << std::endl;
+
+                // TODO: if have onlyValue, it has to be moved to the created
+                // trie_node
                 delete this;
-            }
 
-            if (keysize == 0) {
-                return onlyValue;
-            }
-
-            // TODO: replace the empty onlyValue
-            if (targetNode->onlyValue != 999) {
-                return targetNode->onlyValue;
+                if (targetNode->haveValue != false) {
+                    return targetNode->onlyValue;
+                }
             }
 
             size_t hashval = myTrie::hashRelative::hash<CharT>(
@@ -271,42 +277,6 @@ class htrie_map {
             std::map<CharT, std::map<std::string, T>> splitElements;
             for (auto it = elements.begin(); it != elements.end(); it++) {
                 splitElements[(it->first)[0]][it->first.substr(1)] = it->second;
-            }
-
-            // TODO: refine
-            if (splitElements.size() == 1) {
-                CharT k = splitElements.begin()->first;
-                std::map<std::string, T> newElement =
-                    splitElements.begin()->second;
-                trie_node* cur_trie_node = new trie_node(k, nullptr);
-
-                if (p == nullptr) {
-                    // bursting in a root hashnode
-                    // the t_root is update to a empty trie_node
-                    hm->t_root = new trie_node('\0', nullptr);
-                    debugStream << "create new t_root: NOW THE T_ROOT IS  "
-                                << (void*)hm->t_root << std::endl;
-                    cur_trie_node->anode::setParent((trie_node*)hm->t_root);
-                    ((trie_node*)hm->t_root)->addChildTrieNode(cur_trie_node);
-                    debugStream << "root add new child: "
-                                << cur_trie_node->anode::myChar << std::endl;
-                    p = (trie_node*)hm->t_root;
-                } else {
-                    // bursting in a normal hashnode
-                    cur_trie_node->anode::setParent(p);
-                    p->addChildTrieNode(cur_trie_node);
-                    debugStream
-                        << "not-root: " << (void*)p
-                        << " add new child: " << cur_trie_node->anode::myChar
-                        << std::endl;
-                }
-
-                if (k == *(key)) {
-                    move_pos++;
-                }
-
-                return burst(newElement, key + 1, keysize - 1, cur_trie_node,
-                             move_pos, hm);
             }
 
             for (auto it = splitElements.begin(); it != splitElements.end();
@@ -342,6 +312,12 @@ class htrie_map {
                 }
 
                 std::map<std::string, T>& curKV = it->second;
+
+                if (splitElements.size() == 1) {
+                    return burst(curKV, key + 1, keysize - 1, cur_trie_node,
+                                 move_pos, hm);
+                }
+
                 hash_node* hnode = new hash_node(burst_threshold);
                 hnode->anode::setParent(cur_trie_node);
                 cur_trie_node->setOnlyHashNode(hnode);
@@ -352,6 +328,7 @@ class htrie_map {
                     std::string temp = itt->first;
 
                     if (temp.size() == 0) {
+                        hnode->haveValue = true;
                         hnode->onlyValue = itt->second;
                         if (*(CharT*)key == cur_trie_node->anode::myChar &&
                             myTrie::hashRelative::keyEqual(temp.data(),
@@ -549,8 +526,8 @@ class htrie_map {
             debugStream << "-----------------------------\n\n";
         }
 
-        std::vector<std::pair<std::string, T>> get_item_in_array_bucket() {
-            std::vector<std::pair<std::string, T>> res;
+        void get_item_in_array_bucket(
+            std::vector<std::pair<std::string, T>>& res) {
             CharT* buf = arr_buffer;
             while (!is_end_of_bucket(buf)) {
                 size_t length = read_key_size(buf);
@@ -568,7 +545,6 @@ class htrie_map {
                 res.push_back(std::pair<std::string, T>(item, v));
                 buf = buf + sizeof(T);
             }
-            return res;
         }
     };
 
@@ -614,16 +590,18 @@ class htrie_map {
 
         for (size_t pos = 0; pos < key_size; pos++) {
             if (current_node->isTrieNode()) {
-                anode* father_node = current_node;
+                anode* parent = current_node;
                 current_node =
                     ((trie_node*)current_node)->findChildNode(key[pos]);
 
-                // can't find, need to create a trie_node with a hashtable
-                // child
                 if (current_node == nullptr) {
-                    current_node = ((trie_node*)father_node)
-                                       ->createAHashNodeWith(key[pos]);
+                    // can't find, create a relative trie_node and a hashnode
+                    // child, set current_node as the trie_node
+                    current_node =
+                        ((trie_node*)parent)->create_trienode_With(key[pos]);
                 } else if (current_node->isHashNode()) {
+                    // if find the target hashnode instead of moving the pos,
+                    // pos should be recover
                     pos--;
                 }
             } else {
@@ -631,7 +609,9 @@ class htrie_map {
                     ->access_kv_in_hashnode(key + pos, key_size - pos, this);
             }
         }
-        return ((trie_node*)current_node)->getOnlyHashNode()->onlyValue;
+        return ((trie_node*)current_node)
+            ->getOnlyHashNode()
+            ->access_onlyValue_in_hashnode(this);
     }
 };  // namespace myTrie
 
