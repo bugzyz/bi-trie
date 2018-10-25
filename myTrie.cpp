@@ -47,7 +47,6 @@ std::size_t hash(const CharT* key, std::size_t key_size) {
 template <class CharT>
 bool keyEqual(const CharT* key_lhs, std::size_t key_size_lhs,
               const CharT* key_rhs, std::size_t key_size_rhs) {
-    // TODO: is it neccessary?
     if (key_size_lhs == 0 && key_size_rhs == 0) {
         return true;
     }
@@ -57,25 +56,6 @@ bool keyEqual(const CharT* key_lhs, std::size_t key_size_lhs,
     } else {
         return std::memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(CharT)) == 0;
     }
-}
-template <class CharT>
-void printDiff(const CharT* key_lhs, std::size_t key_size_lhs,
-               const CharT* key_rhs, std::size_t key_size_rhs, bool equal) {
-    debugStream << "==comparing: \n";
-    for (size_t i = 0; i != key_size_lhs; i++) {
-        // debugStream << (unsigned int)*(key_lhs + i) << ',';
-        debugStream << *(key_lhs + i) << ',';
-    }
-    debugStream << "with size:" << key_size_lhs << "\n and \n";
-    for (size_t i = 0; i != key_size_rhs; i++) {
-        // debugStream << (unsigned int)*(key_rhs + i) << ',';
-        debugStream << *(key_rhs + i) << ',';
-    }
-    debugStream << "with size:" << key_size_rhs << std::endl;
-    debugStream << " keyEqual res: "
-                << (std::memcmp(key_lhs, key_rhs,
-                                key_size_lhs * sizeof(CharT)) == 0)
-                << " keyEuqal res: " << equal << std::endl;
 }
 }  // namespace hashRelative
 }  // namespace myTrie
@@ -615,8 +595,9 @@ class htrie_map {
     }
 };  // namespace myTrie
 
-//------------------------DEBUG, CORRECTNESS CHECK------------------------------
 
+//------------------------DEBUG, CORRECTNESS CHECK------------------------------
+namespace debuging {
 using std::cout;
 using std::endl;
 template <class CharT, class T>
@@ -722,6 +703,27 @@ void print_htrie_map(htrie_map<CharT, T> hm,
     // node check
     // print_tree_struct<CharT, T>(hm.t_root);
 }
+
+template <class CharT>
+void printDiff(const CharT* key_lhs, std::size_t key_size_lhs,
+               const CharT* key_rhs, std::size_t key_size_rhs, bool equal) {
+    debugStream << "==comparing: \n";
+    for (size_t i = 0; i != key_size_lhs; i++) {
+        // debugStream << (unsigned int)*(key_lhs + i) << ',';
+        debugStream << *(key_lhs + i) << ',';
+    }
+    debugStream << "with size:" << key_size_lhs << "\n and \n";
+    for (size_t i = 0; i != key_size_rhs; i++) {
+        // debugStream << (unsigned int)*(key_rhs + i) << ',';
+        debugStream << *(key_rhs + i) << ',';
+    }
+    debugStream << "with size:" << key_size_rhs << std::endl;
+    debugStream << " keyEqual res: "
+                << (std::memcmp(key_lhs, key_rhs,
+                                key_size_lhs * sizeof(CharT)) == 0)
+                << " keyEuqal res: " << equal << std::endl;
+}
+}  // namespace debuging
 }  // namespace myTrie
 
 #include <stdint.h>
