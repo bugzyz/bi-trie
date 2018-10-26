@@ -34,6 +34,18 @@ class htrie_map {
         bool isTrieNode() { return _node_type == node_type::TRIE_NODE; }
         void setParent(trie_node* p) { parent = p; }
         void setChar(CharT c) { myChar = c; }
+
+        void deleteMe() {
+            if (this->isTrieNode()) {
+                std::map<CharT, anode*> cs = ((trie_node*)this)->childs;
+                for (auto it = cs.begin(); it != cs.end(); it++) {
+                    it->second->deleteMe();
+                    delete it->second;
+                }
+            } else {
+                delete this;
+            }
+        }
     };
     class trie_node : public anode {
        public:
@@ -45,6 +57,12 @@ class htrie_map {
             anode::_node_type = node_type::TRIE_NODE;
             anode::myChar = c;
             anode::parent = p;
+        }
+
+        ~trie_node() {
+            std::map<CharT, anode*> empty;
+            childs.swap(empty);
+            free(onlyHashNode);
         }
 
         trie_node* create_trienode_With(CharT key,
@@ -102,6 +120,11 @@ class htrie_map {
 
             onlyValue = T();
             haveValue = false;
+        }
+
+        ~hash_node(){
+            std::vector<array_bucket> empty;
+            kvs.swap(empty);
         }
 
         bool need_burst() {
@@ -437,6 +460,8 @@ class htrie_map {
             ->getOnlyHashNode()
             ->access_onlyValue_in_hashnode(this);
     }
+
+    void deleteMyself() { t_root->deleteMe(); }
 };  // namespace myTrie
 
 }  // namespace myTrie
