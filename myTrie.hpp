@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include "hashFunc.hpp"
 
 // #define BUCKET_INIT_COUNT 32
@@ -122,7 +123,7 @@ class htrie_map {
             haveValue = false;
         }
 
-        ~hash_node(){
+        ~hash_node() {
             std::vector<array_bucket> empty;
             kvs.swap(empty);
         }
@@ -141,8 +142,9 @@ class htrie_map {
         }
 
         // find the key with keysize in its kvs
-        T& access_kv_in_hashnode(const CharT* key, size_t keysize,
-                                 htrie_map* hm) {
+        T& access_kv_in_hashnode(
+            const CharT* key, size_t keysize, htrie_map* hm,
+            typename myTrie::htrie_map<CharT, T>::SearchPoint* sp) {
             hash_node* targetNode = this;
             size_t move_pos = 0;
 
@@ -172,6 +174,10 @@ class htrie_map {
                 delete this;
 
                 if (targetNode->haveValue != false) {
+                    if (sp != nullptr) {
+                        sp->hnode = targetNode;
+                        sp->pos = nullptr;
+                    }
                     return targetNode->onlyValue;
                 }
             }
@@ -179,8 +185,14 @@ class htrie_map {
             size_t hashval = myTrie::hashRelative::hash<CharT>(
                                  key + move_pos, keysize - move_pos) %
                              hn_bucket_num;
-            return targetNode->kvs[hashval].access_kv_in_bucket(
-                key + move_pos, keysize - move_pos);
+            if (sp != nullptr) {
+                sp->hnode = targetNode;
+                return targetNode->kvs[hashval].access_kv_in_bucket(
+                    key + move_pos, keysize - move_pos, &(sp->pos), hm);
+            } else {
+                return targetNode->kvs[hashval].access_kv_in_bucket(
+                    key + move_pos, keysize - move_pos, nullptr, hm);
+            }
         }
 
         std::pair<std::string, T> getSubStr(std::pair<std::string, T>& element,
@@ -246,15 +258,21 @@ class htrie_map {
                                                            keysize - 1)) {
                             target_hashNode = hnode;
                         }
+                        SearchPoint new_sp(hnode, nullptr);
+                        hm->v2k[itt->second] = new_sp;
                         continue;
                     }
 
                     size_t hashval = myTrie::hashRelative::hash<CharT>(
                                          temp.data(), temp.size()) %
                                      hn_bucket_num;
+                    SearchPoint new_sp;
                     // write the value to the entry
                     hnode->kvs[hashval].access_kv_in_bucket(
-                        temp.data(), temp.size()) = itt->second;
+                        temp.data(), temp.size(), &(new_sp.pos), hm) =
+                        itt->second;
+                    new_sp.hnode = hnode;
+                    hm->v2k[itt->second] = new_sp;
 
                     if (*(CharT*)key == cur_trie_node->anode::myChar &&
                         myTrie::hashRelative::keyEqual(temp.data(), temp.size(),
@@ -322,11 +340,30 @@ class htrie_map {
             return new_buffer_size;
         }
 
-        T& access_kv_in_bucket(const CharT* target, size_t keysize) {
+        void resetBucketElement_v2k(CharT* arr_buffer,
+                                    htrie_map<CharT, T>* hm) {
+            CharT* buffer_ptr = arr_buffer;
+            size_t pos = 0;
+            while (!is_end_of_bucket(buffer_ptr)) {
+                size_t length = read_key_size(buffer_ptr);
+                T* value_pos = (T*)(buffer_ptr + sizeof(KeySizeT) + length);
+
+                (hm->v2k[*value_pos]).pos = buffer_ptr;
+
+                // move ptr to next header, skip keysize, string, value
+                buffer_ptr = buffer_ptr + sizeof(KeySizeT) + length + sizeof(T);
+            }
+        }
+
+        T& access_kv_in_bucket(const CharT* target, size_t keysize, CharT** pos,
+                               htrie_map<CharT, T>* hm) {
             std::pair<size_t, bool> found = find_in_bucket(target, keysize);
 
             if (found.second) {
                 // found the target, return the value reference
+                if (pos != nullptr) {
+                    *pos = arr_buffer + found.first;
+                }
                 return get_val_ref(found.first);
 
             } else {
@@ -339,11 +376,17 @@ class htrie_map {
                     std::cerr << "realloc failed!!!!!!!!!1" << std::endl;
                     exit(-1);
                 }
+                if (arr_buffer != new_buffer) {
+                    resetBucketElement_v2k(new_buffer, hm);
+                }
                 arr_buffer = new_buffer;
                 buffer_size = new_size;
 
                 T v = T{};
                 append_impl(target, keysize, arr_buffer + found.first, v);
+                if (pos != nullptr) {
+                    *pos = arr_buffer + found.first;
+                }
                 bucket_element_count++;
                 return get_val_ref(found.first);
             }
@@ -398,8 +441,49 @@ class htrie_map {
         }
     };
 
+    class SearchPoint {
+       public:
+        hash_node* hnode;
+        CharT* pos;
+
+        SearchPoint() : hnode(nullptr), pos(nullptr) {}
+        SearchPoint(hash_node* h, CharT* p) : hnode(h), pos(p) {}
+
+        std::string getString() {
+            std::stringstream ss;
+            trie_node* cur_node = hnode->anode::parent;
+            while (cur_node != nullptr && cur_node->anode::myChar != '\0') {
+                ss << (char)cur_node->anode::myChar;
+                cur_node = cur_node->anode::parent;
+            }
+            std::string reverseString = ss.str();
+            std::stringstream ss2;
+            size_t reverseSize = reverseString.size();
+            for (int i = 0; i != reverseSize; i++) {
+                ss2 << reverseString[reverseSize - 1 - i];
+            }
+
+            std::string res;
+            if (pos != nullptr) {
+                KeySizeT key_size;
+                std::memcpy(&key_size, pos, sizeof(KeySizeT));
+
+                size_t length = (size_t)key_size;
+
+                char* temp = (char*)malloc(length + 1);
+                std::memcpy(temp, pos + sizeof(KeySizeT), length);
+                temp[length] = '\0';
+                res = std::string(temp);
+                free(temp);
+                ss2 << res;
+            }
+            return ss2.str();
+        }
+    };
+
    public:
     anode* t_root;
+    std::map<T, SearchPoint> v2k;
     htrie_map(size_t customized_burst_threshold = DEFAULT_BURST_THRESHOLD,
               size_t customized_bucket_count = DEFAULT_BURST_THRESHOLD) {
         t_root =
@@ -419,18 +503,32 @@ class htrie_map {
     }
 
     T& access_operator(const CharT* key, size_t key_size) {
-        return find(key, key_size);
+        return find(key, key_size, nullptr);
     }
 
-    T& find(const CharT* key, size_t key_size) {
-        anode* current_node = t_root;
+    const T searchByKey(std::string key) {
+        return find(key.data(), key.size(), nullptr);
+    }
 
+    std::string searchByValue(T v) {
+        return v2k[v].getString();
+    }
+
+    bool insertKV(std::string key, T v) {
+        SearchPoint sp;
+        find(key.data(), key.size(), &sp) = v;
+        v2k[v] = sp;
+        return true;
+    }
+
+    T& find(const CharT* key, size_t key_size, SearchPoint* sp) {
+        anode* current_node = t_root;
         if (t_root->isHashNode()) {
             // find a key in hash_node
             // if find: return the v reference
             // if notfind: write the key and return the v reference
             return ((hash_node*)current_node)
-                ->access_kv_in_hashnode(key, key_size, this);
+                ->access_kv_in_hashnode(key, key_size, this, sp);
         }
 
         for (size_t pos = 0; pos < key_size; pos++) {
@@ -453,8 +551,13 @@ class htrie_map {
                 }
             } else {
                 return ((hash_node*)current_node)
-                    ->access_kv_in_hashnode(key + pos, key_size - pos, this);
+                    ->access_kv_in_hashnode(key + pos, key_size - pos, this,
+                                            sp);
             }
+        }
+        if (sp != nullptr) {
+            sp->hnode = ((trie_node*)current_node)->getOnlyHashNode();
+            sp->pos = nullptr;
         }
         return ((trie_node*)current_node)
             ->getOnlyHashNode()
