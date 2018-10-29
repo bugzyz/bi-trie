@@ -42,26 +42,29 @@ class NullBuffer : public std::streambuf {
 
 using namespace std;
 int main() {
+    std::cout << "starto!\n";
     // test data
     vector<uint32_t> bursts;
     vector<uint32_t> ratios;
 
-    bursts.push_back(80);
-    bursts.push_back(150);
-    bursts.push_back(300);
-    bursts.push_back(550);
-    bursts.push_back(800);
-    bursts.push_back(999);
-    bursts.push_back(1500);
-    bursts.push_back(4500);
-    bursts.push_back(7200);
-    bursts.push_back(9800);
-    bursts.push_back(11001);
-    bursts.push_back(13200);
+    // bursts.push_back(80);
+    // bursts.push_back(150);
+    // bursts.push_back(300);
+    // bursts.push_back(550);
+    // bursts.push_back(800);
+    // bursts.push_back(999);
+    // bursts.push_back(9800);
+
+    //todo
+    // bursts.push_back(1500);
+    // bursts.push_back(4500);
+    // bursts.push_back(7200);
+    // bursts.push_back(11001);
+    // bursts.push_back(13200);
     //
-    bursts.push_back(16384);
-    bursts.push_back(20000);
-    bursts.push_back(25000);
+    // bursts.push_back(16384);
+    // bursts.push_back(20000);
+    // bursts.push_back(25000);
     bursts.push_back(36000);
     bursts.push_back(42000);
     bursts.push_back(50000);
@@ -84,7 +87,8 @@ int main() {
     ratios.push_back(2000);
     ratios.push_back(0);
 
-    fstream ff("result", std::ios::out);
+    fstream ff1("result_key", std::ios::out);
+    fstream ff2("result_value", std::ios::out);
     // burst_threshold
     vector<unsigned int> bt;
     // bucket_num
@@ -106,23 +110,24 @@ int main() {
     // std::map<string, uint32_t> m;
 
     staUm = get_usec();
-    uint64_t startUsedMem = getLftMem();
+    uint64_t startUsedMemUm = getLftMem();
 
     uint32_t count = 0;
     while (f >> url >> v) {
         m[url] = v;
-        // todo
-        // m2[v] = url;
+        m2[v] = url;
         count++;
     }
-    uint64_t endUsedMem = getLftMem();
+    uint64_t endUsedMemUm = getLftMem();
     endUm = get_usec();
     f.close();
     cout << "unordered_map use time: usec: \t\t\t" << endUm - staUm
          << std::endl;
-    ff << "unordered_map time: ," << endUm - staUm << ","
-       << "mem used: " << endUsedMem - startUsedMem << ",\n";
-
+    ff1 << "unordered_map_time: " << endUm - staUm << " "
+        << "mem used: " << endUsedMemUm - startUsedMemUm << "\n";
+    ff2 << "unordered_map_time: " << endUm - staUm << " "
+        << "mem used: " << endUsedMemUm - startUsedMemUm << "\n";
+    uint32_t last_time_bn = 0;
     for (int i = 0; i != bursts.size(); i++) {
         for (int j = 0; j != ratios.size(); j++) {
             uint32_t bp = bursts[i];
@@ -133,38 +138,37 @@ int main() {
                 bn = bp / ratios[j];
             if (bn == 0) continue;
 
+            if (bn == last_time_bn) {
+                continue;
+            }
+
+            last_time_bn = bn;
+
             staTm = get_usec();
             // todo:
             myTrie::htrie_map<char, uint32_t> hm(bp, bn);
             std::fstream f1("str_normal");
 
-            startUsedMem = getLftMem();
+            uint64_t startUsedMemTm = getLftMem();
             while (f1 >> url >> v) {
-                // cout << "---------------------------------------> working on
-                // num."
-                //      << count << " url: " << url << " set value: " << v <<
-                //      endl;
-                hm[url] = v;
+                hm.insertKV(url, v);
             }
-            endUsedMem = getLftMem();
+            uint64_t endUsedMemTm = getLftMem();
             f1.close();
 
             endTm = get_usec();
-            ff << "myTrie(" << hm.burst_threshold << ",\t " << hm.bucket_num
-               << ") use time: usec: ," << endTm - staTm << ","
-               << "mem used: " << endUsedMem - startUsedMem << ",\t";
+
             cout << "myTrie(" << hm.burst_threshold << ",\t " << hm.bucket_num
                  << ") use time: usec: \t\t" << endTm - staTm << std::endl;
             cout << "finish trie_map constructing\n";
 
-            m.begin()->second = 123456;
-
             int64_t um_hm = 0;
             // checking:
-            std::fstream f3("test_res_wrong", std::ios::out);
+            std::fstream f3("test_res_wrong_key",
+                            std::ios::out | std::ios::app);
             for (auto it = m.begin(); it != m.end(); it++) {
                 int64_t hm_get_start = get_usec();
-                uint32_t gotfromhm = hm[it->first];
+                uint32_t gotfromhm = hm.searchByKey(it->first);
                 int64_t hm_get_end = get_usec();
 
                 int64_t um_get_start = get_usec();
@@ -176,53 +180,100 @@ int main() {
 
                 if (gotfromhm == it->second) {
                 } else {
-                    f3 << "wrong answer: " << it->first << " got "
+                    f3 << "key_wrong answer: " << it->first << " got "
                        << hm[it->first]
                        << " from hm , actual value: " << it->second
                        << std::endl;
                     uint32_t v = it->second;
-                    f3 << "got from hm: ";
-                    for (size_t i = 0; i != sizeof(v); i++) {
-                        f3 << (unsigned int)*(
-                                  (char*)(&(hm[it->first]) + sizeof(char) * i))
-                           << ",";
-                    }
-                    f3 << "\ngot from file: ";
+                    f3 << "got from hm: " << hm.searchByKey(it->first);
+                    f3 << "\ngot from file: " << v;
                     for (size_t i = 0; i != sizeof(v); i++) {
                         f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
                            << ",";
                     }
                     f3 << std::endl;
                     f3.flush();
+                    std::cout << "wrong answer!\n";
+                    exit(0);
                 }
             }
             f3.close();
             cout << "compare to unordered_map: accessing cost diff: "
                  << um_hm / count << endl;
             ;
-            ff << "compare to unordered_map: accessing cost total diff: "
-               << um_hm << ",\t avg: " << um_hm / count << endl;
+            ff1 << "search by key: " << hm.burst_threshold << ","
+                << hm.bucket_num << "\t use time: usec: ," << endTm - staTm
+                << ","
+                << "mem used: ," << endUsedMemTm - startUsedMemTm << ",\t";
+            ff1 << "accessing cost total diff: ," << um_hm
+                << ",\t avg: " << um_hm / count << endl;
             ;
-            ff << std::endl;
 
+            // checking:
+            std::fstream f4("test_res_wrong_value",
+                            std::ios::out | std::ios::app);
+            for (auto it = m2.begin(); it != m2.end(); it++) {
+                int64_t hm_get_start = get_usec();
+                std::string gotfromhm = hm.searchByValue(it->first);
+                int64_t hm_get_end = get_usec();
+
+                int64_t um_get_start = get_usec();
+                std::string gotfromum = m2[it->first];
+                int64_t um_get_end = get_usec();
+
+                um_hm +=
+                    (um_get_end - um_get_start) - (hm_get_end - hm_get_start);
+
+                if (gotfromhm == it->second) {
+                } else {
+                    f4 << "value_wrong answer: " << it->first << " got "
+                       << hm.searchByValue(it->first)
+                       << " from hm , actual value: " << it->second
+                       << std::endl;
+                    std::string v = it->second;
+                    f4 << "got from hm: " << hm.searchByValue(it->first);
+                    f4 << "\ngot from file: " << v;
+                    f4 << std::endl;
+                    f4.flush();
+                    std::cout << "wrong answer!\n";
+                    exit(0);
+                }
+            }
+            f4.close();
+            cout << "compare to unordered_map: accessing cost diff: "
+                 << um_hm / count << endl;
+            ;
+            ff2 << "search by value: " << hm.burst_threshold << ","
+                << hm.bucket_num << "\t use time: usec: ," << endTm - staTm
+                << ","
+                << "mem used: ," << endUsedMemTm - startUsedMemTm << ",\t";
+            ff2 << "accessing cost total diff: ," << um_hm
+                << ",\t avg: " << um_hm / count << endl;
+            ;
             //--------------printing wrong result-------------------
-            std::ifstream fofwrong("test_res_wrong", std::ios::in);
+            std::ifstream f4wrong1("test_res_wrong_key", std::ios::in);
             char line[1024] = {0};
-            while (fofwrong.getline(line, sizeof(line))) {
+            while (f4wrong1.getline(line, sizeof(line))) {
                 std::cerr << line << std::endl;
             }
 
-            startUsedMem = getLftMem();
+            std::ifstream f4wrong2("test_res_wrong_value", std::ios::in);
+            while (f4wrong2.getline(line, sizeof(line))) {
+                std::cerr << line << std::endl;
+            }
+
+            startUsedMemTm = getLftMem();
 
             hm.deleteMyself();
-            endUsedMem = getLftMem();
-            cout << "release: " << startUsedMem - endUsedMem << "\n";
+            endUsedMemTm = getLftMem();
+            cout << "release: " << startUsedMemTm - endUsedMemTm << "\n";
             cout << "finish checking and printed correct/wrong "
                     "res\n--------------------------------------\n";
         }
     }
 
-    ff.close();
+    ff1.close();
+    ff2.close();
 
     // while (true) {
     //     cout << "check url: ";
