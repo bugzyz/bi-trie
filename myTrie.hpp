@@ -1,5 +1,6 @@
 #include <iostream>
 #include <sstream>
+#include <stack>
 #include "hashFunc.hpp"
 
 // #define BUCKET_INIT_COUNT 32
@@ -450,17 +451,16 @@ class htrie_map {
         SearchPoint(hash_node* h, CharT* p) : hnode(h), pos(p) {}
 
         std::string getString() {
-            std::stringstream ss;
             trie_node* cur_node = hnode->anode::parent;
+            std::stack<char> st;
             while (cur_node != nullptr && cur_node->anode::myChar != '\0') {
-                ss << (char)cur_node->anode::myChar;
+                st.push((char)cur_node->anode::myChar);
                 cur_node = cur_node->anode::parent;
             }
-            std::string reverseString = ss.str();
-            std::stringstream ss2;
-            size_t reverseSize = reverseString.size();
-            for (int i = 0; i != reverseSize; i++) {
-                ss2 << reverseString[reverseSize - 1 - i];
+            std::stringstream ss;
+            while (!st.empty()) {
+                ss << st.top();
+                st.pop();
             }
 
             std::string res;
@@ -475,9 +475,9 @@ class htrie_map {
                 temp[length] = '\0';
                 res = std::string(temp);
                 free(temp);
-                ss2 << res;
+                ss << res;
             }
-            return ss2.str();
+            return ss.str();
         }
     };
 
@@ -498,9 +498,7 @@ class htrie_map {
         return find(key.data(), key.size(), nullptr);
     }
 
-    std::string searchByValue(T v) {
-        return v2k[v].getString();
-    }
+    std::string searchByValue(T v) { return v2k[v].getString(); }
 
     bool insertKV(std::string key, T v) {
         SearchPoint sp;
