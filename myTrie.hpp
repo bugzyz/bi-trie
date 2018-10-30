@@ -494,18 +494,6 @@ class htrie_map {
 
     void setRoot(anode* node) { t_root = node; }
 
-    T& operator[](std::string key) {
-        return access_operator(key.data(), key.size());
-    }
-
-    T& operator[](const CharT* key) {
-        return access_operator(key, std::strlen(key));
-    }
-
-    T& access_operator(const CharT* key, size_t key_size) {
-        return find(key, key_size, nullptr);
-    }
-
     const T searchByKey(std::string key) {
         return find(key.data(), key.size(), nullptr);
     }
