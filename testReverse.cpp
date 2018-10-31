@@ -3,19 +3,36 @@
 #include <map>
 #include <string>
 #include "myTrie.hpp"
+
+#include <stdint.h>
+#include <sys/time.h>
+#include <unistd.h>
+static uint64_t get_usec() {
+    struct timespec tp;
+    /* POSIX.1-2008: Applications should use the clock_gettime() function
+       instead of the obsolescent gettimeofday() function. */
+    /* NOTE: The clock_gettime() function is only available on Linux.
+       The mach_absolute_time() function is an alternative on OSX. */
+    clock_gettime(CLOCK_MONOTONIC, &tp);
+    return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
+}
+
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(50, 5);
+    myTrie::htrie_map<char, uint32_t> hm(1500, 1);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");
     string url;
     uint32_t v;
+    uint64_t sta = get_usec();
     while (f >> url >> v) {
         hm.insertKV(url, v);
         m1[url] = v;
         m2[v] = url;
     }
+    uint64_t end = get_usec();
+    std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
 
     uint64_t count = m1.size();
     uint64_t searchByK_count_good = 0;
@@ -46,7 +63,7 @@ int main() {
         }
     }
     std::cout << "-------------------\n";
-    
+
     cout << "total: " << count << endl;
     cout << "check key: good:" << searchByK_count_good
          << " bad:" << searchByK_count_bad << std::endl;

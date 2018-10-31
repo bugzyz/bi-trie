@@ -177,7 +177,8 @@ class htrie_map {
                 if (targetNode->haveValue != false) {
                     if (sp != nullptr) {
                         sp->hnode = targetNode;
-                        sp->pos = nullptr;
+                        sp->abucket = nullptr;
+                        sp->pos = 0;
                     }
                     return targetNode->onlyValue;
                 }
@@ -189,7 +190,7 @@ class htrie_map {
             if (sp != nullptr) {
                 sp->hnode = targetNode;
                 return targetNode->kvs[hashval].access_kv_in_bucket(
-                    key + move_pos, keysize - move_pos, &(sp->pos), hm);
+                    key + move_pos, keysize - move_pos, sp, hm);
             } else {
                 return targetNode->kvs[hashval].access_kv_in_bucket(
                     key + move_pos, keysize - move_pos, nullptr, hm);
@@ -259,7 +260,7 @@ class htrie_map {
                                                            keysize - 1)) {
                             target_hashNode = hnode;
                         }
-                        SearchPoint new_sp(hnode, nullptr);
+                        SearchPoint new_sp(hnode, nullptr, 0);
                         hm->v2k[itt->second] = new_sp;
                         continue;
                     }
@@ -268,11 +269,10 @@ class htrie_map {
                                          temp.data(), temp.size()) %
                                      hn_bucket_num;
                     SearchPoint new_sp;
+                    new_sp.hnode = hnode;
                     // write the value to the entry
                     hnode->kvs[hashval].access_kv_in_bucket(
-                        temp.data(), temp.size(), &(new_sp.pos), hm) =
-                        itt->second;
-                    new_sp.hnode = hnode;
+                        temp.data(), temp.size(), &new_sp, hm) = itt->second;
                     hm->v2k[itt->second] = new_sp;
 
                     if (*(CharT*)key == cur_trie_node->anode::myChar &&
@@ -356,14 +356,16 @@ class htrie_map {
             }
         }
 
-        T& access_kv_in_bucket(const CharT* target, size_t keysize, CharT** pos,
+        T& access_kv_in_bucket(const CharT* target, size_t keysize,
+                               typename htrie_map<CharT, T>::SearchPoint* sp,
                                htrie_map<CharT, T>* hm) {
             std::pair<size_t, bool> found = find_in_bucket(target, keysize);
 
             if (found.second) {
                 // found the target, return the value reference
-                if (pos != nullptr) {
-                    *pos = arr_buffer + found.first;
+                if (sp != nullptr) {
+                    sp->abucket = this;
+                    sp->pos = found.first;
                 }
                 return get_val_ref(found.first);
 
@@ -377,16 +379,14 @@ class htrie_map {
                     std::cerr << "realloc failed!!!!!!!!!1" << std::endl;
                     exit(-1);
                 }
-                if (arr_buffer != new_buffer) {
-                    resetBucketElement_v2k(new_buffer, hm);
-                }
                 arr_buffer = new_buffer;
                 buffer_size = new_size;
 
                 T v = T{};
                 append_impl(target, keysize, arr_buffer + found.first, v);
-                if (pos != nullptr) {
-                    *pos = arr_buffer + found.first;
+                if (sp != nullptr) {
+                    sp->abucket = this;
+                    sp->pos = found.first;
                 }
                 bucket_element_count++;
                 return get_val_ref(found.first);
@@ -445,10 +445,12 @@ class htrie_map {
     class SearchPoint {
        public:
         hash_node* hnode;
-        CharT* pos;
+        array_bucket* abucket;
+        uint32_t pos;
 
-        SearchPoint() : hnode(nullptr), pos(nullptr) {}
-        SearchPoint(hash_node* h, CharT* p) : hnode(h), pos(p) {}
+        SearchPoint() : hnode(nullptr), pos(0) {}
+        SearchPoint(hash_node* h, array_bucket* ab, uint32_t p)
+            : hnode(h), abucket(ab), pos(p) {}
 
         std::string getString() {
             trie_node* cur_node = hnode->anode::parent;
@@ -462,16 +464,16 @@ class htrie_map {
                 ss << st.top();
                 st.pop();
             }
-
-            std::string res;
-            if (pos != nullptr) {
+            if (abucket != nullptr) {
+                std::string res;
                 KeySizeT key_size;
-                std::memcpy(&key_size, pos, sizeof(KeySizeT));
+                CharT* buf = abucket->arr_buffer;
+                std::memcpy(&key_size, buf + pos, sizeof(KeySizeT));
 
                 size_t length = (size_t)key_size;
 
                 char* temp = (char*)malloc(length + 1);
-                std::memcpy(temp, pos + sizeof(KeySizeT), length);
+                std::memcpy(temp, buf + pos + sizeof(KeySizeT), length);
                 temp[length] = '\0';
                 res = std::string(temp);
                 free(temp);
@@ -543,7 +545,8 @@ class htrie_map {
         }
         if (sp != nullptr) {
             sp->hnode = ((trie_node*)current_node)->getOnlyHashNode();
-            sp->pos = nullptr;
+            sp->abucket = nullptr;
+            sp->pos = 0;
         }
         return ((trie_node*)current_node)
             ->getOnlyHashNode()
