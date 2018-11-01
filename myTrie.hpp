@@ -3,6 +3,11 @@
 #include <stack>
 #include "hashFunc.hpp"
 
+#include <fstream>
+#include <ios>
+#include <iostream>
+#include <string>
+
 // #define BUCKET_INIT_COUNT 32
 // #define BURST_POINT 16384
 
@@ -109,6 +114,7 @@ class htrie_map {
         bool haveValue;
         size_t hn_burst_threshold;
         size_t hn_bucket_num;
+        uint32_t element_count;
 
         hash_node(size_t customized_burst_threshold,
                   size_t customized_bucket_count) {
@@ -122,20 +128,19 @@ class htrie_map {
 
             onlyValue = T();
             haveValue = false;
+
+            element_count = 0;
         }
 
         ~hash_node() {
             std::vector<array_bucket> empty;
+            for (auto it = kvs.begin(); it != kvs.end(); it++) {
+                free(it->arr_buffer);
+            }
             kvs.swap(empty);
         }
 
-        bool need_burst() {
-            size_t node_element_count = 0;
-            for (auto it = kvs.begin(); it != kvs.end(); it++) {
-                node_element_count += it->bucket_element_count;
-            }
-            return node_element_count > hn_burst_threshold;
-        }
+        bool need_burst() { return element_count > hn_burst_threshold; }
 
         T& access_onlyValue_in_hashnode(htrie_map* hm) {
             haveValue = true;
@@ -190,10 +195,12 @@ class htrie_map {
             if (sp != nullptr) {
                 sp->hnode = targetNode;
                 return targetNode->kvs[hashval].access_kv_in_bucket(
-                    key + move_pos, keysize - move_pos, sp, hm);
+                    key + move_pos, keysize - move_pos, sp, hm,
+                    &(targetNode->element_count));
             } else {
                 return targetNode->kvs[hashval].access_kv_in_bucket(
-                    key + move_pos, keysize - move_pos, nullptr, hm);
+                    key + move_pos, keysize - move_pos, nullptr, hm,
+                    &(targetNode->element_count));
             }
         }
 
@@ -272,7 +279,8 @@ class htrie_map {
                     new_sp.hnode = hnode;
                     // write the value to the entry
                     hnode->kvs[hashval].access_kv_in_bucket(
-                        temp.data(), temp.size(), &new_sp, hm) = itt->second;
+                        temp.data(), temp.size(), &new_sp, hm,
+                        &(hnode->element_count)) = itt->second;
                     hm->v2k[itt->second] = new_sp;
 
                     if (*(CharT*)key == cur_trie_node->anode::myChar &&
@@ -289,13 +297,11 @@ class htrie_map {
     class array_bucket {
        public:
         CharT* arr_buffer;
-        size_t bucket_element_count;
         size_t buffer_size;
         static const KeySizeT END_OF_BUCKET =
             std::numeric_limits<KeySizeT>::max();
 
         array_bucket() {
-            bucket_element_count = 0;
             // inited array_bucket: |END_OF_BUCKET|
             arr_buffer = (CharT*)std::malloc(sizeof(END_OF_BUCKET));
             std::memcpy(arr_buffer, &END_OF_BUCKET, sizeof(END_OF_BUCKET));
@@ -358,7 +364,7 @@ class htrie_map {
 
         T& access_kv_in_bucket(const CharT* target, size_t keysize,
                                typename htrie_map<CharT, T>::SearchPoint* sp,
-                               htrie_map<CharT, T>* hm) {
+                               htrie_map<CharT, T>* hm, uint32_t* counter) {
             std::pair<size_t, bool> found = find_in_bucket(target, keysize);
 
             if (found.second) {
@@ -388,7 +394,7 @@ class htrie_map {
                     sp->abucket = this;
                     sp->pos = found.first;
                 }
-                bucket_element_count++;
+                (*counter)++;
                 return get_val_ref(found.first);
             }
         }
@@ -556,4 +562,185 @@ class htrie_map {
     void deleteMyself() { t_root->deleteMe(); }
 };  // namespace myTrie
 
+}  // namespace myTrie
+
+namespace myTrie {
+namespace debuging {
+using std::cout;
+using std::endl;
+uint64_t h_n;
+uint64_t t_n;
+uint64_t hash_node_mem;
+uint64_t trie_node_mem;
+
+template <typename CharT, typename T>
+void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root) {
+    using my = typename myTrie::htrie_map<CharT, T>;
+    if (root == nullptr) {
+        return;
+    }
+    // print bucket
+    if (root->isHashNode()) {
+        hash_node_mem += sizeof(root);
+
+        std::vector<typename my::array_bucket> buckets =
+            ((typename my::hash_node*)root)->kvs;
+        // basic bucket cost
+        uint32_t bucket_num = buckets.size();
+        uint32_t bucket_mem = sizeof(typename my::array_bucket) * bucket_num;
+        hash_node_mem += bucket_mem;
+
+        uint32_t bucket_buffer_mem = 0;
+        // bucket buffer cost
+        for (auto it = buckets.begin(); it != buckets.end(); it++) {
+            bucket_buffer_mem += it->buffer_size;
+        }
+        hash_node_mem += bucket_buffer_mem;
+        h_n++;
+
+    } else if (root->isTrieNode()) {
+        trie_node_mem += sizeof(root);
+
+        std::map<CharT, typename myTrie::htrie_map<CharT, T>::anode*> childs =
+            ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)->childs;
+        if (childs.size() == 0) {
+            print_tree_construct<CharT, T>(
+                ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)
+                    ->getOnlyHashNode());
+        } else {
+            for (auto it = childs.begin(); it != childs.end(); it++) {
+                t_n++;
+                print_tree_construct<CharT, T>(it->second);
+            }
+        }
+    } else {
+        std::cout << "node is not trie nor hash node\n";
+        exit(0);
+    }
+    return;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// process_mem_usage(double &, double &) - takes two doubles by reference,
+// attempts to read the system-dependent data for a process' virtual memory
+// size and resident set size, and return the results in KB.
+//
+// On failure, returns 0.0, 0.0
+double last_time_vm_usage = 0;
+double last_time_resident_set = 0;
+
+void clear_process_mem_usage() {
+    using std::ifstream;
+    using std::ios_base;
+    using std::string;
+
+    // 'file' stat seems to give the most reliable results
+    //
+    ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+    // dummy vars for leading entries in stat that we don't care about
+    //
+    string pid, comm, state, ppid, pgrp, session, tty_nr;
+    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    string utime, stime, cutime, cstime, priority, nice;
+    string O, itrealvalue, starttime;
+
+    // the two fields we want
+    //
+    unsigned long vsize;
+    long rss;
+
+    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+        starttime >> vsize >> rss;  // don't care about the rest
+
+    stat_stream.close();
+
+    long page_size_kb = sysconf(_SC_PAGE_SIZE) /
+                        1024;  // in case x86-64 is configured to use 2MB pages
+
+    unsigned long now_vm_usage = vsize;
+    long now_resident_set = rss * page_size_kb;
+
+    last_time_vm_usage = now_vm_usage;
+    last_time_resident_set = now_resident_set;
+}
+
+void process_mem_usage(double& vm_usage, double& resident_set) {
+    using std::ifstream;
+    using std::ios_base;
+    using std::string;
+
+    vm_usage = 0.0;
+    resident_set = 0.0;
+
+    // 'file' stat seems to give the most reliable results
+    //
+    ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+    // dummy vars for leading entries in stat that we don't care about
+    //
+    string pid, comm, state, ppid, pgrp, session, tty_nr;
+    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    string utime, stime, cutime, cstime, priority, nice;
+    string O, itrealvalue, starttime;
+
+    // the two fields we want
+    //
+    unsigned long vsize;
+    long rss;
+
+    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+        starttime >> vsize >> rss;  // don't care about the rest
+
+    stat_stream.close();
+
+    long page_size_kb = sysconf(_SC_PAGE_SIZE) /
+                        1024;  // in case x86-64 is configured to use 2MB pages
+    vm_usage = (vsize - last_time_vm_usage) / 1024.0;
+    resident_set = rss * page_size_kb - last_time_resident_set;
+    std::cout << "cur proc vm_usage: " << vm_usage << " res: " << resident_set
+              << std::endl;
+}
+
+template <typename CharT, typename T>
+double print_res() {
+    std::cout << "trie_node: " << t_n << " hash_node: " << h_n << std::endl;
+    std::cout << "trie_node_mem: " << trie_node_mem
+              << " hash_node_mem: " << hash_node_mem << std::endl;
+    using my = typename myTrie::htrie_map<CharT, T>;
+
+    std::cout << "total: ," << (hash_node_mem + trie_node_mem) / 1024 / 1024
+              << ", mb" << std::endl;
+    double ret_v;
+    ret_v = (hash_node_mem + trie_node_mem) / 1024 / 1024;
+
+    // todo
+    // std::cout << "trienode size:" << sizeof(typename my::trie_node)
+    //           << std::endl;
+    // std::cout << "hashnode size:" << sizeof(typename my::hash_node)
+    //           << std::endl;
+    // std::cout << "arraybucket size:" << sizeof(typename my::array_bucket)
+    //           << std::endl;
+    // std::cout << "htrie_map size:"
+    //           << sizeof(typename myTrie::htrie_map<CharT, T>) << std::endl;
+    // std::cout
+    //     << "htrie_map::v2k size:"
+    //     << sizeof(
+    //            std::map<T, typename myTrie::htrie_map<CharT,
+    //            T>::SearchPoint>)
+    //     << std::endl;
+    // std::cout << "arraybucket::kvs size:"
+    //           << sizeof(std::vector<typename my::array_bucket>) << std::endl;
+    t_n = 0;
+    h_n = 0;
+    hash_node_mem = 0;
+    trie_node_mem = 0;
+    return ret_v;
+}
+}  // namespace debuging
 }  // namespace myTrie
