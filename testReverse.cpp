@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+#include <sys/sysinfo.h>
+
 static uint64_t get_usec() {
     struct timespec tp;
     /* POSIX.1-2008: Applications should use the clock_gettime() function
@@ -19,7 +22,7 @@ static uint64_t get_usec() {
 
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(1500, 1);
+    myTrie::htrie_map<char, uint32_t> hm(16384, 8192);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");
@@ -42,6 +45,9 @@ int main() {
 
     for (auto it = m1.begin(); it != m1.end(); it++) {
         if (hm.searchByKey(it->first) == it->second) {
+            std::cout << "good\n";
+            std::cout << "ans: " << it->second << std::endl;
+            std::cout << "got " << hm.searchByKey(it->first) << std::endl;
             searchByK_count_good++;
         } else {
             std::cout << "wrong\n";
@@ -54,6 +60,9 @@ int main() {
 
     for (auto it = m2.begin(); it != m2.end(); it++) {
         if (hm.searchByValue(it->first) == it->second) {
+            std::cout << "good\n";
+            std::cout << "ans: " << it->second << std::endl;
+            std::cout << "got " << hm.searchByValue(it->first) << std::endl;
             searchByV_count_good++;
         } else {
             std::cout << "wrong\n";
