@@ -142,8 +142,15 @@ class htrie_map {
 
         bool need_burst() { return element_count > hn_burst_threshold; }
 
-        T& access_onlyValue_in_hashnode(htrie_map* hm) {
+        T& access_onlyValue_in_hashnode(
+            htrie_map* hm,
+            typename myTrie::htrie_map<CharT, T>::SearchPoint* sp) {
             haveValue = true;
+            if (sp != nullptr) {
+                sp->hnode = this;
+                sp->abucket = nullptr;
+                sp->pos = 0;
+            }
             return onlyValue;
         }
 
@@ -549,14 +556,9 @@ class htrie_map {
                                             sp);
             }
         }
-        if (sp != nullptr) {
-            sp->hnode = ((trie_node*)current_node)->getOnlyHashNode();
-            sp->abucket = nullptr;
-            sp->pos = 0;
-        }
         return ((trie_node*)current_node)
             ->getOnlyHashNode()
-            ->access_onlyValue_in_hashnode(this);
+            ->access_onlyValue_in_hashnode(this, sp);
     }
 
     void deleteMyself() { t_root->deleteMe(); }
