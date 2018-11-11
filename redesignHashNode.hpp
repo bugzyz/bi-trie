@@ -161,9 +161,8 @@ class htrie_map {
 
         // todo
         ~hash_node() {}
-        void printSlot(slot* s);
+
         inline char* get_tail_pointer(slot* s) {
-            printSlot(s, 0);
             return pages[s->page_id].first + s->pos;
         }
 
@@ -175,13 +174,6 @@ class htrie_map {
                     true, *((T*)(pages[s.page_id].first + s.pos + s.length)));
             }
             return std::pair<bool, T>(false, T());
-        }
-
-        // todo: debug code
-        void printSlot(slot* s, size_t bid) {
-            std::cout << "slot: " << (void*)s
-                      << " len/pgid/pos/bucketid: " << s->length << "/"
-                      << s->page_id << "/" << s->pos << "/" << bid << "\n";
         }
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
@@ -201,8 +193,6 @@ class htrie_map {
             for (; i != Associativity; i++) {
                 if (bucket_addr[i].isEmpty()) break;
 
-                // printSlot(&bucket_addr[i], bucketId);
-
                 std::pair<bool, T> res =
                     find_kv_in_pages(bucket_addr[i], key, keysize);
                 if (res.first) {
@@ -218,12 +208,10 @@ class htrie_map {
 
         bool need_burst() const { return elem_num >= Max_slot_num; }
 
-        // todo: remove the key, keysize while now we don't need the comparison
         // To turn this(a hashnode) to n childs of trie_node linking their
         // hashnode
         void burst(std::map<std::string, T>& elements, trie_node* p,
                    htrie_map* hm) {
-            std::cout << "bursting:\n";
             std::map<CharT, std::map<std::string, T>> preprocElements;
             for (auto it = elements.begin(); it != elements.end(); it++) {
                 preprocElements[(it->first)[0]][it->first.substr(1)] =
@@ -274,11 +262,6 @@ class htrie_map {
                          CharT* buffer_append_pos, T& value) {
             // append the string
             std::memcpy(buffer_append_pos, key, keysize * sizeof(CharT));
-            cout << "writing: ";
-            for (int i = 0; i != keysize; i++) cout << key[i];
-            cout << "\n";
-            // todo: adaptive
-            // buffer_append_pos += keysize * sizeof(CharT);
             buffer_append_pos += keysize;
 
             // append the value
@@ -307,19 +290,10 @@ class htrie_map {
 
         void get_tail_str_v(std::map<std::string, T>& elements, slot* s) {
             char* tail_pointer = get_tail_pointer(s);
-            char* temp = (char*)malloc(s->length);
-            std::memcpy(temp, tail_pointer, s->length);
-            std::string res(temp, s->length);
-            free(temp);
-            T v;
-            std::memcpy(&v, tail_pointer + s->length, sizeof(T));
-            elements[res] = v;
-            if (s->length != res.size()) {
-                cout << s->length << " != " << res.size();
-                exit(-1);
-            }
-            std::cout << "getting tail str v: " << res << "(" << res.size()
-                      << ") = " << v << "length: " << s->length << "\n";
+            std::string res(tail_pointer, s->length);
+            // T v;
+            std::memcpy(&elements[res], tail_pointer + s->length, sizeof(T));
+            // elements[res] = v;
         }
 
         void get_all_elements(std::map<std::string, T>& elements) {
@@ -330,25 +304,6 @@ class htrie_map {
                     get_tail_str_v(elements, &cur_slot);
                 }
             }
-        }
-
-        void printHashNodeLayout() {
-            using namespace std;
-            static fstream f("hashnode", std::ios::out);
-            f << "print hashnode: " << (void*)this << " 's layout\n";
-            map<string, T> elements;
-            for (int i = 0; i != Max_slot_num; i++) {
-                slot* s = &key_metas[i];
-                f << key_metas[i].length << "," << key_metas[i].pos << ","
-                  << (size_t)key_metas[i].page_id << "|";
-                if (i % Associativity == Associativity - 1) f << "\n";
-            }
-            get_all_elements(elements);
-            f << "page info\n";
-            for (auto it = elements.begin(); it != elements.end(); it++) {
-                f << it->first << " " << it->second << endl;
-            }
-            f.flush();
         }
 
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
@@ -371,8 +326,6 @@ class htrie_map {
             target_slot->pos = res.second;
             append_impl(key, keysize, get_tail_pointer(target_slot), v);
 
-            printHashNodeLayout();
-
             // set v2k
             hm->set_v2k(v, this, target_slot);
             elem_num++;
@@ -381,10 +334,7 @@ class htrie_map {
             if (need_burst() || slotid == Associativity - 1) {
                 std::map<std::string, T> elements;
                 get_all_elements(elements);
-                std::cout << "got elements\n";
-                for (auto it = elements.begin(); it != elements.end(); it++) {
-                    std::cout << it->first << "=" << it->second << "\n";
-                }
+                
                 burst(elements, this->anode::parent, hm);
 
                 delete this;
@@ -419,12 +369,8 @@ class htrie_map {
             }
             // get tail
             if (sl != nullptr) {
-                // std::string res;
-
-                size_t length = (size_t)sl->length;
-                CharT* buf = hnode->get_tail_pointer(sl);
-
-                string res = std::string(buf, length);
+                string res = std::string(hnode->get_tail_pointer(sl),
+                                         (size_t)sl->length);
                 ss << res;
             }
             return ss.str();
@@ -474,27 +420,14 @@ class htrie_map {
         }
     };
 
-    // todo: debug
-    void printKey(const CharT* key, size_t key_size) {
-        std::cout << "searching:\n";
-        for (int i = 0; i != key_size; i++) {
-            std::cout << key[i];
-        }
-        std::cout << std::endl;
-    }
-
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
                                               T v, bool findMode) {
         anode* current_node = t_root;
 
-        // debug
-        char finding;
         for (size_t pos = 0; pos < key_size; pos++) {
             if (current_node->isTrieNode()) {
                 trie_node* parent;
                 parent = (trie_node*)current_node;
-
-                finding = key[pos];
 
                 // only return the hitted trie_node* or nullptr if not found
                 current_node = parent->findChildNode(key[pos], findMode);
