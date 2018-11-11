@@ -424,15 +424,8 @@ class htrie_map {
                 size_t length = (size_t)sl->length;
                 CharT* buf = hnode->get_tail_pointer(sl);
 
-                // char* temp = (char*)malloc(length + 1);
-                // std::memcpy(temp, buf + pos + sizeof(KeySizeT), length);
-                // temp[length] = '\0';
-                // res = std::string(temp);
-                // free(temp);
-                char* temp = (char*)malloc(length);
-                std::memcpy(temp, buf, length);
-                ss << temp;
-                free(temp);
+                string res = std::string(buf, length);
+                ss << res;
             }
             return ss.str();
         }
