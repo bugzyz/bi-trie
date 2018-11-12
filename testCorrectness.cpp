@@ -2,7 +2,7 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include "myTrie.hpp"
+#include "redesignHashNode.hpp"
 
 #include <stdint.h>
 #include <sys/time.h>
@@ -44,15 +44,17 @@ int main() {
     uint64_t searchByV_count_bad = 0;
 
     for (auto it = m1.begin(); it != m1.end(); it++) {
-        if (hm.searchByKey(it->first) == it->second) {
+        if (hm.searchByKey(it->first).second == it->second) {
             std::cout << "good\n";
             std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByKey(it->first) << std::endl;
+            std::cout << "got " << hm.searchByKey(it->first).second
+                      << std::endl;
             searchByK_count_good++;
         } else {
             std::cout << "wrong\n";
             std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByKey(it->first) << std::endl;
+            std::cout << "got " << hm.searchByKey(it->first).second
+                      << std::endl;
             searchByK_count_bad++;
         }
     }
