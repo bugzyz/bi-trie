@@ -1,4 +1,4 @@
-//size_t
+// size_t
 #include <cstdint>
 
 // for std::memcmp, std::strlen
@@ -29,6 +29,10 @@ std::size_t hash(const CharT* key, std::size_t key_size) {
     }
 
     return hash;
+
+    //todo: test if the hash func should be changed
+    // std::string s(key, key_size);
+    // return std::hash<std::string>{}(s);
 }
 
 template <class CharT>
