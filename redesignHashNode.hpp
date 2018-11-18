@@ -6,15 +6,22 @@
 #include <iostream>
 #include <sstream>
 #include <stack>
-#include "hashFunc.hpp"
+#include "_hashFunc.hpp"
 
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <set>
 #include <string>
+
+#include <time.h>
 
 #define BURST_POINT 800
 #define BUCKET_INIT_COUNT 5;
+
+// debug
+int rehashFailed = 0;
+int failed_at_the_first_place = 0;
 
 using namespace std;
 
@@ -120,9 +127,10 @@ class htrie_map {
     class hash_node : public anode {
        public:
         static const size_t Associativity = 4;
-        static const size_t Bucket_num = 1;
+        static const size_t Bucket_num = 11;
         static const size_t Max_slot_num = Associativity * Bucket_num;
         static const size_t Max_bytes_per_kv = 1000;
+        static const size_t Max_loop = Max_slot_num * 0.5;
         class slot;
 
         slot* key_metas;
@@ -137,9 +145,18 @@ class htrie_map {
         struct slot {
             KeySizeT length;
             size_t pos;
-            uint8_t page_id;
+            size_t page_id;
 
             bool isEmpty() { return length == 0; }
+
+            slot(KeySizeT l, size_t p, size_t pi)
+                : length(l), pos(p), page_id(pi) {}
+
+            void set_slot(KeySizeT l, size_t p, size_t pi) {
+                length = l;
+                pos = p;
+                page_id = pi;
+            }
         };
 
        public:
@@ -153,6 +170,8 @@ class htrie_map {
             // init key space
             for (int i = 0; i != slot_num; i++) {
                 key_metas[i].length = 0;
+                key_metas[i].pos = 0;
+                key_metas[i].page_id = 0;
             }
 
             char* page = (char*)malloc(Max_bytes_per_kv);
@@ -176,6 +195,32 @@ class htrie_map {
             return std::pair<bool, T>(false, T());
         }
 
+        // return <found?, iterator>
+        // iterator:    if slotid==-1, bucket is full
+        //              if slotid!=-1, slotid is the insert position
+        std::pair<bool, iterator> find_in_bucket(size_t bucketid,
+                                                 const CharT* key,
+                                                 size_t keysize) {
+            slot* bucket_addr = (key_metas + bucketid * Associativity);
+            // find the hitted slot in hashnode
+            int i = 0;
+            for (; i != Associativity; i++) {
+                if (bucket_addr[i].isEmpty()) {
+                    return std::pair<bool, iterator>(
+                        false, iterator(false, T(), this, bucketid, i));
+                }
+
+                std::pair<bool, T> res =
+                    find_kv_in_pages(bucket_addr[i], key, keysize);
+                if (res.first) {
+                    return std::pair<bool, iterator>(
+                        true, iterator(true, res.second, this, bucketid, i));
+                }
+            }
+            return std::pair<bool, iterator>(
+                false, iterator(false, T(), this, bucketid, -1));
+        }
+
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
             if (keysize == 0) {
                 if (haveValue) {
@@ -184,29 +229,43 @@ class htrie_map {
                     return iterator(false, T(), this, 0, 0);
                 }
             }
-            size_t bucketId =
-                myTrie::hashRelative::hash(key, keysize) % Bucket_num;
+            size_t bucketId1 =
+                myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
+            std::pair<bool, iterator> res1 =
+                find_in_bucket(bucketId1, key, keysize);
 
-            slot* bucket_addr = (key_metas + bucketId * Associativity);
-            // find the hitted slot in hashnode
-            size_t i = 0;
-            for (; i != Associativity; i++) {
-                if (bucket_addr[i].isEmpty()) break;
+            size_t bucketId2 =
+                myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
+            std::pair<bool, iterator> res2 =
+                find_in_bucket(bucketId1, key, keysize);
 
-                std::pair<bool, T> res =
-                    find_kv_in_pages(bucket_addr[i], key, keysize);
-                if (res.first) {
-                    return iterator(true, res.second, this, bucketId, i);
-                }
+            // if found the existed target in bucket1 or bucket2, just return
+            // the iterator for being modified or read
+            if (res1.first) {
+                return res1.second;
+            } else if (res2.first) {
+                return res2.second;
             }
-            return iterator(false, T(), this, bucketId, i);
+
+            // if the code reach here it means the target doesn't exist
+            // we return the iterator with empty slot
+            if (res1.second.slotid != -1) {
+                return res1.second;
+            } else if (res2.second.slotid != -1) {
+                return res2.second;
+            }
+            // if two bucket are both full, we return the res1's iterator with
+            // slotid == -1, and let the
+            // 1. findMode: found==false
+            // 2. !findMode:found==false, slotid==-1, need to kick some slot
+            return res1.second;
         }
 
         inline slot* get_slot_addr(size_t bucketid, size_t slotid) {
             return &key_metas[bucketid * Associativity + slotid];
         }
 
-        bool need_burst() const { return elem_num >= Max_slot_num; }
+        bool need_burst() const { return elem_num >= Max_slot_num * 0.5; }
 
         // To turn this(a hashnode) to n childs of trie_node linking their
         // hashnode
@@ -238,7 +297,11 @@ class htrie_map {
                 hash_node* hnode = new hash_node(cur_trie_node);
                 cur_trie_node->setOnlyHashNode(hnode);
 
+                bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
+                    if (itt->second == 894180) {
+                        cout << "'debug2'" << endl;
+                    }
                     std::string temp = itt->first;
 
                     if (temp.size() == 0) {
@@ -251,8 +314,16 @@ class htrie_map {
 
                     iterator target_it =
                         hnode->search_kv_in_hashnode(temp.data(), temp.size());
-                    target_it.insertKV(temp.data(), temp.size(), hm,
-                                       itt->second);
+                    std::pair<bool, T> res = target_it.insertKV(
+                        temp.data(), temp.size(), hm, itt->second);
+                    // if insert failed, it need burst
+                    if (res.first == false) {
+                        stop_insert_and_burst = true;
+                        break;
+                    }
+                }
+                if (stop_insert_and_burst) {
+                    burst(curKV, cur_trie_node, hm);
                 }
             }
             return;
@@ -306,17 +377,302 @@ class htrie_map {
             }
         }
 
+        // return another possible bucketid that the slot *s can be
+        inline size_t get_another_bucketid(slot* s, size_t current_bucketid) {
+            size_t bucketid1 =
+                myTrie::hashRelative::hash(get_tail_pointer(s), s->length, 1) %
+                Bucket_num;
+            size_t bucketid2 =
+                myTrie::hashRelative::hash(get_tail_pointer(s), s->length, 2) %
+                Bucket_num;
+            return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
+        }
+
+        inline slot* get_bucket(size_t bucketid) {
+            return key_metas + bucketid * Associativity;
+        }
+
+        inline slot* get_slot(size_t bucketid, size_t slotid) {
+            return key_metas + bucketid * Associativity + slotid;
+        }
+
+        int rehash(size_t bucketid) {
+            cout << "========new rehash==============\n";
+            print_key_metas();
+            // bucket_list records the mapping of bucket_id=last_empty_slot_id
+            std::map<size_t, size_t> bucket_list;
+            for (size_t bn = 0; bn != Bucket_num; bn++) {
+                bucket_list[bn] = Associativity;
+                for (int sn = 0; sn != Associativity; sn++) {
+                    if (key_metas[bn * Associativity + sn].isEmpty()) {
+                        bucket_list[bn] = sn;
+                        break;
+                    }
+                }
+            }
+            // current bucket is definitely full
+            // just pick the last slot to kick
+            int ret_slot_id = Associativity - 1;
+
+            size_t kicked_slot_id = ret_slot_id;
+            size_t current_bucket_id = bucketid;
+
+            slot src_slot = slot(0, 0, 0);
+            slot* dst_slot = get_slot(current_bucket_id, kicked_slot_id);
+
+            size_t rehash_count = 0;
+            // kicking slot
+            do {
+                cout << "rehash time: " << rehash_count << "\n";
+                cout << "src_slot: " << src_slot.length << "/" << src_slot.pos
+                     << "/" << src_slot.page_id << "\n";
+                cout << "dst_num: " << dst_slot - key_metas << ": "
+                     << dst_slot->length << "/" << dst_slot->pos << "/"
+                     << dst_slot->page_id << endl;
+                /*
+                    src(a,b,c)
+                    cur_bucket: |x      |x      |x      |dst(d,e,f)|
+                    kk2_bucket: |x      |x      |x      |x         |
+                */
+                // calculate the destination
+                size_t bucketid_kick_to =
+                    get_another_bucketid(dst_slot, current_bucket_id);
+
+                // if the slot can only place in one bucket, we change the
+                // dst_slot
+                if (bucketid_kick_to == current_bucket_id) {
+                    cout << "num." << dst_slot - key_metas
+                         << " is stable in bucket: " << bucketid_kick_to
+                         << endl;
+                    dst_slot = dst_slot - 1;
+                    ret_slot_id = ret_slot_id - 1;
+                    if (ret_slot_id == -1) {
+                        return -1;
+                    }
+                    continue;
+                }
+
+                cout << "current_bucket_id: " << current_bucket_id << "\n";
+                cout << "bucketid_kick_to: " << bucketid_kick_to << "\n";
+
+                /*
+                    src(a,b,c)
+                    temp: d,e,f
+                    cur_bucket: |x      |x      |x      |dst(d,e,f)|
+                    kk2_bucket: |x      |x      |x      |x         |
+                */
+                KeySizeT temp_length = dst_slot->length;
+                size_t temp_pos = dst_slot->pos;
+                size_t temp_page_id = dst_slot->page_id;
+                cout << "temp: " << temp_length << "/" << temp_pos << "/"
+                     << temp_page_id << "/"
+                     << "\n";
+                cout << "--------------------------------\n";
+
+                /*
+                    src(a,b,c)
+                    temp: d,e,f
+                    cur_bucket: |x      |x      |x      |dst(a,b,c)|
+                    kk2_bucket: |x      |x      |x      |x         |
+                */
+                dst_slot->set_slot(src_slot.length, src_slot.pos,
+                                   src_slot.page_id);
+
+                // if the destination bucket isn't full, just fill the empty
+                // slot and return
+                if (bucket_list[bucketid_kick_to] != Associativity) {
+                    /* kick2bucket is have empty slot
+                        src(a,b,c)
+                        temp: d,e,f
+                        cur_bucket: |x      |x      |x      |dst(a,b,c)|
+                        kk2_bucket: |x      |x      |x      |0         |
+                    */
+                    // update dst_slot to the dest bucket's first empty slot
+                    /*
+                        src(a,b,c)
+                        temp: d,e,f
+                        cur_bucket: |x      |x      |x      |x(a,b,c)  |
+                        kk2_bucket: |x      |x      |x      |0-dst     |
+                    */
+                    dst_slot = get_slot(bucketid_kick_to,
+                                        bucket_list[bucketid_kick_to]);
+
+                    /*
+                        src(a,b,c)
+                        temp: d,e,f
+                        cur_bucket: |x      |x      |x      |x(a,b,c)  |
+                        kk2_bucket: |x      |x      |x      |dst(d,e,f)|
+                    */
+                    dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
+
+                    print_key_metas();
+                    cout << "=======rehash finished!=========\n";
+
+                    return ret_slot_id;
+                }
+
+                /* kick2bucket is full
+                    src(a,b,c)
+                    temp: d,e,f
+                    cur_bucket: |x      |x      |x      |dst(a,b,c)|
+                    kk2_bucket: |x      |x      |x      |x         |
+                */
+
+                /* kick2bucket is full
+                    src(a,b,c)
+                    temp: d,e,f
+                    cur_bucket: |x      |x      |x      |x(a,b,c)  |
+                    kk2_bucket: |x      |x      |x      |x-dst     |
+                */
+                // update dst_slot to the dest bucket's last empty slot
+                dst_slot = get_slot(bucketid_kick_to, Associativity - 1);
+                /*
+                     src(d,e,f)
+                     cur_bucket: |x      |x      |x      |src(j,k,l)|
+                     kk2_bucket: |x      |x      |x      |x-dst     |
+                */
+                src_slot.set_slot(temp_length, temp_pos, temp_page_id);
+                /*
+                     src(d,e,f)
+                     (kk2_bucket)
+                     cur_bucket: |x      |x      |x      |x-dst     |
+                */
+                current_bucket_id = bucketid_kick_to;
+
+                // print_key_metas();
+
+                rehash_count++;
+            } while (rehash_count != Max_loop);
+            return -1;
+        }
+
+        struct SlotCmp {
+            bool operator()(const slot& lhs, const slot& rhs) const {
+                return lhs.length * 100 + lhs.pos * 10 + lhs.page_id <
+                       rhs.length * 100 + rhs.pos * 10 + rhs.page_id;
+            }
+        };
+
+        // just element
+        void print_hashnode_element() {
+            cout << "printing hashnode elememt\n";
+            std::map<string, T> tempMap;
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != Associativity; j++) {
+                    slot* sss = get_slot(i, j);
+                    if (!sss->isEmpty()) {
+                        get_tail_str_v(tempMap, sss);
+                    }
+                }
+            }
+            cout << "hashnode elememt_num:" << elem_num
+                 << " acutally:" << tempMap.size() << "\n";
+            if (elem_num != tempMap.size()) {
+                assert(true);
+            }
+            int count = 0;
+            for (auto it = tempMap.begin(); it != tempMap.end(); it++) {
+                cout << count++ << ": " << it->first << " = " << it->second
+                     << endl;
+            }
+        }
+
+        // just key_metas layout
+        void print_key_metas() {
+            cout << "print keymetas layout\n";
+            for (int i = 0; i != Bucket_num; i++) {
+                cout << i << ":\t";
+                for (int j = 0; j != Associativity; j++) {
+                    slot* s = get_slot(i, j);
+                    cout << i * Associativity + j << ":" << s->length << "/"
+                         << s->pos << "/" << s->page_id << "\t\t";
+                }
+                cout << "\n";
+            }
+        }
+
+        void print_slot(slot s) {
+            cout << s.length << "/" << s.pos << "/" << s.page_id << endl;
+        }
+
+        void setup_before_slot_situation(set<slot, SlotCmp>& checkingset) {
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != Associativity; j++) {
+                    slot* s = get_slot(i, j);
+                    if (!s->isEmpty()) checkingset.insert(slot(*s));
+                }
+            }
+        }
+
+        void check_current_slot_situation(set<slot, SlotCmp>& checkingSet) {
+            set<slot, SlotCmp> secondCheck;
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != Associativity; j++) {
+                    slot* s = get_slot(i, j);
+                    if (!s->isEmpty()) secondCheck.insert(slot(*s));
+                }
+            }
+            cout << checkingSet.size() << "-" << secondCheck.size() << endl;
+            if (checkingSet.size() != secondCheck.size()) {
+                for (auto it = secondCheck.begin(); it != secondCheck.end();
+                     it++) {
+                    auto itt = checkingSet.find(*it);
+
+                    if (itt == checkingSet.end()) {
+                        cout << "cannt find: ";
+                        print_slot(*it);
+                    }
+                }
+                print_hashnode_element();
+                print_key_metas();
+            }
+        }
+
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, size_t bucketid,
-                                                 size_t slotid) {
+                                                 int slotid) {
+            static hash_node* debug_hnode;
+            if (v == 894180) {
+                cout << "'debug'" << endl;
+                debug_hnode = this;
+            }
+
             if (keysize == 0) {
                 haveValue = true;
                 onlyValue = v;
                 hm->set_v2k(v, this, nullptr);
                 return std::pair<bool, T>(true, v);
             }
-            slot* target_slot = key_metas + Associativity * bucketid + slotid;
+
+            if (this == debug_hnode) {
+                cout << "check it out\n";
+            }
+
+            // if slotid==-1, it denotes that the bucket(bucketid) is full , so
+            // we rehash the key_metas
+            if (slotid == -1) {
+                set<slot, SlotCmp> checkingSet;
+                setup_before_slot_situation(checkingSet);
+
+                if ((slotid = rehash(bucketid)) == -1) {
+                    rehashFailed++;
+                    check_current_slot_situation(checkingSet);
+
+                    cout << "rehash failed!\n";
+                    return std::pair<bool, T>(false, T());
+                }
+                cout << "Rehashing success: slotid is updated to " << slotid
+                     << "\n";
+                check_current_slot_situation(checkingSet);
+            }
+
+            // now the slotid cannot be -1 and slotid is lower than
+            // Associativity
+            assert(slotid != -1 && slotid >= 0 && slotid < Associativity);
+
+            slot* target_slot =
+                key_metas + Associativity * bucketid + (size_t)slotid;
 
             // allocate new page or alloc more space in old page
             std::pair<size_t, size_t> res = alloc_insert_space(keysize);
@@ -330,11 +686,21 @@ class htrie_map {
             hm->set_v2k(v, this, target_slot);
             elem_num++;
 
+            if (this == debug_hnode) {
+                print_hashnode_element();
+                print_key_metas();
+            }
+
             // todo: need to burst elegantly
-            if (need_burst() || slotid == Associativity - 1) {
+            if (need_burst()) {
                 std::map<std::string, T> elements;
                 get_all_elements(elements);
-                
+
+                if (this == debug_hnode) {
+                    print_hashnode_element();
+                    print_key_metas();
+                }
+
                 burst(elements, this->anode::parent, hm);
 
                 delete this;
@@ -408,9 +774,9 @@ class htrie_map {
         const T v;
         hash_node* target_node;
         size_t bucketid;
-        size_t slotid;
+        int slotid;
 
-        iterator(bool f, T vv, hash_node* hnode, size_t bid, size_t sid)
+        iterator(bool f, T vv, hash_node* hnode, size_t bid, int sid)
             : found(f), v(vv), target_node(hnode), bucketid(bid), slotid(sid) {}
 
         std::pair<bool, T> insertKV(const CharT* key, size_t key_size,
@@ -439,7 +805,12 @@ class htrie_map {
                 if (findMode) {
                     return std::pair<bool, T>(it.found, it.v);
                 } else {
-                    return it.insertKV(key + pos, key_size - pos, this, v);
+                    pair<bool, T> res =
+                        it.insertKV(key + pos, key_size - pos, this, v);
+                    if (res.first == false) {
+                        failed_at_the_first_place++;
+                    }
+                    return res;
                 }
             }
             // only in the findMode==true can cause the current_node to be
