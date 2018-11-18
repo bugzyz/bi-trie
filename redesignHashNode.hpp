@@ -229,6 +229,13 @@ class htrie_map {
                     return iterator(false, T(), this, 0, 0);
                 }
             }
+
+            bool icooldone = false;
+            if (icooldone) {
+                print_hashnode_element();
+                print_key_metas();
+            }
+
             size_t bucketId1 =
                 myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
             std::pair<bool, iterator> res1 =
@@ -237,7 +244,7 @@ class htrie_map {
             size_t bucketId2 =
                 myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
             std::pair<bool, iterator> res2 =
-                find_in_bucket(bucketId1, key, keysize);
+                find_in_bucket(bucketId2, key, keysize);
 
             // if found the existed target in bucket1 or bucket2, just return
             // the iterator for being modified or read
@@ -396,7 +403,19 @@ class htrie_map {
             return key_metas + bucketid * Associativity + slotid;
         }
 
+        slot* previous_dst_slot_in_same_bucket(slot* s) {
+            size_t slotid = (s - key_metas) % Associativity;
+            if (slotid == 0) {
+                return nullptr;
+            } else
+                return s - 1;
+        }
+
         int rehash(size_t bucketid) {
+            char* key_metas_backup =
+                (char*)malloc(Bucket_num * Associativity * sizeof(slot));
+            memcpy(key_metas_backup, key_metas,
+                   Bucket_num * Associativity * sizeof(slot));
             cout << "========new rehash==============\n";
             print_key_metas();
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
@@ -414,13 +433,28 @@ class htrie_map {
             // just pick the last slot to kick
             int ret_slot_id = Associativity - 1;
 
-            size_t kicked_slot_id = ret_slot_id;
+            size_t kicked_slot_id = -1;
+            for (int i = 0; i != Associativity; i++) {
+                slot* s = get_slot(bucketid, i);
+                size_t bkid = get_another_bucketid(s, bucketid);
+                if (bkid != bucketid) {
+                    kicked_slot_id = i;
+                }
+            }
+            if (kicked_slot_id == -1) {
+                return -1;
+            }
+            ret_slot_id = kicked_slot_id;
+
             size_t current_bucket_id = bucketid;
 
             slot src_slot = slot(0, 0, 0);
             slot* dst_slot = get_slot(current_bucket_id, kicked_slot_id);
 
             size_t rehash_count = 0;
+
+            size_t last_current_bucketid = 0;
+            size_t last_bucketid_kick_to = 0;
             // kicking slot
             do {
                 cout << "rehash time: " << rehash_count << "\n";
@@ -440,13 +474,20 @@ class htrie_map {
 
                 // if the slot can only place in one bucket, we change the
                 // dst_slot
-                if (bucketid_kick_to == current_bucket_id) {
+                // if the cuckoo hash kick as a circle, we change the dst_slot
+                // to try to break the circle
+                if (bucketid_kick_to == current_bucket_id ||
+                    (last_bucketid_kick_to == current_bucket_id &&
+                     last_current_bucketid == bucketid_kick_to)) {
                     cout << "num." << dst_slot - key_metas
-                         << " is stable in bucket: " << bucketid_kick_to
-                         << endl;
-                    dst_slot = dst_slot - 1;
-                    ret_slot_id = ret_slot_id - 1;
-                    if (ret_slot_id == -1) {
+                         << " is stable in bucket or create a circle: "
+                         << bucketid_kick_to << endl;
+                    dst_slot = previous_dst_slot_in_same_bucket(dst_slot);
+                    rehash_count++;
+                    if (dst_slot == nullptr) {
+                        // recover the key_metas
+                        memcpy(key_metas, key_metas_backup,
+                               Bucket_num * Associativity * sizeof(slot));
                         return -1;
                     }
                     continue;
@@ -464,6 +505,15 @@ class htrie_map {
                 KeySizeT temp_length = dst_slot->length;
                 size_t temp_pos = dst_slot->pos;
                 size_t temp_page_id = dst_slot->page_id;
+
+                // if dst_slot is empty, it means now the dst_slot is the first
+                // place we clear for the target slot
+                if (dst_slot->isEmpty()) {
+                    // recover the key_metas
+                    memcpy(key_metas, key_metas_backup,
+                           Bucket_num * Associativity * sizeof(slot));
+                    return -1;
+                }
                 cout << "temp: " << temp_length << "/" << temp_pos << "/"
                      << temp_page_id << "/"
                      << "\n";
@@ -537,12 +587,17 @@ class htrie_map {
                      (kk2_bucket)
                      cur_bucket: |x      |x      |x      |x-dst     |
                 */
+                last_bucketid_kick_to = bucketid_kick_to;
+                last_current_bucketid = current_bucket_id;
                 current_bucket_id = bucketid_kick_to;
 
-                // print_key_metas();
+                print_key_metas();
 
                 rehash_count++;
             } while (rehash_count != Max_loop);
+            // recover the key_metas
+            memcpy(key_metas, key_metas_backup,
+                   Bucket_num * Associativity * sizeof(slot));
             return -1;
         }
 
@@ -633,7 +688,7 @@ class htrie_map {
                                                  T v, size_t bucketid,
                                                  int slotid) {
             static hash_node* debug_hnode;
-            if (v == 894180) {
+            if (v == 848793) {
                 cout << "'debug'" << endl;
                 debug_hnode = this;
             }
@@ -687,6 +742,7 @@ class htrie_map {
             elem_num++;
 
             if (this == debug_hnode) {
+                print_slot(*target_slot);
                 print_hashnode_element();
                 print_key_metas();
             }
