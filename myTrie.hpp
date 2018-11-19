@@ -55,16 +55,17 @@ class htrie_map {
 
         void deleteMe() {
             if (this->isTrieNode()) {
-                std::map<CharT, anode*> cs = ((trie_node*)this)->childs;
+                std::map<CharT, trie_node*> cs = ((trie_node*)this)->childs;
                 for (auto it = cs.begin(); it != cs.end(); it++) {
                     it->second->deleteMe();
                     delete it->second;
                 }
             } else {
-                delete this;
+                delete (hash_node*)this;
             }
         }
     };
+
     class trie_node : public anode {
        public:
         // store the suffix of hash_node or trie_node
@@ -83,7 +84,6 @@ class htrie_map {
         ~trie_node() {
             std::map<CharT, anode*> empty;
             childs.swap(empty);
-            free(onlyHashNode);
         }
 
         anode* findChildNode(CharT c, bool findMode) {
@@ -165,8 +165,11 @@ class htrie_map {
             pages.push_back(std::pair<char*, size_t>(page, 0));
         }
 
-        // todo
-        ~hash_node() {}
+        ~hash_node() {
+            free(key_metas);
+            vector<std::pair<char*, size_t>> empty;
+            pages.swap(empty);
+        }
 
         inline char* get_tail_pointer(slot* s) {
             return pages[s->page_id].first + s->pos;
