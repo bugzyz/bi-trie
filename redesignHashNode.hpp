@@ -16,12 +16,18 @@
 
 #include <time.h>
 
-#define BURST_POINT 800
-#define BUCKET_INIT_COUNT 5;
+#define DEFAULT_Associativity 8
+#define DEFAULT_Bucket_num 10
+#define DEFAULT_Max_bytes_per_kv 1000
+#define DEFAULT_Burst_ratio 0.5
 
-// debug
-int rehashFailed = 0;
-int failed_at_the_first_place = 0;
+// configuration
+static size_t Associativity;
+static size_t Bucket_num;
+static size_t Max_bytes_per_kv;
+static double Burst_ratio;
+static size_t Max_slot_num;
+static size_t Max_loop;
 
 using namespace std;
 
@@ -30,13 +36,9 @@ namespace myTrie {
 template <class CharT, class T, class KeySizeT = std::uint16_t>
 class htrie_map {
    public:
-    // burst_threshold should be set to be greater than 26 for 26 alaphbet
-    // and ", @ .etc.(the test in lubm40 shows that it has 50 char species)
-    static const size_t DEFAULT_BURST_THRESHOLD = BURST_POINT;
-    static const size_t DEFAULT_BUCKET_INIT_COUNT = BUCKET_INIT_COUNT;
-    size_t burst_threshold;
-    size_t bucket_num;
-
+    // DEFAULT_Associativity * DEFAULT_Bucket_num should be set to be greater
+    // than 26 for 26 alaphbet and ", @ .etc.(the test in lubm40 shows that it
+    // has 50 char species)
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
     class trie_node;
     class hash_node;
@@ -84,15 +86,6 @@ class htrie_map {
             free(onlyHashNode);
         }
 
-        hash_node* create_trienode_With(CharT key,
-                                        size_t customized_burst_threshold,
-                                        size_t customized_bucket_count) {
-            trie_node* new_trie_node = new trie_node(key, this);
-            this->addChildTrieNode(new_trie_node);
-            new_trie_node->onlyHashNode = new hash_node(new_trie_node);
-            return new_trie_node->onlyHashNode;
-        }
-
         anode* findChildNode(CharT c, bool findMode) {
             auto found = childs.find(c);
             if (found != childs.end()) {
@@ -126,11 +119,6 @@ class htrie_map {
 
     class hash_node : public anode {
        public:
-        static const size_t Associativity = 4;
-        static const size_t Bucket_num = 11;
-        static const size_t Max_slot_num = Associativity * Bucket_num;
-        static const size_t Max_bytes_per_kv = 1000;
-        static const size_t Max_loop = Max_slot_num * 0.5;
         class slot;
 
         slot* key_metas;
@@ -164,11 +152,10 @@ class htrie_map {
             : elem_num(0), cur_page_id(0), onlyValue(T()), haveValue(false) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
-            size_t slot_num = Bucket_num * Associativity;
-            key_metas = (slot*)malloc(slot_num * sizeof(slot));
+            key_metas = (slot*)malloc(Max_slot_num * sizeof(slot));
 
             // init key space
-            for (int i = 0; i != slot_num; i++) {
+            for (int i = 0; i != Max_slot_num; i++) {
                 key_metas[i].length = 0;
                 key_metas[i].pos = 0;
                 key_metas[i].page_id = 0;
@@ -272,7 +259,9 @@ class htrie_map {
             return &key_metas[bucketid * Associativity + slotid];
         }
 
-        bool need_burst() const { return elem_num >= Max_slot_num * 0.5; }
+        bool need_burst() const {
+            return elem_num >= Max_slot_num * Burst_ratio;
+        }
 
         // To turn this(a hashnode) to n childs of trie_node linking their
         // hashnode
@@ -331,6 +320,7 @@ class htrie_map {
                 }
                 if (stop_insert_and_burst) {
                     burst(curKV, cur_trie_node, hm);
+                    delete hnode;
                 }
             }
             return;
@@ -591,7 +581,7 @@ class htrie_map {
                 last_current_bucketid = current_bucket_id;
                 current_bucket_id = bucketid_kick_to;
 
-                print_key_metas();
+                // print_key_metas();
 
                 rehash_count++;
             } while (rehash_count != Max_loop);
@@ -688,7 +678,7 @@ class htrie_map {
                                                  T v, size_t bucketid,
                                                  int slotid) {
             static hash_node* debug_hnode;
-            if (v == 848793) {
+            if (v == 1041205) {
                 cout << "'debug'" << endl;
                 debug_hnode = this;
             }
@@ -711,10 +701,8 @@ class htrie_map {
                 setup_before_slot_situation(checkingSet);
 
                 if ((slotid = rehash(bucketid)) == -1) {
-                    rehashFailed++;
                     check_current_slot_situation(checkingSet);
 
-                    cout << "rehash failed!\n";
                     return std::pair<bool, T>(false, T());
                 }
                 cout << "Rehashing success: slotid is updated to " << slotid
@@ -802,11 +790,28 @@ class htrie_map {
    public:
     anode* t_root;
     std::map<T, SearchPoint> v2k;
-    htrie_map(size_t customized_burst_threshold = DEFAULT_BURST_THRESHOLD,
-              size_t customized_bucket_count = DEFAULT_BURST_THRESHOLD)
-        : t_root(new hash_node(nullptr)),
-          burst_threshold(customized_burst_threshold),
-          bucket_num(customized_bucket_count) {}
+    htrie_map(size_t customized_associativity = DEFAULT_Associativity,
+              size_t customized_bucket_count = DEFAULT_Bucket_num,
+              size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
+              double customized_burst_ratio = DEFAULT_Burst_ratio)
+        : t_root(nullptr) {
+        Associativity = customized_associativity;
+        Bucket_num = customized_bucket_count;
+        Max_bytes_per_kv = customized_byte_per_kv;
+        Burst_ratio = customized_burst_ratio;
+
+        Max_slot_num = Associativity * Bucket_num;
+        Max_loop = Max_slot_num * 0.5;
+
+        t_root = new hash_node(nullptr);
+
+        cout << Associativity << endl;
+        cout << Bucket_num << endl;
+        cout << Max_bytes_per_kv << endl;
+        cout << Burst_ratio << endl;
+        cout << Max_slot_num << endl;
+        cout << Max_loop << endl;
+    }
 
     void set_v2k(T v, hash_node* hnode, typename hash_node::slot* s) {
         v2k[v] = SearchPoint(hnode, s);
@@ -864,7 +869,17 @@ class htrie_map {
                     pair<bool, T> res =
                         it.insertKV(key + pos, key_size - pos, this, v);
                     if (res.first == false) {
-                        failed_at_the_first_place++;
+                        // if the insert failed, we burst the target_hashnode
+                        // and retry insertion
+                        hash_node* hnode_burst_needed =
+                            (hash_node*)current_node;
+                        map<string, T> hnode_elems;
+                        hnode_burst_needed->get_all_elements(hnode_elems);
+                        hnode_burst_needed->burst(
+                            hnode_elems, hnode_burst_needed->anode::parent,
+                            this);
+                        delete hnode_burst_needed;
+                        return access_kv_in_htrie_map(key, key_size, v, false);
                     }
                     return res;
                 }
