@@ -350,6 +350,12 @@ class htrie_map {
             std::memcpy(&elements[res], tail_pointer + s->length, sizeof(T));
         }
 
+        T get_tail_v(slot* s) {
+            T v;
+            std::memcpy(&v, get_tail_pointer(s) + s->length, sizeof(T));
+            return v;
+        }
+
         void get_all_elements(std::map<std::string, T>& elements) {
             for (size_t i = 0; i != Bucket_num; i++) {
                 for (size_t j = 0; j != Associativity; j++) {
@@ -387,7 +393,13 @@ class htrie_map {
                 return s - 1;
         }
 
-        int rehash(size_t bucketid) {
+        void apply_the_changed_searchPoint(map<T, slot*>& searchPoints,
+                                           htrie_map<CharT, T>* hm) {
+            for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
+                hm->set_searchPoint_slot(it->first, it->second);
+        }
+
+        int rehash(size_t bucketid, htrie_map<CharT, T>* hm) {
             char* key_metas_backup =
                 (char*)malloc(Bucket_num * Associativity * sizeof(slot));
             memcpy(key_metas_backup, key_metas,
@@ -430,7 +442,8 @@ class htrie_map {
 
             size_t last_current_bucketid = 0;
             size_t last_bucketid_kick_to = 0;
-            // kicking slot
+
+            map<T, slot*> searchPoint_wait_2_be_update;
             do {
                 /*
                     src(a,b,c)
@@ -486,6 +499,9 @@ class htrie_map {
                 */
                 dst_slot->set_slot(src_slot.length, src_slot.pos,
                                    src_slot.page_id);
+                if (!dst_slot->isEmpty())
+                    searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
+                        dst_slot;
 
                 // if the destination bucket isn't full, just fill the empty
                 // slot and return
@@ -513,7 +529,10 @@ class htrie_map {
                         kk2_bucket: |x      |x      |x      |dst(d,e,f)|
                     */
                     dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
-
+                    searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
+                        dst_slot;
+                    apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
+                                                  hm);
                     return ret_slot_id;
                 }
 
@@ -534,7 +553,7 @@ class htrie_map {
                 dst_slot = get_slot(bucketid_kick_to, Associativity - 1);
                 /*
                      src(d,e,f)
-                     cur_bucket: |x      |x      |x      |src(j,k,l)|
+                     cur_bucket: |x      |x      |x      |x(a,b,c)  |
                      kk2_bucket: |x      |x      |x      |x-dst     |
                 */
                 src_slot.set_slot(temp_length, temp_pos, temp_page_id);
@@ -569,7 +588,7 @@ class htrie_map {
             // if slotid==-1, it denotes that the bucket(bucketid) is full , so
             // we rehash the key_metas
             if (slotid == -1) {
-                if ((slotid = rehash(bucketid)) == -1) {
+                if ((slotid = rehash(bucketid, hm)) == -1) {
                     return std::pair<bool, T>(false, T());
                 }
             }
@@ -616,6 +635,8 @@ class htrie_map {
         SearchPoint(hash_node* h, typename hash_node::slot* s)
             : hnode(h), sl(s) {}
 
+        void set_slot(typename hash_node::slot* s) { sl = s; }
+
         // todo: refine
         std::string getString() {
             // get the parent char chain
@@ -657,6 +678,10 @@ class htrie_map {
         Max_loop = Max_slot_num * 0.5;
 
         t_root = new hash_node(nullptr);
+    }
+
+    void set_searchPoint_slot(T v, typename hash_node::slot* s) {
+        v2k[v].set_slot(s);
     }
 
     void set_v2k(T v, hash_node* hnode, typename hash_node::slot* s) {
