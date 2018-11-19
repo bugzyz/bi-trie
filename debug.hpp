@@ -1,7 +1,9 @@
-#include <iostream>
-#include <vector>
 #include <unistd.h>
 #include <fstream>
+#include <iostream>
+#include <vector>
+
+#include "myTrie.hpp"
 
 namespace myTrie {
 namespace debuging {
@@ -106,7 +108,6 @@ uint64_t get_usec() {
     clock_gettime(CLOCK_MONOTONIC, &tp);
     return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
 }
-
 
 #include <sys/sysinfo.h>
 uint64_t getLftMem() {

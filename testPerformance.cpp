@@ -1,7 +1,7 @@
 #include <boost/unordered_map.hpp>
 #include <map>
 #include <vector>
-#include "myTrie.hpp"
+// #include "myTrie.hpp"
 // debug
 #include <fstream>
 #include "debug.hpp"
@@ -27,71 +27,30 @@ int main() {
     std::cout << "starto!\n";
 
     std::vector<std::pair<size_t, size_t>> configs;
-    vector<size_t> burst_points;
     vector<size_t> elem_per_buck;
     vector<size_t> bucket_nums;
 
-    burst_points.push_back(30000);
-    burst_points.push_back(20000);
-    burst_points.push_back(16384);
-    burst_points.push_back(10000);
-    burst_points.push_back(8000);
-    burst_points.push_back(3000);
-    burst_points.push_back(1500);
-    burst_points.push_back(800);
-    burst_points.push_back(500);
-    burst_points.push_back(120);
-    burst_points.push_back(80);
-
     // analyse by elem_per_bucket
-    elem_per_buck.push_back(0);
-    elem_per_buck.push_back(1000);
-    elem_per_buck.push_back(500);
-    elem_per_buck.push_back(200);
-    elem_per_buck.push_back(50);
-    elem_per_buck.push_back(10);
-    elem_per_buck.push_back(1);
-
-    for (auto it = burst_points.begin(); it != burst_points.end(); it++) {
-        for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end();
-             itt++) {
-            size_t bn = 0;
-            // cout << "it: " << *it << " itt: " << *itt << endl;
-
-            if (*itt == 0) continue;
-            if (*itt > *it) continue;
-
-            if (*itt == 0) {
-                bn = *it;
-            } else {
-                bn = *it / *itt;
-            }
-            configs.push_back(std::pair<size_t, size_t>(*it, bn));
-            cout << "bp: " << *it << " bn: " << bn << endl;
-        }
-    }
+    elem_per_buck.push_back(11);
+    elem_per_buck.push_back(31);
+    elem_per_buck.push_back(101);
 
     // analyse by bucket_num
-    // bucket_nums.push_back(0);
-    // bucket_nums.push_back(300);
-    // bucket_nums.push_back(150);
-    // bucket_nums.push_back(80);
-    // bucket_nums.push_back(32);
-    // bucket_nums.push_back(12);
-    // bucket_nums.push_back(5);
-    // bucket_nums.push_back(2);
-    // bucket_nums.push_back(1);
+    bucket_nums.push_back(5);
+    bucket_nums.push_back(31);
+    bucket_nums.push_back(53);
 
-    // for (auto it = burst_points.begin(); it != burst_points.end(); it++) {
-    //     for (auto itt = bucket_nums.begin(); itt != bucket_nums.end(); itt++)
-    //     {
-    //         size_t bn = *itt;
-    //         if (bn == 0) {
-    //             bn = *it;
-    //         }
-    //         configs.push_back(std::pair<size_t, size_t>(*it, bn));
-    //     }
-    // }
+    bucket_nums.push_back(103);
+    bucket_nums.push_back(991);
+    bucket_nums.push_back(1999);
+    bucket_nums.push_back(4139);
+
+    // configs: pair<burst_point, bucket_num>
+    for (auto it = elem_per_buck.begin(); it != elem_per_buck.end(); it++) {
+        for (auto itt = bucket_nums.begin(); itt != bucket_nums.end(); itt++) {
+            configs.push_back(std::pair<size_t, size_t>((*it * *itt), *itt));
+        }
+    }
 
     fstream ff1("result", std::ios::out | std::ios::app);
 
@@ -156,6 +115,7 @@ int main() {
         double percent_k = 0.0;
         double max_percent_k = 0.0;
         double min_percent_k = 0.0;
+
         // checking:
         std::fstream f3("test_res_wrong_key", std::ios::out | std::ios::app);
         for (auto it = m1.begin(); it != m1.end(); it++) {
@@ -174,7 +134,8 @@ int main() {
             }
 
             int64_t hm_get_start = get_usec();
-            uint32_t gotfromhm = hm.searchByKey(url1);
+            uint32_t gotfromhm;
+            gotfromhm = hm.searchByKey(url1);
             gotfromhm = hm.searchByKey(url2);
             gotfromhm = hm.searchByKey(url3);
             gotfromhm = hm.searchByKey(url4);
@@ -182,7 +143,8 @@ int main() {
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
-            uint32_t gotfromum = m1[url1];
+            uint32_t gotfromum;
+            gotfromum = m1[url1];
             gotfromum = m1[url2];
             gotfromum = m1[url3];
             gotfromum = m1[url4];
@@ -213,10 +175,10 @@ int main() {
             // if (gotfromhm == it->second) {
             // } else {
             //     f3 << "key_wrong answer: " << it->first << " got "
-            //        << hm.searchByKey(it->first)
+            //        << hm.searchByKey(it->first).second
             //        << " from hm , actual value: " << it->second << std::endl;
             //     uint32_t v = it->second;
-            //     f3 << "got from hm: " << hm.searchByKey(it->first);
+            //     f3 << "got from hm: " << hm.searchByKey(it->first).second;
             //     f3 << "\ngot from file: " << v;
             //     for (size_t i = 0; i != sizeof(v); i++) {
             //         f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
@@ -322,9 +284,8 @@ int main() {
         //     << endl
         //     << endl;
 
-        ff1 << hm.burst_threshold << "," << hm.bucket_num << ","
-            << endTm - staTm << "," << virt << "," << res << ","
-            << mem_cal_inside;
+        ff1 << bp / bn << "," << bn << "," << endTm - staTm << "," << virt
+            << "," << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
