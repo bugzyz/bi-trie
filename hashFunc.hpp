@@ -15,24 +15,64 @@
 namespace myTrie {
 namespace hashRelative {
 
-template <class CharT>
-std::size_t hash(const CharT* key, std::size_t key_size) {
-    static const std::size_t init = std::size_t(
-        (sizeof(std::size_t) == 8) ? 0xcbf29ce484222325 : 0x811c9dc5);
-    static const std::size_t multiplier =
-        std::size_t((sizeof(std::size_t) == 8) ? 0x100000001b3 : 0x1000193);
+// For fasthash64:
+static inline uint64_t mix(uint64_t h) {
+    h ^= h >> 23;
+    h *= 0x2127599bf4325c37ULL;
+    h ^= h >> 47;
+    return h;
+}
 
-    std::size_t hash = init;
-    for (std::size_t i = 0; i < key_size; ++i) {
-        hash ^= key[i];
-        hash *= multiplier;
+// A default hash function:
+uint64_t fasthash64(const char* buf, size_t len, uint64_t seed) {
+    uint64_t const m = 0x880355f21e6d1965ULL;
+    uint64_t const* pos = (uint64_t const*)buf;
+    uint64_t const* end = pos + (len / 8);
+    const unsigned char* pos2;
+    uint64_t h = seed ^ (len * m);
+    uint64_t v;
+
+    while (pos != end) {
+        v = *pos++;
+        h ^= mix(v);
+        h *= m;
     }
 
-    return hash;
+    pos2 = (const unsigned char*)pos;
+    v = 0;
 
-    //todo: test if the hash func should be changed
-    // std::string s(key, key_size);
-    // return std::hash<std::string>{}(s);
+    switch (len & 7) {
+        case 7:
+            v ^= (uint64_t)pos2[6] << 48;
+        case 6:
+            v ^= (uint64_t)pos2[5] << 40;
+        case 5:
+            v ^= (uint64_t)pos2[4] << 32;
+        case 4:
+            v ^= (uint64_t)pos2[3] << 24;
+        case 3:
+            v ^= (uint64_t)pos2[2] << 16;
+        case 2:
+            v ^= (uint64_t)pos2[1] << 8;
+        case 1:
+            v ^= (uint64_t)pos2[0];
+            h ^= mix(v);
+            h *= m;
+    }
+
+    return mix(h);
+}
+
+template <class CharT>
+std::size_t hash(const CharT* key, std::size_t key_size, size_t hashType) {
+    uint64_t hash;
+    if (hashType == 1) {
+        hash = fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
+        return hash;
+    } else {
+        hash = fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
+        return hash;
+    }
 }
 
 template <class CharT>

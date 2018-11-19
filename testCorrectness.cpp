@@ -2,7 +2,7 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include "redesignHashNode.hpp"
+#include "myTrie.hpp"
 
 #include <stdint.h>
 #include <sys/time.h>
@@ -22,7 +22,7 @@ static uint64_t get_usec() {
 
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(16384, 8192);
+    myTrie::htrie_map<char, uint32_t> hm(4, 10, 1000, 0.75);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");
@@ -42,17 +42,19 @@ int main() {
     uint64_t searchByK_count_bad = 0;
     uint64_t searchByV_count_good = 0;
     uint64_t searchByV_count_bad = 0;
+    vector<uint32_t> vv;
 
     for (auto it = m1.begin(); it != m1.end(); it++) {
         if (hm.searchByKey(it->first).second == it->second) {
-            std::cout << "good\n";
-            std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByKey(it->first).second
-                      << std::endl;
+            // std::cout << "good\n";
+            // std::cout << "ans: " << it->second << std::endl;
+            // std::cout << "got " << hm.searchByKey(it->first).second
+            //           << std::endl;
             searchByK_count_good++;
         } else {
             std::cout << "wrong\n";
             std::cout << "ans: " << it->second << std::endl;
+            vv.push_back(it->second);
             std::cout << "got " << hm.searchByKey(it->first).second
                       << std::endl;
             searchByK_count_bad++;
@@ -62,9 +64,9 @@ int main() {
 
     for (auto it = m2.begin(); it != m2.end(); it++) {
         if (hm.searchByValue(it->first) == it->second) {
-            std::cout << "good\n";
-            std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByValue(it->first) << std::endl;
+            // std::cout << "good\n";
+            // std::cout << "ans: " << it->second << std::endl;
+            // std::cout << "got " << hm.searchByValue(it->first) << std::endl;
             searchByV_count_good++;
         } else {
             std::cout << "wrong\n";
@@ -81,4 +83,12 @@ int main() {
     cout << "check value: good:" << searchByV_count_good
          << " bad:" << searchByV_count_bad << std::endl;
     cout << "finish\n";
+
+    // fstream fff("wrong_list", std::ios::out);
+    // for (auto it = vv.begin(); it != vv.end(); it++) {
+    //     fff << m2[*it] << "\t\t" << *it << "\n";
+    //     hm.tracingBySearchPoint(*it);
+    // }
+    // fff.close();
+
 }
