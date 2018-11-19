@@ -14,8 +14,6 @@
 #include <set>
 #include <string>
 
-#include <time.h>
-
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
 #define DEFAULT_Max_bytes_per_kv 1000
@@ -190,8 +188,7 @@ class htrie_map {
                                                  size_t keysize) {
             slot* bucket_addr = (key_metas + bucketid * Associativity);
             // find the hitted slot in hashnode
-            int i = 0;
-            for (; i != Associativity; i++) {
+            for (int i = 0; i != Associativity; i++) {
                 if (bucket_addr[i].isEmpty()) {
                     return std::pair<bool, iterator>(
                         false, iterator(false, T(), this, bucketid, i));
@@ -215,12 +212,6 @@ class htrie_map {
                 } else {
                     return iterator(false, T(), this, 0, 0);
                 }
-            }
-
-            bool icooldone = false;
-            if (icooldone) {
-                print_hashnode_element();
-                print_key_metas();
             }
 
             size_t bucketId1 =
@@ -295,9 +286,6 @@ class htrie_map {
 
                 bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
-                    if (itt->second == 894180) {
-                        cout << "'debug2'" << endl;
-                    }
                     std::string temp = itt->first;
 
                     if (temp.size() == 0) {
@@ -359,9 +347,7 @@ class htrie_map {
         void get_tail_str_v(std::map<std::string, T>& elements, slot* s) {
             char* tail_pointer = get_tail_pointer(s);
             std::string res(tail_pointer, s->length);
-            // T v;
             std::memcpy(&elements[res], tail_pointer + s->length, sizeof(T));
-            // elements[res] = v;
         }
 
         void get_all_elements(std::map<std::string, T>& elements) {
@@ -393,7 +379,7 @@ class htrie_map {
             return key_metas + bucketid * Associativity + slotid;
         }
 
-        slot* previous_dst_slot_in_same_bucket(slot* s) {
+        inline slot* previous_dst_slot_in_same_bucket(slot* s) {
             size_t slotid = (s - key_metas) % Associativity;
             if (slotid == 0) {
                 return nullptr;
@@ -406,8 +392,7 @@ class htrie_map {
                 (char*)malloc(Bucket_num * Associativity * sizeof(slot));
             memcpy(key_metas_backup, key_metas,
                    Bucket_num * Associativity * sizeof(slot));
-            cout << "========new rehash==============\n";
-            print_key_metas();
+
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
             std::map<size_t, size_t> bucket_list;
             for (size_t bn = 0; bn != Bucket_num; bn++) {
@@ -447,12 +432,6 @@ class htrie_map {
             size_t last_bucketid_kick_to = 0;
             // kicking slot
             do {
-                cout << "rehash time: " << rehash_count << "\n";
-                cout << "src_slot: " << src_slot.length << "/" << src_slot.pos
-                     << "/" << src_slot.page_id << "\n";
-                cout << "dst_num: " << dst_slot - key_metas << ": "
-                     << dst_slot->length << "/" << dst_slot->pos << "/"
-                     << dst_slot->page_id << endl;
                 /*
                     src(a,b,c)
                     cur_bucket: |x      |x      |x      |dst(d,e,f)|
@@ -469,9 +448,6 @@ class htrie_map {
                 if (bucketid_kick_to == current_bucket_id ||
                     (last_bucketid_kick_to == current_bucket_id &&
                      last_current_bucketid == bucketid_kick_to)) {
-                    cout << "num." << dst_slot - key_metas
-                         << " is stable in bucket or create a circle: "
-                         << bucketid_kick_to << endl;
                     dst_slot = previous_dst_slot_in_same_bucket(dst_slot);
                     rehash_count++;
                     if (dst_slot == nullptr) {
@@ -482,9 +458,6 @@ class htrie_map {
                     }
                     continue;
                 }
-
-                cout << "current_bucket_id: " << current_bucket_id << "\n";
-                cout << "bucketid_kick_to: " << bucketid_kick_to << "\n";
 
                 /*
                     src(a,b,c)
@@ -504,10 +477,6 @@ class htrie_map {
                            Bucket_num * Associativity * sizeof(slot));
                     return -1;
                 }
-                cout << "temp: " << temp_length << "/" << temp_pos << "/"
-                     << temp_page_id << "/"
-                     << "\n";
-                cout << "--------------------------------\n";
 
                 /*
                     src(a,b,c)
@@ -545,9 +514,6 @@ class htrie_map {
                     */
                     dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
 
-                    print_key_metas();
-                    cout << "=======rehash finished!=========\n";
-
                     return ret_slot_id;
                 }
 
@@ -581,8 +547,6 @@ class htrie_map {
                 last_current_bucketid = current_bucket_id;
                 current_bucket_id = bucketid_kick_to;
 
-                // print_key_metas();
-
                 rehash_count++;
             } while (rehash_count != Max_loop);
             // recover the key_metas
@@ -591,98 +555,10 @@ class htrie_map {
             return -1;
         }
 
-        struct SlotCmp {
-            bool operator()(const slot& lhs, const slot& rhs) const {
-                return lhs.length * 100 + lhs.pos * 10 + lhs.page_id <
-                       rhs.length * 100 + rhs.pos * 10 + rhs.page_id;
-            }
-        };
-
-        // just element
-        void print_hashnode_element() {
-            cout << "printing hashnode elememt\n";
-            std::map<string, T> tempMap;
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot* sss = get_slot(i, j);
-                    if (!sss->isEmpty()) {
-                        get_tail_str_v(tempMap, sss);
-                    }
-                }
-            }
-            cout << "hashnode elememt_num:" << elem_num
-                 << " acutally:" << tempMap.size() << "\n";
-            if (elem_num != tempMap.size()) {
-                assert(true);
-            }
-            int count = 0;
-            for (auto it = tempMap.begin(); it != tempMap.end(); it++) {
-                cout << count++ << ": " << it->first << " = " << it->second
-                     << endl;
-            }
-        }
-
-        // just key_metas layout
-        void print_key_metas() {
-            cout << "print keymetas layout\n";
-            for (int i = 0; i != Bucket_num; i++) {
-                cout << i << ":\t";
-                for (int j = 0; j != Associativity; j++) {
-                    slot* s = get_slot(i, j);
-                    cout << i * Associativity + j << ":" << s->length << "/"
-                         << s->pos << "/" << s->page_id << "\t\t";
-                }
-                cout << "\n";
-            }
-        }
-
-        void print_slot(slot s) {
-            cout << s.length << "/" << s.pos << "/" << s.page_id << endl;
-        }
-
-        void setup_before_slot_situation(set<slot, SlotCmp>& checkingset) {
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot* s = get_slot(i, j);
-                    if (!s->isEmpty()) checkingset.insert(slot(*s));
-                }
-            }
-        }
-
-        void check_current_slot_situation(set<slot, SlotCmp>& checkingSet) {
-            set<slot, SlotCmp> secondCheck;
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot* s = get_slot(i, j);
-                    if (!s->isEmpty()) secondCheck.insert(slot(*s));
-                }
-            }
-            cout << checkingSet.size() << "-" << secondCheck.size() << endl;
-            if (checkingSet.size() != secondCheck.size()) {
-                for (auto it = secondCheck.begin(); it != secondCheck.end();
-                     it++) {
-                    auto itt = checkingSet.find(*it);
-
-                    if (itt == checkingSet.end()) {
-                        cout << "cannt find: ";
-                        print_slot(*it);
-                    }
-                }
-                print_hashnode_element();
-                print_key_metas();
-            }
-        }
-
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, size_t bucketid,
                                                  int slotid) {
-            static hash_node* debug_hnode;
-            if (v == 1041205) {
-                cout << "'debug'" << endl;
-                debug_hnode = this;
-            }
-
             if (keysize == 0) {
                 haveValue = true;
                 onlyValue = v;
@@ -690,24 +566,12 @@ class htrie_map {
                 return std::pair<bool, T>(true, v);
             }
 
-            if (this == debug_hnode) {
-                cout << "check it out\n";
-            }
-
             // if slotid==-1, it denotes that the bucket(bucketid) is full , so
             // we rehash the key_metas
             if (slotid == -1) {
-                set<slot, SlotCmp> checkingSet;
-                setup_before_slot_situation(checkingSet);
-
                 if ((slotid = rehash(bucketid)) == -1) {
-                    check_current_slot_situation(checkingSet);
-
                     return std::pair<bool, T>(false, T());
                 }
-                cout << "Rehashing success: slotid is updated to " << slotid
-                     << "\n";
-                check_current_slot_situation(checkingSet);
             }
 
             // now the slotid cannot be -1 and slotid is lower than
@@ -729,21 +593,10 @@ class htrie_map {
             hm->set_v2k(v, this, target_slot);
             elem_num++;
 
-            if (this == debug_hnode) {
-                print_slot(*target_slot);
-                print_hashnode_element();
-                print_key_metas();
-            }
-
             // todo: need to burst elegantly
             if (need_burst()) {
                 std::map<std::string, T> elements;
                 get_all_elements(elements);
-
-                if (this == debug_hnode) {
-                    print_hashnode_element();
-                    print_key_metas();
-                }
 
                 burst(elements, this->anode::parent, hm);
 
@@ -804,13 +657,6 @@ class htrie_map {
         Max_loop = Max_slot_num * 0.5;
 
         t_root = new hash_node(nullptr);
-
-        cout << Associativity << endl;
-        cout << Bucket_num << endl;
-        cout << Max_bytes_per_kv << endl;
-        cout << Burst_ratio << endl;
-        cout << Max_slot_num << endl;
-        cout << Max_loop << endl;
     }
 
     void set_v2k(T v, hash_node* hnode, typename hash_node::slot* s) {
