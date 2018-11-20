@@ -19,7 +19,7 @@
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
 #define DEFAULT_Max_bytes_per_kv 1000
-#define DEFAULT_Burst_ratio 0.5
+#define DEFAULT_Burst_ratio 0.75
 
 // configuration
 // static size_t Associativity;
@@ -29,7 +29,7 @@
 // static size_t Max_slot_num;
 // static size_t Max_loop;
 
-//for testing
+// for testing
 size_t Associativity;
 size_t Bucket_num;
 size_t Max_bytes_per_kv;
@@ -90,7 +90,7 @@ class htrie_map {
         }
 
         ~trie_node() {
-            std::map<CharT, anode*> empty;
+            std::map<CharT, trie_node*> empty;
             childs.swap(empty);
         }
 
@@ -175,6 +175,7 @@ class htrie_map {
 
         ~hash_node() {
             free(key_metas);
+            for (int i = 0; i != pages.size(); i++) free(pages[i].first);
             vector<std::pair<char*, size_t>> empty;
             pages.swap(empty);
         }
@@ -442,6 +443,7 @@ class htrie_map {
                 }
             }
             if (kicked_slot_id == -1) {
+                free(key_metas_backup);
                 return -1;
             }
             ret_slot_id = kicked_slot_id;
@@ -480,6 +482,7 @@ class htrie_map {
                         // recover the key_metas
                         memcpy(key_metas, key_metas_backup,
                                Bucket_num * Associativity * sizeof(slot));
+                        free(key_metas_backup);
                         return -1;
                     }
                     continue;
@@ -501,6 +504,7 @@ class htrie_map {
                     // recover the key_metas
                     memcpy(key_metas, key_metas_backup,
                            Bucket_num * Associativity * sizeof(slot));
+                    free(key_metas_backup);
                     return -1;
                 }
 
@@ -546,6 +550,7 @@ class htrie_map {
                         dst_slot;
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
+                    free(key_metas_backup);
                     return ret_slot_id;
                 }
 
@@ -584,6 +589,7 @@ class htrie_map {
             // recover the key_metas
             memcpy(key_metas, key_metas_backup,
                    Bucket_num * Associativity * sizeof(slot));
+            free(key_metas_backup);
             return -1;
         }
 
@@ -785,7 +791,11 @@ class htrie_map {
         }
     }
 
-    void deleteMyself() { t_root->deleteMe(); }
+    void deleteMyself() {
+        map<T, SearchPoint> empty;
+        v2k.swap(empty);
+        t_root->deleteMe();
+    }
 };  // namespace myTrie
 
 }  // namespace myTrie
