@@ -31,19 +31,15 @@ int main() {
     vector<size_t> bucket_nums;
 
     // analyse by elem_per_bucket
+    elem_per_buck.push_back(5);
     elem_per_buck.push_back(11);
     elem_per_buck.push_back(31);
-    elem_per_buck.push_back(101);
+    elem_per_buck.push_back(61);
 
     // analyse by bucket_num
-    // bucket_nums.push_back(5);
-    // bucket_nums.push_back(31);
-    // bucket_nums.push_back(53);
-
+    bucket_nums.push_back(31);
+    bucket_nums.push_back(61);
     bucket_nums.push_back(103);
-    bucket_nums.push_back(991);
-    bucket_nums.push_back(1999);
-    bucket_nums.push_back(4139);
 
 
     // configs: pair<elem_per_bucket, bucket_num>
@@ -307,7 +303,7 @@ int main() {
         }
 
         startUsedMemTm = getLftMem();
-        // hm.deleteMyself();
+        hm.deleteMyself();
         endUsedMemTm = getLftMem();
         cout << "finish checking and printed correct/wrong "
                 "res\n--------------------------------------\n";
