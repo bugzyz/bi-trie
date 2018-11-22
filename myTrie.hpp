@@ -213,11 +213,7 @@ class htrie_map {
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
             if (keysize == 0) {
-                if (haveValue) {
-                    return iterator(true, onlyValue, this, 0, 0);
-                } else {
-                    return iterator(false, T(), this, 0, 0);
-                }
+                return iterator(haveValue, onlyValue, this, 0, 0);
             }
 
             size_t bucketId1 =
@@ -406,11 +402,6 @@ class htrie_map {
         }
 
         int rehash(size_t bucketid, htrie_map<CharT, T>* hm) {
-            char* key_metas_backup =
-                (char*)malloc(Bucket_num * Associativity * sizeof(slot));
-            memcpy(key_metas_backup, key_metas,
-                   Bucket_num * Associativity * sizeof(slot));
-
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
             std::map<size_t, size_t> bucket_list;
             for (size_t bn = 0; bn != Bucket_num; bn++) {
@@ -435,9 +426,14 @@ class htrie_map {
                 }
             }
             if (kicked_slot_id == -1) {
-                free(key_metas_backup);
                 return -1;
             }
+            // set up the backup for recovery if the rehash fails
+            char* key_metas_backup =
+                (char*)malloc(Bucket_num * Associativity * sizeof(slot));
+            memcpy(key_metas_backup, key_metas,
+                   Bucket_num * Associativity * sizeof(slot));
+
             ret_slot_id = kicked_slot_id;
 
             size_t current_bucket_id = bucketid;
@@ -648,7 +644,7 @@ class htrie_map {
 
         void set_slot(typename hash_node::slot* s) { sl = s; }
 
-        std::string getString() {
+        std::string get_string() {
             // get the parent char chain
             trie_node* cur_node = hnode->anode::parent;
             std::string res;
@@ -698,7 +694,13 @@ class htrie_map {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
     }
 
-    std::string searchByValue(T v) { return v2k[v].getString(); }
+    std::pair<bool, std::string> searchByValue(T v) {
+        auto it = v2k.find(v);
+        if (it != v2k.end())
+            return std::pair<bool, std::string>(true, v2k[v].get_string());
+        else
+            return std::pair<bool, std::string>(false, std::string());
+    }
 
     std::pair<bool, T> insertKV(std::string key, T v) {
         return access_kv_in_htrie_map(key.data(), key.size(), v, false);

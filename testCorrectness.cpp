@@ -63,7 +63,7 @@ int main() {
     std::cout << "-------------------\n";
 
     for (auto it = m2.begin(); it != m2.end(); it++) {
-        if (hm.searchByValue(it->first) == it->second) {
+        if (hm.searchByValue(it->first).second == it->second) {
             // std::cout << "good\n";
             // std::cout << "ans: " << it->second << std::endl;
             // std::cout << "got " << hm.searchByValue(it->first) << std::endl;
@@ -71,7 +71,8 @@ int main() {
         } else {
             std::cout << "wrong\n";
             std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByValue(it->first) << std::endl;
+            std::cout << "got " << hm.searchByValue(it->first).second
+                      << std::endl;
             searchByV_count_bad++;
         }
     }
@@ -90,5 +91,4 @@ int main() {
     //     hm.tracingBySearchPoint(*it);
     // }
     // fff.close();
-
 }
