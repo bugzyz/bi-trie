@@ -1,7 +1,10 @@
+bool test_and_print_wrong_test = false;
+bool manually_test = false;
+
 #include <boost/unordered_map.hpp>
 #include <map>
 #include <vector>
-#include "myTrie.hpp"
+// #include "myTrie.hpp"
 // debug
 #include <fstream>
 #include "debug.hpp"
@@ -27,71 +30,31 @@ int main() {
     std::cout << "starto!\n";
 
     std::vector<std::pair<size_t, size_t>> configs;
-    vector<size_t> burst_points;
     vector<size_t> elem_per_buck;
     vector<size_t> bucket_nums;
 
-    burst_points.push_back(30000);
-    burst_points.push_back(20000);
-    burst_points.push_back(16384);
-    burst_points.push_back(10000);
-    burst_points.push_back(8000);
-    burst_points.push_back(3000);
-    burst_points.push_back(1500);
-    burst_points.push_back(800);
-    burst_points.push_back(500);
-    burst_points.push_back(120);
-    burst_points.push_back(80);
-
     // analyse by elem_per_bucket
-    elem_per_buck.push_back(0);
-    elem_per_buck.push_back(1000);
-    elem_per_buck.push_back(500);
-    elem_per_buck.push_back(200);
-    elem_per_buck.push_back(50);
-    elem_per_buck.push_back(10);
-    elem_per_buck.push_back(1);
-
-    for (auto it = burst_points.begin(); it != burst_points.end(); it++) {
-        for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end();
-             itt++) {
-            size_t bn = 0;
-            // cout << "it: " << *it << " itt: " << *itt << endl;
-
-            if (*itt == 0) continue;
-            if (*itt > *it) continue;
-
-            if (*itt == 0) {
-                bn = *it;
-            } else {
-                bn = *it / *itt;
-            }
-            configs.push_back(std::pair<size_t, size_t>(*it, bn));
-            cout << "bp: " << *it << " bn: " << bn << endl;
-        }
-    }
+    // associativity should be 4, 8 for alignment
+    elem_per_buck.push_back(4);
+    elem_per_buck.push_back(8);
 
     // analyse by bucket_num
-    // bucket_nums.push_back(0);
-    // bucket_nums.push_back(300);
-    // bucket_nums.push_back(150);
-    // bucket_nums.push_back(80);
-    // bucket_nums.push_back(32);
-    // bucket_nums.push_back(12);
-    // bucket_nums.push_back(5);
-    // bucket_nums.push_back(2);
-    // bucket_nums.push_back(1);
+    bucket_nums.push_back(5);
+    bucket_nums.push_back(11);
+    bucket_nums.push_back(31);
+    bucket_nums.push_back(59);
+    bucket_nums.push_back(71);
+    bucket_nums.push_back(97);
+    bucket_nums.push_back(101);
 
-    // for (auto it = burst_points.begin(); it != burst_points.end(); it++) {
-    //     for (auto itt = bucket_nums.begin(); itt != bucket_nums.end(); itt++)
-    //     {
-    //         size_t bn = *itt;
-    //         if (bn == 0) {
-    //             bn = *it;
-    //         }
-    //         configs.push_back(std::pair<size_t, size_t>(*it, bn));
-    //     }
-    // }
+    // configs: pair<bucket_num, elem_per_bucket>
+    // stable bucket_num
+    for (auto it = bucket_nums.begin(); it != bucket_nums.end(); it++) {
+        for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end();
+             itt++) {
+            configs.push_back(std::pair<size_t, size_t>(*itt, *it));
+        }
+    }
 
     fstream ff1("result", std::ios::out | std::ios::app);
 
@@ -127,12 +90,13 @@ int main() {
     double virt = 0.0;
     double res = 0.0;
     for (auto it = configs.begin(); it != configs.end(); it++) {
-        size_t bp = it->first;
+        // ass is associativity
+        size_t ass = it->first;
         size_t bn = it->second;
 
         staTm = get_usec();
 
-        myTrie::htrie_map<char, uint32_t> hm(bp, bn);
+        myTrie::htrie_map<char, uint32_t> hm(ass, bn);
         std::fstream f1("dataset/str_normal");
 
         uint64_t startUsedMemTm = getLftMem();
@@ -142,6 +106,7 @@ int main() {
         }
         myTrie::debuging::process_mem_usage(virt, res);
 
+        myTrie::debuging::clear_num();
         myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
         double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
 
@@ -156,6 +121,7 @@ int main() {
         double percent_k = 0.0;
         double max_percent_k = 0.0;
         double min_percent_k = 0.0;
+
         // checking:
         std::fstream f3("test_res_wrong_key", std::ios::out | std::ios::app);
         for (auto it = m1.begin(); it != m1.end(); it++) {
@@ -174,15 +140,17 @@ int main() {
             }
 
             int64_t hm_get_start = get_usec();
-            uint32_t gotfromhm = hm.searchByKey(url1);
-            gotfromhm = hm.searchByKey(url2);
-            gotfromhm = hm.searchByKey(url3);
-            gotfromhm = hm.searchByKey(url4);
-            gotfromhm = hm.searchByKey(url5);
+            uint32_t gotfromhm;
+            gotfromhm = hm.searchByKey(url1).second;
+            gotfromhm = hm.searchByKey(url2).second;
+            gotfromhm = hm.searchByKey(url3).second;
+            gotfromhm = hm.searchByKey(url4).second;
+            gotfromhm = hm.searchByKey(url5).second;
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
-            uint32_t gotfromum = m1[url1];
+            uint32_t gotfromum;
+            gotfromum = m1[url1];
             gotfromum = m1[url2];
             gotfromum = m1[url3];
             gotfromum = m1[url4];
@@ -210,23 +178,26 @@ int main() {
             }
 
             // correctness check
-            // if (gotfromhm == it->second) {
-            // } else {
-            //     f3 << "key_wrong answer: " << it->first << " got "
-            //        << hm.searchByKey(it->first)
-            //        << " from hm , actual value: " << it->second << std::endl;
-            //     uint32_t v = it->second;
-            //     f3 << "got from hm: " << hm.searchByKey(it->first);
-            //     f3 << "\ngot from file: " << v;
-            //     for (size_t i = 0; i != sizeof(v); i++) {
-            //         f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
-            //            << ",";
-            //     }
-            //     f3 << std::endl;
-            //     f3.flush();
-            //     std::cout << "wrong answer!\n";
-            //     exit(0);
-            // }
+            if (test_and_print_wrong_test) {
+                if (gotfromhm == it->second) {
+                } else {
+                    f3 << "key_wrong answer: " << it->first << " got "
+                       << hm.searchByKey(it->first).second
+                       << " from hm , actual value: " << it->second
+                       << std::endl;
+                    uint32_t v = it->second;
+                    f3 << "got from hm: " << hm.searchByKey(it->first).second;
+                    f3 << "\ngot from file: " << v;
+                    for (size_t i = 0; i != sizeof(v); i++) {
+                        f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
+                           << ",";
+                    }
+                    f3 << std::endl;
+                    f3.flush();
+                    std::cout << "wrong answer!\n";
+                    exit(0);
+                }
+            }
         }
         f3.close();
         cout << "compare to unordered_map: accessing cost diff: "
@@ -255,11 +226,11 @@ int main() {
             }
 
             int64_t hm_get_start = get_usec();
-            std::string gotfromhm = hm.searchByValue(v1);
-            gotfromhm = hm.searchByValue(v2);
-            gotfromhm = hm.searchByValue(v3);
-            gotfromhm = hm.searchByValue(v4);
-            gotfromhm = hm.searchByValue(v5);
+            std::string gotfromhm = hm.searchByValue(v1).second;
+            gotfromhm = hm.searchByValue(v2).second;
+            gotfromhm = hm.searchByValue(v3).second;
+            gotfromhm = hm.searchByValue(v4).second;
+            gotfromhm = hm.searchByValue(v5).second;
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
@@ -288,19 +259,22 @@ int main() {
             }
 
             // correctness check
-            // if (gotfromhm == it->second) {
-            // } else {
-            //     f4 << "value_wrong answer: " << it->first << " got "
-            //        << hm.searchByValue(it->first)
-            //        << " from hm , actual value: " << it->second << std::endl;
-            //     std::string v = it->second;
-            //     f4 << "got from hm: " << hm.searchByValue(it->first);
-            //     f4 << "\ngot from file: " << v;
-            //     f4 << std::endl;
-            //     f4.flush();
-            //     std::cout << "wrong answer!\n";
-            //     exit(0);
-            // }
+            if (test_and_print_wrong_test) {
+                if (gotfromhm == it->second) {
+                } else {
+                    f4 << "value_wrong answer: " << it->first << " got "
+                       << hm.searchByValue(it->first).second
+                       << " from hm , actual value: " << it->second
+                       << std::endl;
+                    std::string v = it->second;
+                    f4 << "got from hm: " << hm.searchByValue(it->first).second;
+                    f4 << "\ngot from file: " << v;
+                    f4 << std::endl;
+                    f4.flush();
+                    std::cout << "wrong answer!\n";
+                    exit(0);
+                }
+            }
         }
         f4.close();
         cout << "compare to unordered_map: accessing cost diff: "
@@ -322,38 +296,55 @@ int main() {
         //     << endl
         //     << endl;
 
-        ff1 << hm.burst_threshold << "," << hm.bucket_num << ","
-            << endTm - staTm << "," << virt << "," << res << ","
-            << mem_cal_inside;
+        ff1 << Bucket_num << "," << Associativity << "," << endTm - staTm << ","
+            << virt << "," << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
         ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
             << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0 << endl;
+            << "," << min_percent_v * 100.0
+            << ","
+            // << (double)rehash_total_num / (double)count << ","
+            // << (double)parent_total_num / (double)count << ","
+            << (double)myTrie::debuging::hashnode_load /
+                   (double)myTrie::debuging::h_n / (double)Max_slot_num
+            << ","
+            << (double)myTrie::debuging::hashnode_max_load /
+                   (double)Max_slot_num
+            << ","
+            << (double)myTrie::debuging::hashnode_min_load /
+                   (double)Max_slot_num
+            << "," << myTrie::debuging::t_n << "," << myTrie::debuging::h_n
+            << endl;
+        ff1.flush();
+        // parent_total_num = 0;
 
-        //--------------printing wrong result-------------------
-        std::ifstream f4wrong1("test_res_wrong_key", std::ios::in);
-        char line[1024] = {0};
-        while (f4wrong1.getline(line, sizeof(line))) {
-            std::cerr << line << std::endl;
+        if (test_and_print_wrong_test) {
+            //--------------printing wrong result-------------------
+            std::ifstream f4wrong1("test_res_wrong_key", std::ios::in);
+            char line[1024] = {0};
+            while (f4wrong1.getline(line, sizeof(line))) {
+                std::cerr << line << std::endl;
+            }
+
+            std::ifstream f4wrong2("test_res_wrong_value", std::ios::in);
+            while (f4wrong2.getline(line, sizeof(line))) {
+                std::cerr << line << std::endl;
+            }
+
+            startUsedMemTm = getLftMem();
+            hm.deleteMyself();
+            endUsedMemTm = getLftMem();
+            cout << "finish checking and printed correct/wrong "
+                    "res\n--------------------------------------\n";
         }
 
-        std::ifstream f4wrong2("test_res_wrong_value", std::ios::in);
-        while (f4wrong2.getline(line, sizeof(line))) {
-            std::cerr << line << std::endl;
+        if (manually_test) {
+            while (cin >> url) {
+                cout << "get value: " << hm.searchByKey(url).second << endl;
+            }
         }
-
-        startUsedMemTm = getLftMem();
-        // hm.deleteMyself();
-        endUsedMemTm = getLftMem();
-        cout << "finish checking and printed correct/wrong "
-                "res\n--------------------------------------\n";
-        // }
-        // while(cin >> url){
-        //     cout << "get value: " << hm.searchByKey(url) << endl;
-        // }
     }
-
     ff1.close();
 }

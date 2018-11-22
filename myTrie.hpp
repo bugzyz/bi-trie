@@ -22,12 +22,19 @@
 #define DEFAULT_Burst_ratio 0.75
 
 // configuration
-static size_t Associativity;
-static size_t Bucket_num;
-static size_t Max_bytes_per_kv;
-static double Burst_ratio;
-static size_t Max_slot_num;
-static size_t Max_loop;
+// static size_t Associativity;
+// static size_t Bucket_num;
+// static size_t Max_bytes_per_kv;
+// static double Burst_ratio;
+// static size_t Max_slot_num;
+// static size_t Max_loop;
+
+size_t Associativity;
+size_t Bucket_num;
+size_t Max_bytes_per_kv;
+double Burst_ratio;
+size_t Max_slot_num;
+size_t Max_loop;
 
 using namespace std;
 
