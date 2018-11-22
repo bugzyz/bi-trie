@@ -19,7 +19,7 @@
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
 #define DEFAULT_Max_bytes_per_kv 1000
-#define DEFAULT_Burst_ratio 0.5
+#define DEFAULT_Burst_ratio 0.75
 
 // configuration
 static size_t Associativity;
@@ -82,7 +82,7 @@ class htrie_map {
         }
 
         ~trie_node() {
-            std::map<CharT, anode*> empty;
+            std::map<CharT, trie_node*> empty;
             childs.swap(empty);
         }
 
@@ -167,6 +167,7 @@ class htrie_map {
 
         ~hash_node() {
             free(key_metas);
+            for (int i = 0; i != pages.size(); i++) free(pages[i].first);
             vector<std::pair<char*, size_t>> empty;
             pages.swap(empty);
         }
@@ -434,6 +435,7 @@ class htrie_map {
                 }
             }
             if (kicked_slot_id == -1) {
+                free(key_metas_backup);
                 return -1;
             }
             ret_slot_id = kicked_slot_id;
@@ -472,6 +474,7 @@ class htrie_map {
                         // recover the key_metas
                         memcpy(key_metas, key_metas_backup,
                                Bucket_num * Associativity * sizeof(slot));
+                        free(key_metas_backup);
                         return -1;
                     }
                     continue;
@@ -493,6 +496,7 @@ class htrie_map {
                     // recover the key_metas
                     memcpy(key_metas, key_metas_backup,
                            Bucket_num * Associativity * sizeof(slot));
+                    free(key_metas_backup);
                     return -1;
                 }
 
@@ -576,6 +580,7 @@ class htrie_map {
             // recover the key_metas
             memcpy(key_metas, key_metas_backup,
                    Bucket_num * Associativity * sizeof(slot));
+            free(key_metas_backup);
             return -1;
         }
 
@@ -642,27 +647,20 @@ class htrie_map {
 
         void set_slot(typename hash_node::slot* s) { sl = s; }
 
-        // todo: refine
         std::string getString() {
             // get the parent char chain
             trie_node* cur_node = hnode->anode::parent;
-            std::stack<char> st;
+            std::string res;
             while (cur_node != nullptr && cur_node->myChar != '\0') {
-                st.push((char)cur_node->myChar);
+                res = (char)cur_node->myChar + res;
                 cur_node = cur_node->anode::parent;
-            }
-            std::stringstream ss;
-            while (!st.empty()) {
-                ss << st.top();
-                st.pop();
             }
             // get tail
             if (sl != nullptr) {
-                string res = std::string(hnode->get_tail_pointer(sl),
-                                         (size_t)sl->length);
-                ss << res;
+                res = res + std::string(hnode->get_tail_pointer(sl),
+                                        (size_t)sl->length);
             }
-            return ss.str();
+            return res;
         }
     };
 
@@ -777,7 +775,11 @@ class htrie_map {
         }
     }
 
-    void deleteMyself() { t_root->deleteMe(); }
+    void deleteMyself() {
+        map<T, SearchPoint> empty;
+        v2k.swap(empty);
+        t_root->deleteMe();
+    }
 };  // namespace myTrie
 
 }  // namespace myTrie
