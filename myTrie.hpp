@@ -542,6 +542,7 @@ class htrie_map {
                         dst_slot;
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
+                    free(key_metas_backup);
                     return ret_slot_id;
                 }
 
