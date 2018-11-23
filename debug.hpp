@@ -112,8 +112,12 @@ size_t hashnode_load = 0;
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
 
+size_t total_pass_trie_node_num = 0;
+size_t myCount = 0;
+
 template <typename CharT, typename T>
-void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root) {
+void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
+                          size_t depth = 0) {
     using my = typename myTrie::htrie_map<CharT, T>;
     if (root == nullptr) {
         return;
@@ -144,6 +148,13 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root) {
             hashnode_min_load = current_elem_num;
         }
 
+        total_pass_trie_node_num +=
+            ((typename my::hash_node*)root)->elem_num * depth;
+
+        if (((typename my::hash_node*)root)->haveValue) {
+            total_pass_trie_node_num += depth;
+        }
+
     } else if (root->isTrieNode()) {
         trie_node_mem += sizeof(root);
 
@@ -153,11 +164,12 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root) {
         if (childs.size() == 0) {
             print_tree_construct<CharT, T>(
                 ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)
-                    ->getOnlyHashNode());
+                    ->getOnlyHashNode(),
+                depth + 1);
         } else {
             for (auto it = childs.begin(); it != childs.end(); it++) {
                 t_n++;
-                print_tree_construct<CharT, T>(it->second);
+                print_tree_construct<CharT, T>(it->second, depth + 1);
             }
         }
     } else {
@@ -175,6 +187,7 @@ void clear_num() {
     hashnode_load = 0;
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
+    total_pass_trie_node_num = 0;
     return;
 }
 

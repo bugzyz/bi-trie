@@ -306,7 +306,10 @@ int main() {
             << "," << min_percent_v * 100.0
             << ","
             // << (double)rehash_total_num / (double)count << ","
-            // << (double)parent_total_num / (double)count << ","
+            << ((double)myTrie::debuging::total_pass_trie_node_num /
+                (double)count) -
+                   1
+            << ","
             << (double)myTrie::debuging::hashnode_load /
                    (double)myTrie::debuging::h_n / (double)Max_slot_num
             << ","
@@ -318,7 +321,6 @@ int main() {
             << "," << myTrie::debuging::t_n << "," << myTrie::debuging::h_n
             << endl;
         ff1.flush();
-        // parent_total_num = 0;
 
         if (test_and_print_wrong_test) {
             //--------------printing wrong result-------------------
