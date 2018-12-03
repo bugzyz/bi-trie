@@ -6,7 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <stack>
-#include "hashFunc.hpp"
+#include "../util/hashFunc.hpp"
 
 #include <fstream>
 #include <ios>
@@ -676,6 +676,8 @@ class htrie_map {
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
         : t_root(nullptr) {
+        std::cout << "SET UP CUCKOOHASH-TRIE MAP\n";
+
         Associativity = customized_associativity;
         Bucket_num = customized_bucket_count;
         Max_bytes_per_kv = customized_byte_per_kv;

@@ -2,7 +2,8 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include "myTrie.hpp"
+
+#include "test_which.hpp"
 
 #include <stdint.h>
 #include <sys/time.h>
@@ -22,7 +23,7 @@ static uint64_t get_usec() {
 
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(4, 10, 1000, 0.75);
+    myTrie::htrie_map<char, uint32_t> hm(4, 10);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");

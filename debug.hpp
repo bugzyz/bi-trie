@@ -97,8 +97,6 @@ void process_mem_usage(double& vm_usage, double& resident_set) {
 }  // namespace debuging
 }  // namespace myTrie
 
-#include "myTrie.hpp"
-
 namespace myTrie {
 namespace debuging {
 using std::cout;
@@ -109,8 +107,10 @@ uint64_t hash_node_mem;
 uint64_t trie_node_mem;
 
 size_t hashnode_load = 0;
+#ifdef TEST_CUCKOOHASH
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
+#endif
 
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
@@ -124,6 +124,7 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
     }
     // print bucket
     if (root->isHashNode()) {
+#ifdef TEST_CUCKOOHASH
         hash_node_mem += sizeof(root);
 
         // basic bucket cost
@@ -154,6 +155,32 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
         if (((typename my::hash_node*)root)->haveValue) {
             total_pass_trie_node_num += depth;
         }
+#else
+        hash_node_mem += sizeof(root);
+
+        std::vector<typename my::array_bucket> buckets =
+            ((typename my::hash_node*)root)->kvs;
+        // basic bucket cost
+        uint32_t bucket_num = buckets.size();
+        uint32_t bucket_mem = sizeof(typename my::array_bucket) * bucket_num;
+        hash_node_mem += bucket_mem;
+
+        uint32_t bucket_buffer_mem = 0;
+        // bucket buffer cost
+        for (auto it = buckets.begin(); it != buckets.end(); it++) {
+            bucket_buffer_mem += it->buffer_size;
+        }
+        hash_node_mem += bucket_buffer_mem;
+
+        hashnode_load += ((typename my::hash_node*)root)->element_count * depth;
+
+        total_pass_trie_node_num +=
+            ((typename my::hash_node*)root)->element_count * depth;
+
+        if (((typename my::hash_node*)root)->haveValue)
+            total_pass_trie_node_num += depth;
+        h_n++;
+#endif
 
     } else if (root->isTrieNode()) {
         trie_node_mem += sizeof(root);
@@ -185,14 +212,23 @@ void clear_num() {
     hash_node_mem = 0;
     trie_node_mem = 0;
     hashnode_load = 0;
+#ifdef TEST_CUCKOOHASH
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
+#endif
+
     total_pass_trie_node_num = 0;
     return;
 }
 
 template <typename CharT, typename T>
 double print_res() {
+#ifdef TEST_CUCKOOHASH
+    std::cout << "WE ARE TESTING CUCKOOHASH_IMPL NOW\n";
+#else
+    std::cout << "WE ARE TESTING HAT-TRIE NOW\n";
+#endif
+
     std::cout << "trie_node: " << t_n << " hash_node: " << h_n << std::endl;
     std::cout << "trie_node_mem: " << trie_node_mem
               << " hash_node_mem: " << hash_node_mem << std::endl;

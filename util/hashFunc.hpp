@@ -64,7 +64,7 @@ uint64_t fasthash64(const char* buf, size_t len, uint64_t seed) {
 }
 
 template <class CharT>
-std::size_t hash(const CharT* key, std::size_t key_size, size_t hashType) {
+std::size_t hash(const CharT* key, std::size_t key_size, size_t hashType = 1) {
     uint64_t hash;
     if (hashType == 1) {
         hash = fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);

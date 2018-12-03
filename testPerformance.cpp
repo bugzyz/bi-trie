@@ -1,13 +1,16 @@
 bool test_and_print_wrong_test = false;
 bool manually_test = false;
 
-#include <boost/unordered_map.hpp>
-#include <map>
-#include <vector>
+#include "test_which.hpp"
+
 // #include "myTrie.hpp"
 // debug
 #include <fstream>
 #include "debug.hpp"
+
+#include <boost/unordered_map.hpp>
+#include <map>
+#include <vector>
 using std::fstream;
 
 #include <stdint.h>
@@ -296,7 +299,8 @@ int main() {
         //     << endl
         //     << endl;
 
-        ff1 << Bucket_num << "," << Associativity << "," << endTm - staTm << ","
+#ifdef TEST_CUCKOOHASH
+        ff1 << Associativity << "," << Bucket_num << "," << endTm - staTm << ","
             << virt << "," << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
@@ -318,8 +322,30 @@ int main() {
             << ","
             << (double)myTrie::debuging::hashnode_min_load /
                    (double)Max_slot_num
-            << "," << myTrie::debuging::t_n << "," << myTrie::debuging::h_n
-            << endl;
+            << ","
+
+#else
+        ff1 << hm.burst_threshold << "," << hm.bucket_num << ","
+            << endTm - staTm << "," << virt << "," << res << ","
+            << mem_cal_inside;
+        ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
+            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
+            << "," << min_percent_k * 100.0;
+        ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
+            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
+            << "," << min_percent_v * 100.0
+            << ","
+            // << (double)rehash_total_num / (double)count << ","
+            << ((double)myTrie::debuging::total_pass_trie_node_num /
+                (double)count) -
+                   1
+            << ","
+            << (double)myTrie::debuging::hashnode_load /
+                   (double)myTrie::debuging::h_n / (double)hm.burst_threshold
+            << ","
+#endif
+            << myTrie::debuging::t_n << "," << myTrie::debuging::h_n << endl;
+
         ff1.flush();
 
         if (test_and_print_wrong_test) {
