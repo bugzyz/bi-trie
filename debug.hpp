@@ -116,9 +116,9 @@ size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
 
 template <typename CharT, typename T>
-void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
+void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
                           size_t depth = 0) {
-    using my = typename myTrie::htrie_map<CharT, T>;
+    using my = myTrie::htrie_map<CharT, T>;
     if (root == nullptr) {
         return;
     }
@@ -129,17 +129,17 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
 
         // basic bucket cost
         uint32_t bucket_mem =
-            sizeof(typename my::hash_node::slot) * Max_slot_num;
+            sizeof(class my::hash_node::slot) * Max_slot_num;
         hash_node_mem += bucket_mem;
 
         // page mem cost
         size_t pages_cost =
-            Max_bytes_per_kv * ((typename my::hash_node*)root)->pages.size();
+            Max_bytes_per_kv * ((class my::hash_node*)root)->pages.size();
         hash_node_mem += pages_cost;
 
         h_n++;
 
-        size_t current_elem_num = ((typename my::hash_node*)root)->elem_num;
+        size_t current_elem_num = ((class my::hash_node*)root)->elem_num;
         hashnode_load += current_elem_num;
         if (current_elem_num > hashnode_max_load) {
             hashnode_max_load = current_elem_num;
@@ -150,19 +150,19 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
         }
 
         total_pass_trie_node_num +=
-            ((typename my::hash_node*)root)->elem_num * depth;
+            ((class my::hash_node*)root)->elem_num * depth;
 
-        if (((typename my::hash_node*)root)->haveValue) {
+        if (((class my::hash_node*)root)->haveValue) {
             total_pass_trie_node_num += depth;
         }
 #else
         hash_node_mem += sizeof(root);
 
-        std::vector<typename my::array_bucket> buckets =
-            ((typename my::hash_node*)root)->kvs;
+        std::vector<class my::array_bucket> buckets =
+            ((class my::hash_node*)root)->kvs;
         // basic bucket cost
         uint32_t bucket_num = buckets.size();
-        uint32_t bucket_mem = sizeof(typename my::array_bucket) * bucket_num;
+        uint32_t bucket_mem = sizeof(class my::array_bucket) * bucket_num;
         hash_node_mem += bucket_mem;
 
         uint32_t bucket_buffer_mem = 0;
@@ -172,12 +172,12 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
         }
         hash_node_mem += bucket_buffer_mem;
 
-        hashnode_load += ((typename my::hash_node*)root)->element_count * depth;
+        hashnode_load += ((class my::hash_node*)root)->element_count * depth;
 
         total_pass_trie_node_num +=
-            ((typename my::hash_node*)root)->element_count * depth;
+            ((class my::hash_node*)root)->element_count * depth;
 
-        if (((typename my::hash_node*)root)->haveValue)
+        if (((class my::hash_node*)root)->haveValue)
             total_pass_trie_node_num += depth;
         h_n++;
 #endif
@@ -185,12 +185,12 @@ void print_tree_construct(typename myTrie::htrie_map<CharT, T>::anode* root,
     } else if (root->isTrieNode()) {
         trie_node_mem += sizeof(root);
 
-        std::map<CharT, typename myTrie::htrie_map<CharT, T>::trie_node*>
-            childs = ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)
+        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*>
+            childs = ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
                          ->childs;
         if (childs.size() == 0) {
             print_tree_construct<CharT, T>(
-                ((typename myTrie::htrie_map<CharT, T>::trie_node*)root)
+                ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
                     ->getOnlyHashNode(),
                 depth + 1);
         } else {
