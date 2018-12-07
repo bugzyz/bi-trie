@@ -119,6 +119,11 @@ int main() {
         endTm = get_usec();
 
         cout << "finish trie_map constructing\n";
+        cout << "constructing time: " << endTm - staTm << endl;
+#ifdef TEST_GROWCUCKOOHASH
+        cout << "expand cost time: " << expand_cost_time << endl;
+#endif
+        cout << "rehash cost time: " << rehash_cost_time << endl;
 
         int64_t um_hm_k = 0;
         double percent_k = 0.0;
@@ -307,25 +312,56 @@ int main() {
             << "," << min_percent_k * 100.0;
         ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
             << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0
-            << ","
-            // << (double)rehash_total_num / (double)count << ","
+            << "," << min_percent_v * 100.0 << ","
+            << (double)rehash_total_num / (double)count << ","
             << ((double)myTrie::debuging::total_pass_trie_node_num /
                 (double)count) -
                    1
             << ","
             << (double)myTrie::debuging::hashnode_load /
-                   (double)myTrie::debuging::h_n / (double)Max_slot_num
+                   (double)myTrie::debuging::h_n / (double)Max_slot_num *
+                   (double)100
             << ","
             << (double)myTrie::debuging::hashnode_max_load /
-                   (double)Max_slot_num
+                   (double)Max_slot_num * (double)100
             << ","
             << (double)myTrie::debuging::hashnode_min_load /
-                   (double)Max_slot_num
+                   (double)Max_slot_num * (double)100
+            << "," << 0 << "," << rehash_cost_time
             << ","
 
-#else
-        ff1 << hm.burst_threshold << "," << hm.bucket_num << ","
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+            ff1
+            << Associativity << "," << Bucket_num << "," << endTm - staTm << ","
+            << virt << "," << res << "," << mem_cal_inside;
+        ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
+            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
+            << "," << min_percent_k * 100.0;
+        ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
+            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
+            << "," << min_percent_v * 100.0 << ","
+            << (double)rehash_total_num / (double)count << ","
+            << ((double)myTrie::debuging::total_pass_trie_node_num /
+                (double)count) -
+                   1
+            << ","
+            << (double)myTrie::debuging::hashnode_load /
+                   (double)myTrie::debuging::hashnode_total_slot_num *
+                   (double)100
+            << ","
+            << (double)myTrie::debuging::hashnode_max_load /
+                   (double)Max_slot_num * (double)100
+            << ","
+            << (double)myTrie::debuging::hashnode_min_load /
+                   (double)Max_slot_num * (double)100
+            << "," << expand_cost_time << "," << rehash_cost_time
+            << ","
+
+#endif
+#ifdef TEST_HAT
+            ff1
+            << hm.burst_threshold << "," << hm.bucket_num << ","
             << endTm - staTm << "," << virt << "," << res << ","
             << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
@@ -347,6 +383,17 @@ int main() {
             << myTrie::debuging::t_n << "," << myTrie::debuging::h_n << endl;
 
         ff1.flush();
+
+#ifdef TEST_CUCKOOHASH
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+#endif
+
+#ifdef TEST_GROWCUCKOOHASH
+        expand_cost_time = 0;
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+#endif
 
         if (test_and_print_wrong_test) {
             //--------------printing wrong result-------------------

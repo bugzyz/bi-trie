@@ -23,7 +23,7 @@ static uint64_t get_usec() {
 
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(4, 10);
+    myTrie::htrie_map<char, uint32_t> hm(4, 31);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");
@@ -37,6 +37,7 @@ int main() {
     }
     uint64_t end = get_usec();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
+    cout << "expand cost time: " << expand_cost_time << endl;
 
     uint64_t count = m1.size();
     uint64_t searchByK_count_good = 0;

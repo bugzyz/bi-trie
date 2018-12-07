@@ -111,6 +111,12 @@ size_t hashnode_load = 0;
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
 #endif
+#ifdef TEST_GROWCUCKOOHASH
+size_t hashnode_max_load = Max_slot_num / 2;
+size_t hashnode_min_load = Max_slot_num / 2;
+size_t hashnode_total_slot_num = 0;
+
+#endif
 
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
@@ -128,8 +134,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         hash_node_mem += sizeof(root);
 
         // basic bucket cost
-        uint32_t bucket_mem =
-            sizeof(class my::hash_node::slot) * Max_slot_num;
+        uint32_t bucket_mem = sizeof(class my::hash_node::slot) * Max_slot_num;
         hash_node_mem += bucket_mem;
 
         // page mem cost
@@ -155,7 +160,44 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         if (((class my::hash_node*)root)->haveValue) {
             total_pass_trie_node_num += depth;
         }
-#else
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+        hash_node_mem += sizeof(root);
+
+        // basic bucket cost
+        uint32_t bucket_mem =
+            sizeof(class my::hash_node::slot) *
+            (((class my::hash_node*)root)->cur_associativity) * Bucket_num;
+        hash_node_mem += bucket_mem;
+
+        // page mem cost
+        size_t pages_cost =
+            Max_bytes_per_kv * ((class my::hash_node*)root)->pages.size();
+        hash_node_mem += pages_cost;
+
+        h_n++;
+
+        size_t current_elem_num = ((class my::hash_node*)root)->elem_num;
+        hashnode_load += current_elem_num;
+        hashnode_total_slot_num +=
+            (((class my::hash_node*)root)->cur_associativity) * Bucket_num;
+
+        if (current_elem_num > hashnode_max_load) {
+            hashnode_max_load = current_elem_num;
+        }
+
+        if (current_elem_num < hashnode_min_load) {
+            hashnode_min_load = current_elem_num;
+        }
+
+        total_pass_trie_node_num +=
+            ((class my::hash_node*)root)->elem_num * depth;
+
+        if (((class my::hash_node*)root)->haveValue) {
+            total_pass_trie_node_num += depth;
+        }
+#endif
+#ifdef TEST_HAT
         hash_node_mem += sizeof(root);
 
         std::vector<class my::array_bucket> buckets =
@@ -185,9 +227,8 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
     } else if (root->isTrieNode()) {
         trie_node_mem += sizeof(root);
 
-        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*>
-            childs = ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
-                         ->childs;
+        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
+            ((class myTrie::htrie_map<CharT, T>::trie_node*)root)->childs;
         if (childs.size() == 0) {
             print_tree_construct<CharT, T>(
                 ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
@@ -216,6 +257,11 @@ void clear_num() {
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
 #endif
+#ifdef TEST_GROWCUCKOOHASH
+    hashnode_max_load = Max_slot_num / 2;
+    hashnode_min_load = Max_slot_num / 2;
+    hashnode_total_slot_num = 0;
+#endif
 
     total_pass_trie_node_num = 0;
     return;
@@ -225,6 +271,9 @@ template <typename CharT, typename T>
 double print_res() {
 #ifdef TEST_CUCKOOHASH
     std::cout << "WE ARE TESTING CUCKOOHASH_IMPL NOW\n";
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+    std::cout << "WE ARE TESTING GROWING_CUCKOOHASH_IMPL NOW\n";
 #else
     std::cout << "WE ARE TESTING HAT-TRIE NOW\n";
 #endif
