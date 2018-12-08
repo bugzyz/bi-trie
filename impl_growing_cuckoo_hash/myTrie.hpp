@@ -102,7 +102,14 @@ class htrie_map {
             anode::parent = p;
         }
 
-        string get_prefix() { return string(prefix, prefix_len); }
+        size_t get_prefix(char* buf) {
+            memcpy(buf, prefix, prefix_len);
+            return prefix_len;
+        }
+
+        string get_prefix() {
+            return prefix == nullptr ? string() : string(prefix, prefix_len);
+        }
 
         void set_prefix(std::string& p) {
             uint16_t len = p.size();
@@ -835,13 +842,16 @@ class htrie_map {
         std::string get_string() {
             // get the parent char chain
             trie_node* cur_node = hnode->anode::parent;
-            std::string res = cur_node->get_prefix();
+            char* buf = (char*)malloc(200);
+            size_t len = cur_node->get_prefix(buf);
 
             // get tail
             if (sl != nullptr) {
-                res = res + std::string(hnode->get_tail_pointer(sl),
-                                        (size_t)sl->length);
+                memcpy(buf + len, hnode->get_tail_pointer(sl), sl->length);
+                len += sl->length;
             }
+            string res = string(buf, len);
+            free(buf);
             return res;
         }
     };
