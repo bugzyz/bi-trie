@@ -37,7 +37,10 @@ int main() {
     }
     uint64_t end = get_usec();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
+
+#ifndef TEST_HAT
     cout << "expand cost time: " << expand_cost_time << endl;
+#endif
 
     uint64_t count = m1.size();
     uint64_t searchByK_count_good = 0;
@@ -86,11 +89,4 @@ int main() {
     cout << "check value: good:" << searchByV_count_good
          << " bad:" << searchByV_count_bad << std::endl;
     cout << "finish\n";
-
-    // fstream fff("wrong_list", std::ios::out);
-    // for (auto it = vv.begin(); it != vv.end(); it++) {
-    //     fff << m2[*it] << "\t\t" << *it << "\n";
-    //     hm.tracingBySearchPoint(*it);
-    // }
-    // fff.close();
 }
