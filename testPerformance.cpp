@@ -131,7 +131,6 @@ int main() {
         double min_percent_k = 0.0;
 
         // checking:
-        std::fstream f3("test_res_wrong_key", std::ios::out | std::ios::app);
         for (auto it = m1.begin(); it != m1.end(); it++) {
             std::string url1 = it->first;
             it++;
@@ -185,7 +184,6 @@ int main() {
                 min_percent_k = cur_percent_k;
             }
         }
-        f3.close();
         cout << "compare to unordered_map: accessing cost diff: "
              << um_hm_k / count << endl;
         ;
@@ -195,7 +193,6 @@ int main() {
         double percent_v = 0.0;
         double max_percent_v = 0.0;
         double min_percent_v = 0.0;
-        std::fstream f4("test_res_wrong_value", std::ios::out | std::ios::app);
         for (auto it = m2.begin(); it != m2.end(); it++) {
             uint32_t v1 = it->first;
             it++;
@@ -245,7 +242,6 @@ int main() {
                 min_percent_v = cur_percent_v;
             }
         }
-        f4.close();
         cout << "compare to unordered_map: accessing cost diff: "
              << um_hm_v / count << endl;
         ;
