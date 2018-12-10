@@ -371,7 +371,8 @@ int main() {
             }
 
             cout << "test key finish!\n";
-            cout << "wrong key_searching num: " << wrong_search_key.size();
+            cout << "wrong key_searching num: " << wrong_search_key.size()
+                 << endl;
 
             for (auto it = m2.begin(); it != m2.end(); it++) {
                 if (it->second != hm.searchByValue(it->first).second) {
@@ -380,14 +381,14 @@ int main() {
             }
 
             cout << "test value finish!\n";
-            cout << "wrong value_searching num: " << wrong_search_value.size();
+            cout << "wrong value_searching num: " << wrong_search_value.size()
+                 << endl;
 
             if (wrong_search_value.size() != 0 ||
                 wrong_search_key.size() != 0) {
                 cout << "testing failed\n";
                 exit(0);
             }
-
         }
 
         if (manually_test) {
