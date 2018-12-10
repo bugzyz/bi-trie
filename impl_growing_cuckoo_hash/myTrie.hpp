@@ -130,7 +130,7 @@ class htrie_map {
             childs.swap(empty);
         }
 
-        anode* findChildNode(CharT c, string prefix, bool findMode) {
+        anode* findChildNode(CharT c) {
             auto found = childs.find(c);
             if (found != childs.end()) {
                 trie_node* target = found->second;
@@ -138,15 +138,23 @@ class htrie_map {
                     return target->onlyHashNode;
                 return found->second;
             } else {
-                if (findMode) {
-                    return nullptr;
-                } else {
-                    trie_node* son_trie_node = new trie_node(this);
-                    this->addChildTrieNode(son_trie_node, c);
-                    son_trie_node->onlyHashNode =
-                        new hash_node(son_trie_node, prefix + c);
-                    return son_trie_node->onlyHashNode;
-                }
+                return nullptr;
+            }
+        }
+
+        anode* findChildNode(CharT c, string prefix) {
+            auto found = childs.find(c);
+            if (found != childs.end()) {
+                trie_node* target = found->second;
+                if (target->onlyHashNode != nullptr)
+                    return target->onlyHashNode;
+                return found->second;
+            } else {
+                trie_node* son_trie_node = new trie_node(this);
+                this->addChildTrieNode(son_trie_node, c);
+                son_trie_node->onlyHashNode =
+                    new hash_node(son_trie_node, prefix + c);
+                return son_trie_node->onlyHashNode;
             }
         }
 
@@ -864,7 +872,7 @@ class htrie_map {
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
         : t_root(nullptr) {
-        std::cout << "SET UP CUCKOOHASH-TRIE MAP\n";
+        std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
 #ifdef REHASH_BEFORE_EXPAND
         std::cout << "REHASH_BEFORE_EXPAND\n";
 
@@ -938,9 +946,13 @@ class htrie_map {
                 trie_node* parent;
                 parent = (trie_node*)current_node;
 
-                // only return the hitted trie_node* or nullptr if not found
-                current_node =
-                    parent->findChildNode(key[pos], string(key, pos), findMode);
+                if (!findMode) {
+                    // only return the hitted trie_node* or nullptr if not found
+                    current_node =
+                        parent->findChildNode(key[pos], string(key, pos));
+                } else {
+                    current_node = parent->findChildNode(key[pos]);
+                }
 
             } else {
                 iterator it =
