@@ -1,4 +1,4 @@
-bool test_and_print_wrong_test = false;
+bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
 #include "test_which.hpp"
@@ -119,6 +119,11 @@ int main() {
         endTm = get_usec();
 
         cout << "finish trie_map constructing\n";
+        cout << "constructing time: " << endTm - staTm << endl;
+#ifdef TEST_GROWCUCKOOHASH
+        cout << "expand cost time: " << expand_cost_time << endl;
+#endif
+        cout << "rehash cost time: " << rehash_cost_time << endl;
 
         int64_t um_hm_k = 0;
         double percent_k = 0.0;
@@ -126,7 +131,6 @@ int main() {
         double min_percent_k = 0.0;
 
         // checking:
-        std::fstream f3("test_res_wrong_key", std::ios::out | std::ios::app);
         for (auto it = m1.begin(); it != m1.end(); it++) {
             std::string url1 = it->first;
             it++;
@@ -179,30 +183,7 @@ int main() {
             if (min_percent_k > cur_percent_k) {
                 min_percent_k = cur_percent_k;
             }
-
-            // correctness check
-            if (test_and_print_wrong_test) {
-                if (gotfromhm == it->second) {
-                } else {
-                    f3 << "key_wrong answer: " << it->first << " got "
-                       << hm.searchByKey(it->first).second
-                       << " from hm , actual value: " << it->second
-                       << std::endl;
-                    uint32_t v = it->second;
-                    f3 << "got from hm: " << hm.searchByKey(it->first).second;
-                    f3 << "\ngot from file: " << v;
-                    for (size_t i = 0; i != sizeof(v); i++) {
-                        f3 << (unsigned int)*((char*)(&v + sizeof(char) * i))
-                           << ",";
-                    }
-                    f3 << std::endl;
-                    f3.flush();
-                    std::cout << "wrong answer!\n";
-                    exit(0);
-                }
-            }
         }
-        f3.close();
         cout << "compare to unordered_map: accessing cost diff: "
              << um_hm_k / count << endl;
         ;
@@ -212,7 +193,6 @@ int main() {
         double percent_v = 0.0;
         double max_percent_v = 0.0;
         double min_percent_v = 0.0;
-        std::fstream f4("test_res_wrong_value", std::ios::out | std::ios::app);
         for (auto it = m2.begin(); it != m2.end(); it++) {
             uint32_t v1 = it->first;
             it++;
@@ -252,7 +232,8 @@ int main() {
                 um_used_time = 1;
             }
 
-            double cur_percent_v = hm_used_time / um_used_time - 1;
+            double cur_percent_v =
+                (double)hm_used_time / (double)um_used_time - 1.0;
             percent_v += cur_percent_v;
             if (max_percent_v < cur_percent_v) {
                 max_percent_v = cur_percent_v;
@@ -260,73 +241,88 @@ int main() {
             if (min_percent_v > cur_percent_v) {
                 min_percent_v = cur_percent_v;
             }
-
-            // correctness check
-            if (test_and_print_wrong_test) {
-                if (gotfromhm == it->second) {
-                } else {
-                    f4 << "value_wrong answer: " << it->first << " got "
-                       << hm.searchByValue(it->first).second
-                       << " from hm , actual value: " << it->second
-                       << std::endl;
-                    std::string v = it->second;
-                    f4 << "got from hm: " << hm.searchByValue(it->first).second;
-                    f4 << "\ngot from file: " << v;
-                    f4 << std::endl;
-                    f4.flush();
-                    std::cout << "wrong answer!\n";
-                    exit(0);
-                }
-            }
         }
-        f4.close();
         cout << "compare to unordered_map: accessing cost diff: "
              << um_hm_v / count << endl;
         ;
 
-        // ff1 << hm.burst_threshold << "," << hm.bucket_num << "\t init: ,"
-        //     << endTm - staTm << ","
-        //     << "virt : ," << virt << ",\t"
-        //     << "res : ," << res << ",\t"
-        //     << "inside_mem: ," << mem_cal_inside << ",\t";
-        // ff1 << "key total: ," << um_hm_k << ",\t avg: ," << um_hm_k / count
-        //     << ",\t perc: ," << percent_k / (count / 5) * 100.0 << ","
-        //     << " max_%: ," << max_percent_k << ", min_%: ," << min_percent_k;
-        // ff1 << " value total: ," << um_hm_v << ",\t avg: ," << um_hm_v /
-        // count
-        //     << ",\t perc: ," << percent_v / (count / 5) * 100.0 << ","
-        //     << " max_%: ," << max_percent_v << ", min_%: ," << min_percent_v
-        //     << endl
-        //     << endl;
-
 #ifdef TEST_CUCKOOHASH
-        ff1 << Associativity << "," << Bucket_num << "," << endTm - staTm << ","
-            << virt << "," << res << "," << mem_cal_inside;
-        ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
+        ff1 << "cuckoo_hash,,";
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+        ff1 << "grow_cuckoo_hash,";
+#ifdef REHASH_BEFORE_EXPAND
+        ff1 << "rehash_before_expand,";
+#else
+        ff1 << "expand_before_rehash,";
+#endif
+#endif
+#ifdef TEST_HAT
+        ff1 << "hat,,";
+#endif
+#ifdef TEST_CUCKOOHASH
+        ff1 << Associativity << "," << Bucket_num << ","
+            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
+            << mem_cal_inside;
+        ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
-        ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
+        ff1 << "," << um_hm_v << "," << (double)um_hm_v / (double)count << ","
             << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0
-            << ","
-            // << (double)rehash_total_num / (double)count << ","
+            << "," << min_percent_v * 100.0 << ","
+            << (double)rehash_total_num / (double)count << ","
             << ((double)myTrie::debuging::total_pass_trie_node_num /
                 (double)count) -
                    1
             << ","
             << (double)myTrie::debuging::hashnode_load /
-                   (double)myTrie::debuging::h_n / (double)Max_slot_num
+                   (double)myTrie::debuging::h_n / (double)Max_slot_num *
+                   (double)100
             << ","
             << (double)myTrie::debuging::hashnode_max_load /
-                   (double)Max_slot_num
+                   (double)Max_slot_num * (double)100
             << ","
             << (double)myTrie::debuging::hashnode_min_load /
-                   (double)Max_slot_num
+                   (double)Max_slot_num * (double)100
+            << "," << 0 << ","
+            << (double)rehash_cost_time / (double)1000 / (double)1000
             << ","
 
-#else
-        ff1 << hm.burst_threshold << "," << hm.bucket_num << ","
-            << endTm - staTm << "," << virt << "," << res << ","
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+            ff1
+            << Associativity << "," << Bucket_num << ","
+            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
+            << mem_cal_inside;
+        ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
+            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
+            << "," << min_percent_k * 100.0;
+        ff1 << "," << um_hm_v << "," << (double)um_hm_v / (double)count << ","
+            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
+            << "," << min_percent_v * 100.0 << ","
+            << (double)rehash_total_num / (double)count << ","
+            << ((double)myTrie::debuging::total_pass_trie_node_num /
+                (double)count) -
+                   1
+            << ","
+            << (double)myTrie::debuging::hashnode_load /
+                   (double)myTrie::debuging::hashnode_total_slot_num *
+                   (double)100
+            << ","
+            << (double)myTrie::debuging::hashnode_max_load /
+                   (double)Max_slot_num * (double)100
+            << ","
+            << (double)myTrie::debuging::hashnode_min_load /
+                   (double)Max_slot_num * (double)100
+            << "," << (double)expand_cost_time / (double)1000 / (double)1000
+            << "," << (double)rehash_cost_time / (double)1000 / (double)1000
+            << ","
+
+#endif
+#ifdef TEST_HAT
+            ff1
+            << hm.burst_threshold << "," << hm.bucket_num << ","
+            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
             << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
@@ -348,24 +344,47 @@ int main() {
 
         ff1.flush();
 
+#ifdef TEST_CUCKOOHASH
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+#endif
+
+#ifdef TEST_GROWCUCKOOHASH
+        expand_cost_time = 0;
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+#endif
+
+        // correctness check
         if (test_and_print_wrong_test) {
-            //--------------printing wrong result-------------------
-            std::ifstream f4wrong1("test_res_wrong_key", std::ios::in);
-            char line[1024] = {0};
-            while (f4wrong1.getline(line, sizeof(line))) {
-                std::cerr << line << std::endl;
+            vector<string> wrong_search_key;
+            vector<uint32_t> wrong_search_value;
+
+            for (auto it = m1.begin(); it != m1.end(); it++) {
+                if (it->second != hm.searchByKey(it->first).second) {
+                    wrong_search_key.push_back(it->first);
+                }
             }
 
-            std::ifstream f4wrong2("test_res_wrong_value", std::ios::in);
-            while (f4wrong2.getline(line, sizeof(line))) {
-                std::cerr << line << std::endl;
+            cout << "test key finish!\n";
+            cout << "wrong key_searching num: " << wrong_search_key.size()
+                 << endl;
+
+            for (auto it = m2.begin(); it != m2.end(); it++) {
+                if (it->second != hm.searchByValue(it->first).second) {
+                    wrong_search_value.push_back(it->first);
+                }
             }
 
-            startUsedMemTm = getLftMem();
-            hm.deleteMyself();
-            endUsedMemTm = getLftMem();
-            cout << "finish checking and printed correct/wrong "
-                    "res\n--------------------------------------\n";
+            cout << "test value finish!\n";
+            cout << "wrong value_searching num: " << wrong_search_value.size()
+                 << endl;
+
+            if (wrong_search_value.size() != 0 ||
+                wrong_search_key.size() != 0) {
+                cout << "testing failed\n";
+                exit(0);
+            }
         }
 
         if (manually_test) {

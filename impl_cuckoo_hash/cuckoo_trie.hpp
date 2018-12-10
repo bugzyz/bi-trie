@@ -21,6 +21,20 @@
 #define DEFAULT_Max_bytes_per_kv 1000
 #define DEFAULT_Burst_ratio 0.75
 
+// todo: wait to be deleted, just for recording the time that expand() cost
+uint64_t rehash_cost_time = 0;
+uint64_t rehash_total_num = 0;
+
+uint64_t get_time() {
+    struct timespec tp;
+    /* POSIX.1-2008: Applications should use the clock_gettime() function
+       instead of the obsolescent gettimeofday() function. */
+    /* NOTE: The clock_gettime() function is only available on Linux.
+       The mach_absolute_time() function is an alternative on OSX. */
+    clock_gettime(CLOCK_MONOTONIC, &tp);
+    return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
+}
+
 // configuration
 // static size_t Associativity;
 // static size_t Bucket_num;
@@ -409,6 +423,8 @@ class htrie_map {
         }
 
         int rehash(size_t bucketid, htrie_map<CharT, T>* hm) {
+            rehash_total_num++;
+            uint64_t sta = get_time();
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
             std::map<size_t, size_t> bucket_list;
             for (size_t bn = 0; bn != Bucket_num; bn++) {
@@ -433,6 +449,9 @@ class htrie_map {
                 }
             }
             if (kicked_slot_id == -1) {
+                uint64_t end = get_time();
+                rehash_cost_time += end - sta;
+
                 return -1;
             }
             // set up the backup for recovery if the rehash fails
@@ -478,6 +497,9 @@ class htrie_map {
                         memcpy(key_metas, key_metas_backup,
                                Bucket_num * Associativity * sizeof(slot));
                         free(key_metas_backup);
+                        uint64_t end = get_time();
+                        rehash_cost_time += end - sta;
+
                         return -1;
                     }
                     continue;
@@ -500,6 +522,9 @@ class htrie_map {
                     memcpy(key_metas, key_metas_backup,
                            Bucket_num * Associativity * sizeof(slot));
                     free(key_metas_backup);
+                    uint64_t end = get_time();
+                    rehash_cost_time += end - sta;
+
                     return -1;
                 }
 
@@ -546,6 +571,9 @@ class htrie_map {
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
                     free(key_metas_backup);
+                    uint64_t end = get_time();
+                    rehash_cost_time += end - sta;
+
                     return ret_slot_id;
                 }
 
@@ -585,6 +613,9 @@ class htrie_map {
             memcpy(key_metas, key_metas_backup,
                    Bucket_num * Associativity * sizeof(slot));
             free(key_metas_backup);
+            uint64_t end = get_time();
+            rehash_cost_time += end - sta;
+
             return -1;
         }
 

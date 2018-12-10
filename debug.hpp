@@ -111,6 +111,12 @@ size_t hashnode_load = 0;
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
 #endif
+#ifdef TEST_GROWCUCKOOHASH
+size_t hashnode_max_load = Max_slot_num / 2;
+size_t hashnode_min_load = Max_slot_num / 2;
+size_t hashnode_total_slot_num = 0;
+
+#endif
 
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
@@ -124,22 +130,21 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
     }
     // print bucket
     if (root->isHashNode()) {
+        class my::hash_node* cur_hash_node = (class my::hash_node*)root;
 #ifdef TEST_CUCKOOHASH
-        hash_node_mem += sizeof(root);
+        hash_node_mem += sizeof(cur_hash_node);
 
         // basic bucket cost
-        uint32_t bucket_mem =
-            sizeof(class my::hash_node::slot) * Max_slot_num;
+        uint32_t bucket_mem = sizeof(class my::hash_node::slot) * Max_slot_num;
         hash_node_mem += bucket_mem;
 
         // page mem cost
-        size_t pages_cost =
-            Max_bytes_per_kv * ((class my::hash_node*)root)->pages.size();
+        size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
         hash_node_mem += pages_cost;
 
         h_n++;
 
-        size_t current_elem_num = ((class my::hash_node*)root)->elem_num;
+        size_t current_elem_num = cur_hash_node->elem_num;
         hashnode_load += current_elem_num;
         if (current_elem_num > hashnode_max_load) {
             hashnode_max_load = current_elem_num;
@@ -149,17 +154,49 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             hashnode_min_load = current_elem_num;
         }
 
-        total_pass_trie_node_num +=
-            ((class my::hash_node*)root)->elem_num * depth;
+        total_pass_trie_node_num += cur_hash_node->elem_num * depth;
 
-        if (((class my::hash_node*)root)->haveValue) {
+        if (cur_hash_node->haveValue) {
             total_pass_trie_node_num += depth;
         }
-#else
-        hash_node_mem += sizeof(root);
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+        hash_node_mem += sizeof(cur_hash_node);
 
-        std::vector<class my::array_bucket> buckets =
-            ((class my::hash_node*)root)->kvs;
+        // basic bucket cost
+        uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
+                              (cur_hash_node->cur_associativity) * Bucket_num;
+        hash_node_mem += bucket_mem;
+
+        // page mem cost
+        size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
+        hash_node_mem += pages_cost;
+
+        h_n++;
+
+        size_t current_elem_num = cur_hash_node->elem_num;
+        hashnode_load += current_elem_num;
+        hashnode_total_slot_num +=
+            (cur_hash_node->cur_associativity) * Bucket_num;
+
+        if (current_elem_num > hashnode_max_load) {
+            hashnode_max_load = current_elem_num;
+        }
+
+        if (current_elem_num < hashnode_min_load) {
+            hashnode_min_load = current_elem_num;
+        }
+
+        total_pass_trie_node_num += cur_hash_node->elem_num * depth;
+
+        if (cur_hash_node->haveValue) {
+            total_pass_trie_node_num += depth;
+        }
+#endif
+#ifdef TEST_HAT
+        hash_node_mem += sizeof(cur_hash_node);
+
+        std::vector<class my::array_bucket> buckets = cur_hash_node->kvs;
         // basic bucket cost
         uint32_t bucket_num = buckets.size();
         uint32_t bucket_mem = sizeof(class my::array_bucket) * bucket_num;
@@ -172,27 +209,29 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         }
         hash_node_mem += bucket_buffer_mem;
 
-        hashnode_load += ((class my::hash_node*)root)->element_count * depth;
+        hashnode_load += cur_hash_node->element_count * depth;
 
-        total_pass_trie_node_num +=
-            ((class my::hash_node*)root)->element_count * depth;
+        total_pass_trie_node_num += cur_hash_node->element_count * depth;
 
-        if (((class my::hash_node*)root)->haveValue)
-            total_pass_trie_node_num += depth;
+        if (cur_hash_node->haveValue) total_pass_trie_node_num += depth;
         h_n++;
 #endif
 
     } else if (root->isTrieNode()) {
-        trie_node_mem += sizeof(root);
+        class myTrie::htrie_map<CharT, T>::trie_node* cur_trie_node =
+            (class myTrie::htrie_map<CharT, T>::trie_node*)root;
+        trie_node_mem += sizeof(cur_trie_node);
+        // #ifdef TEST_GROWCUCKOOHASH
+        //         if (cur_trie_node->prefix_len != 0) {
+        //             trie_node_mem += cur_trie_node->prefix_len;
+        //         }
+        // #endif
 
-        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*>
-            childs = ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
-                         ->childs;
+        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
+            cur_trie_node->childs;
         if (childs.size() == 0) {
-            print_tree_construct<CharT, T>(
-                ((class myTrie::htrie_map<CharT, T>::trie_node*)root)
-                    ->getOnlyHashNode(),
-                depth + 1);
+            print_tree_construct<CharT, T>(cur_trie_node->getOnlyHashNode(),
+                                           depth + 1);
         } else {
             for (auto it = childs.begin(); it != childs.end(); it++) {
                 t_n++;
@@ -216,6 +255,11 @@ void clear_num() {
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
 #endif
+#ifdef TEST_GROWCUCKOOHASH
+    hashnode_max_load = Max_slot_num / 2;
+    hashnode_min_load = Max_slot_num / 2;
+    hashnode_total_slot_num = 0;
+#endif
 
     total_pass_trie_node_num = 0;
     return;
@@ -225,7 +269,11 @@ template <typename CharT, typename T>
 double print_res() {
 #ifdef TEST_CUCKOOHASH
     std::cout << "WE ARE TESTING CUCKOOHASH_IMPL NOW\n";
-#else
+#endif
+#ifdef TEST_GROWCUCKOOHASH
+    std::cout << "WE ARE TESTING GROWING_CUCKOOHASH_IMPL NOW\n";
+#endif
+#ifdef TEST_HAT
     std::cout << "WE ARE TESTING HAT-TRIE NOW\n";
 #endif
 

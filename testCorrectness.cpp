@@ -23,7 +23,7 @@ static uint64_t get_usec() {
 
 using namespace std;
 int main() {
-    myTrie::htrie_map<char, uint32_t> hm(4, 10);
+    myTrie::htrie_map<char, uint32_t> hm(4, 31);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
     fstream f("dataset/str_normal");
@@ -37,6 +37,10 @@ int main() {
     }
     uint64_t end = get_usec();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
+
+#ifdef TEST_GROWCUCKOOHASH
+    cout << "expand cost time: " << expand_cost_time << endl;
+#endif
 
     uint64_t count = m1.size();
     uint64_t searchByK_count_good = 0;
@@ -85,11 +89,4 @@ int main() {
     cout << "check value: good:" << searchByV_count_good
          << " bad:" << searchByV_count_bad << std::endl;
     cout << "finish\n";
-
-    // fstream fff("wrong_list", std::ios::out);
-    // for (auto it = vv.begin(); it != vv.end(); it++) {
-    //     fff << m2[*it] << "\t\t" << *it << "\n";
-    //     hm.tracingBySearchPoint(*it);
-    // }
-    // fff.close();
 }

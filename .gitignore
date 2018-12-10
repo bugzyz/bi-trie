@@ -31,5 +31,15 @@
 *.out
 *.app
 
+##### my configurations #####
 # boost
 boost*/*
+
+# dataset
+dataset/*
+
+#result
+result
+
+#vs
+.vscode/*
