@@ -848,6 +848,8 @@ class htrie_map {
         void set_slot(typename hash_node::slot* s) { sl = s; }
 
         std::string get_string() {
+            if (hnode == nullptr) return string();
+
             // get the parent char chain
             trie_node* cur_node = hnode->anode::parent;
             char* buf = (char*)malloc(200);
@@ -902,17 +904,29 @@ class htrie_map {
 
     void setRoot(anode* node) { t_root = node; }
 
-    std::pair<bool, T> searchByKey(std::string key) {
+    /*----------------------------------*/
+
+    // access element
+    T searchByKey(std::string key) {
+        return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
+    }
+
+    std::string searchByValue(T v) { return v2k[v].get_string(); }
+
+    // find operation
+    std::pair<bool, std::string> findByKey(std::string key) {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
     }
 
-    std::pair<bool, std::string> searchByValue(T v) {
-        auto it = v2k.find(v);
-        if (it != v2k.end())
-            return std::pair<bool, std::string>(true, v2k[v].get_string());
-        else
-            return std::pair<bool, std::string>(false, std::string());
+    std::pair<bool, T> findByValue(T v) {
+        if (v2k.find(v) == v2k.end()) {
+            return std::pair<bool, T>(false, string());
+        } else {
+            return std::pair<bool, T>(true, v2k[v].get_string());
+        }
     }
+
+    /*----------------------------------*/
 
     std::pair<bool, T> insertKV(std::string key, T v) {
         return access_kv_in_htrie_map(key.data(), key.size(), v, false);

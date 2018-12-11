@@ -510,13 +510,29 @@ class htrie_map {
 
     void setRoot(anode* node) { t_root = node; }
 
-    std::pair<bool, T> searchByKey(std::string key) {
-        return std::pair<bool, T>(true, find(key.data(), key.size(), nullptr));
+    /*----------------------------------*/
+
+    // access element
+    T searchByKey(std::string key) {
+        return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
     }
 
-    std::pair<bool, std::string> searchByValue(T v) {
-        return std::pair<bool, std::string>(true, v2k[v].getString());
+    std::string searchByValue(T v) { return v2k[v].get_string(); }
+
+    // find operation
+    std::pair<bool, std::string> findByKey(std::string key) {
+        return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
     }
+
+    std::pair<bool, T> findByValue(T v) {
+        if (v2k.find(v) == v2k.end()) {
+            return std::pair<bool, T>(false, std::string());
+        } else {
+            return std::pair<bool, T>(true, v2k[v].get_string());
+        }
+    }
+
+    /*----------------------------------*/
 
     bool insertKV(std::string key, T v) {
         SearchPoint sp;

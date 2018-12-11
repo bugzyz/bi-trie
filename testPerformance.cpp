@@ -148,11 +148,11 @@ int main() {
 
             int64_t hm_get_start = get_usec();
             uint32_t gotfromhm;
-            gotfromhm = hm.searchByKey(url1).second;
-            gotfromhm = hm.searchByKey(url2).second;
-            gotfromhm = hm.searchByKey(url3).second;
-            gotfromhm = hm.searchByKey(url4).second;
-            gotfromhm = hm.searchByKey(url5).second;
+            gotfromhm = hm.searchByKey(url1);
+            gotfromhm = hm.searchByKey(url2);
+            gotfromhm = hm.searchByKey(url3);
+            gotfromhm = hm.searchByKey(url4);
+            gotfromhm = hm.searchByKey(url5);
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
@@ -209,11 +209,11 @@ int main() {
             }
 
             int64_t hm_get_start = get_usec();
-            std::string gotfromhm = hm.searchByValue(v1).second;
-            gotfromhm = hm.searchByValue(v2).second;
-            gotfromhm = hm.searchByValue(v3).second;
-            gotfromhm = hm.searchByValue(v4).second;
-            gotfromhm = hm.searchByValue(v5).second;
+            std::string gotfromhm = hm.searchByValue(v1);
+            gotfromhm = hm.searchByValue(v2);
+            gotfromhm = hm.searchByValue(v3);
+            gotfromhm = hm.searchByValue(v4);
+            gotfromhm = hm.searchByValue(v5);
             int64_t hm_get_end = get_usec();
 
             int64_t um_get_start = get_usec();
@@ -361,7 +361,7 @@ int main() {
             vector<uint32_t> wrong_search_value;
 
             for (auto it = m1.begin(); it != m1.end(); it++) {
-                if (it->second != hm.searchByKey(it->first).second) {
+                if (it->second != hm.searchByKey(it->first)) {
                     wrong_search_key.push_back(it->first);
                 }
             }
@@ -371,7 +371,7 @@ int main() {
                  << endl;
 
             for (auto it = m2.begin(); it != m2.end(); it++) {
-                if (it->second != hm.searchByValue(it->first).second) {
+                if (it->second != hm.searchByValue(it->first)) {
                     wrong_search_value.push_back(it->first);
                 }
             }
@@ -389,7 +389,7 @@ int main() {
 
         if (manually_test) {
             while (cin >> url) {
-                cout << "get value: " << hm.searchByKey(url).second << endl;
+                cout << "get value: " << hm.searchByKey(url) << endl;
             }
         }
     }
