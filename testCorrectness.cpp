@@ -50,7 +50,7 @@ int main() {
     vector<uint32_t> vv;
 
     for (auto it = m1.begin(); it != m1.end(); it++) {
-        if (hm.searchByKey(it->first).second == it->second) {
+        if (hm.searchByKey(it->first) == it->second) {
             // std::cout << "good\n";
             // std::cout << "ans: " << it->second << std::endl;
             // std::cout << "got " << hm.searchByKey(it->first).second
@@ -60,15 +60,14 @@ int main() {
             std::cout << "wrong\n";
             std::cout << "ans: " << it->second << std::endl;
             vv.push_back(it->second);
-            std::cout << "got " << hm.searchByKey(it->first).second
-                      << std::endl;
+            std::cout << "got " << hm.searchByKey(it->first) << std::endl;
             searchByK_count_bad++;
         }
     }
     std::cout << "-------------------\n";
 
     for (auto it = m2.begin(); it != m2.end(); it++) {
-        if (hm.searchByValue(it->first).second == it->second) {
+        if (hm.searchByValue(it->first) == it->second) {
             // std::cout << "good\n";
             // std::cout << "ans: " << it->second << std::endl;
             // std::cout << "got " << hm.searchByValue(it->first) << std::endl;
@@ -76,8 +75,7 @@ int main() {
         } else {
             std::cout << "wrong\n";
             std::cout << "ans: " << it->second << std::endl;
-            std::cout << "got " << hm.searchByValue(it->first).second
-                      << std::endl;
+            std::cout << "got " << hm.searchByValue(it->first) << std::endl;
             searchByV_count_bad++;
         }
     }
