@@ -122,7 +122,7 @@ class htrie_map {
             set_prefix(key, key_size);
             have_value = true;
             value = v;
-            hm->set_v2k(v, this, nullptr);
+            hm->set_v2k(v, this, -1);
         }
 
         size_t get_prefix(char* buf) {
@@ -298,7 +298,7 @@ class htrie_map {
                 need_associativity = Associativity;
             }
 
-            map<T, slot*> updating_search_points;
+            map<T, int> updating_search_points;
             slot* new_key_metas =
                 (slot*)malloc(need_associativity * Bucket_num * sizeof(slot));
             for (int i = 0; i != Bucket_num; i++) {
@@ -314,7 +314,8 @@ class htrie_map {
                         // list
                         if (!cur_slot->isEmpty()) {
                             T v = get_tail_v(cur_slot);
-                            updating_search_points[v] = cur_new_slot;
+                            updating_search_points[v] =
+                                i * need_associativity + j;
                         }
                     } else {
                         cur_new_slot->set_slot(0, 0, 0);
@@ -417,8 +418,10 @@ class htrie_map {
         }
 
         inline slot* get_slot_addr(size_t bucketid, size_t slotid) {
-            return &key_metas[bucketid * cur_associativity + slotid];
+            return key_metas + bucketid * cur_associativity + slotid;
         }
+
+        inline slot* get_slot_addr(int index) { return key_metas + index; }
 
         bool need_burst() const {
             return elem_num >= Max_slot_num * Burst_ratio;
@@ -566,6 +569,8 @@ class htrie_map {
             return key_metas + bucketid * cur_associativity + slotid;
         }
 
+        inline int get_index(slot* s) { return s - key_metas; }
+
         inline slot* previous_dst_slot_in_same_bucket(slot* s) {
             size_t slotid = (s - key_metas) % cur_associativity;
             if (slotid == 0) {
@@ -574,10 +579,10 @@ class htrie_map {
                 return s - 1;
         }
 
-        void apply_the_changed_searchPoint(map<T, slot*>& searchPoints,
+        void apply_the_changed_searchPoint(map<T, int>& searchPoints,
                                            htrie_map<CharT, T>* hm) {
             for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
-                hm->set_searchPoint_slot(it->first, it->second);
+                hm->set_searchPoint_index(it->first, it->second);
         }
 
         int rehash(size_t bucketid, htrie_map<CharT, T>* hm) {
@@ -630,7 +635,7 @@ class htrie_map {
             size_t last_current_bucketid = 0;
             size_t last_bucketid_kick_to = 0;
 
-            map<T, slot*> searchPoint_wait_2_be_update;
+            map<T, int> searchPoint_wait_2_be_update;
             do {
                 /*
                     src(a,b,c)
@@ -694,7 +699,7 @@ class htrie_map {
                                    src_slot.page_id);
                 if (!dst_slot->isEmpty())
                     searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
-                        dst_slot;
+                        get_index(dst_slot);
 
                 // if the destination bucket isn't full, just fill the empty
                 // slot and return
@@ -723,7 +728,7 @@ class htrie_map {
                     */
                     dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
                     searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
-                        dst_slot;
+                        get_index(dst_slot);
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
                     free(key_metas_backup);
@@ -838,7 +843,7 @@ class htrie_map {
             append_impl(key, keysize, get_tail_pointer(target_slot), v);
 
             // set v2k
-            hm->set_v2k(v, this, target_slot);
+            hm->set_v2k(v, this, get_index(target_slot));
             elem_num++;
 
             // todo: need to burst elegantly
@@ -858,12 +863,12 @@ class htrie_map {
     class SearchPoint {
        public:
         anode* node;
-        typename hash_node::slot* sl;
+        int index;
 
-        SearchPoint() : node(nullptr), sl(nullptr) {}
-        SearchPoint(anode* h, typename hash_node::slot* s) : node(h), sl(s) {}
+        SearchPoint() : node(nullptr), index(-1) {}
+        SearchPoint(anode* n, int i) : node(n), index(i) {}
 
-        void set_slot(typename hash_node::slot* s) { sl = s; }
+        void set_index(int i) { index = i; }
 
         std::string get_string() {
             if (node == nullptr) return string();
@@ -878,7 +883,9 @@ class htrie_map {
             size_t len = cur_node->get_prefix(buf);
 
             // get tail
-            if (sl != nullptr) {
+            if (index != -1) {
+                class hash_node::slot* sl =
+                    ((hash_node*)node)->get_slot_addr(index);
                 memcpy(buf + len, ((hash_node*)node)->get_tail_pointer(sl),
                        sl->length);
                 len += sl->length;
@@ -917,17 +924,15 @@ class htrie_map {
         t_root = new hash_node(nullptr, string(), Associativity);
     }
 
-    void set_searchPoint_slot(T v, typename hash_node::slot* s) {
-        v2k[v].set_slot(s);
-    }
+    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
 
-    void set_v2k(T v, anode* node, typename hash_node::slot* s) {
-        v2k[v] = SearchPoint(node, s);
+    void set_v2k(T v, anode* node, int index) {
+        v2k[v] = SearchPoint(node, index);
     }
 
     void setRoot(anode* node) { t_root = node; }
 
-    /*----------------------------------*/
+    /*---------------external accessing interface-------------------*/
 
     // access element
     T searchByKey(std::string key) {
@@ -949,7 +954,7 @@ class htrie_map {
         }
     }
 
-    /*----------------------------------*/
+    /*----------------------------------------------------------------*/
 
     std::pair<bool, T> insertKV(std::string key, T v) {
         return access_kv_in_htrie_map(key.data(), key.size(), v, false);
