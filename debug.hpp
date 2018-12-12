@@ -188,10 +188,6 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         }
 
         total_pass_trie_node_num += cur_hash_node->elem_num * depth;
-
-        if (cur_hash_node->haveValue) {
-            total_pass_trie_node_num += depth;
-        }
 #endif
 #ifdef TEST_HAT
         hash_node_mem += sizeof(cur_hash_node);
@@ -221,11 +217,11 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         class myTrie::htrie_map<CharT, T>::trie_node* cur_trie_node =
             (class myTrie::htrie_map<CharT, T>::trie_node*)root;
         trie_node_mem += sizeof(cur_trie_node);
-        // #ifdef TEST_GROWCUCKOOHASH
-        //         if (cur_trie_node->prefix_len != 0) {
-        //             trie_node_mem += cur_trie_node->prefix_len;
-        //         }
-        // #endif
+#ifdef TEST_GROWCUCKOOHASH
+        if (cur_trie_node->prefix_len != 0) {
+            trie_node_mem += cur_trie_node->prefix_len;
+        }
+#endif
 
         std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
             cur_trie_node->childs;

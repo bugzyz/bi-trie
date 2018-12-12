@@ -52,9 +52,8 @@ int main() {
 
     // configs: pair<bucket_num, elem_per_bucket>
     // stable bucket_num
-    for (auto it = bucket_nums.begin(); it != bucket_nums.end(); it++) {
-        for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end();
-             itt++) {
+    for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end(); itt++) {
+        for (auto it = bucket_nums.begin(); it != bucket_nums.end(); it++) {
             configs.push_back(std::pair<size_t, size_t>(*itt, *it));
         }
     }
@@ -262,8 +261,8 @@ int main() {
 #endif
 #ifdef TEST_CUCKOOHASH
         ff1 << Associativity << "," << Bucket_num << ","
-            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
-            << mem_cal_inside;
+            << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
+            << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
@@ -292,8 +291,8 @@ int main() {
 #ifdef TEST_GROWCUCKOOHASH
             ff1
             << Associativity << "," << Bucket_num << ","
-            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
-            << mem_cal_inside;
+            << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
+            << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
@@ -322,8 +321,8 @@ int main() {
 #ifdef TEST_HAT
             ff1
             << hm.burst_threshold << "," << hm.bucket_num << ","
-            << (endTm - staTm) / 1000000 << "," << virt << "," << res << ","
-            << mem_cal_inside;
+            << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
+            << res << "," << mem_cal_inside;
         ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
             << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
             << "," << min_percent_k * 100.0;
