@@ -269,7 +269,7 @@ class htrie_map {
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity),
               elem_num(0),
-              cur_page_id(0),
+              cur_page_id(0)
                {
                    anode::_node_type = node_type::HASH_NODE;
               anode::parent = p;
