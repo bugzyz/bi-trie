@@ -106,9 +106,9 @@ class htrie_map {
               value(T()),
               hash_node_child(nullptr),
               prefix(nullptr),
-              prefix_len(0),
-              anode::_node_type(node_type::TRIE_NODE),
-              anode::parent(p) {
+              prefix_len(0) {
+              anode::_node_type = node_type::TRIE_NODE;
+              anode::parent = p;
         }
 
         iterator search_kv_in_trienode() {
@@ -265,13 +265,14 @@ class htrie_map {
                                             : string();
         }
 
-        explicit hash_node(trie_node* p, string &prefix,
+        explicit hash_node(trie_node* p, string prefix,
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity),
               elem_num(0),
               cur_page_id(0),
-              anode::_node_type(node_type::HASH_NODE),
-              anode::parent(p) {
+               {
+                   anode::_node_type = node_type::HASH_NODE;
+              anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
 
             key_metas =
@@ -348,7 +349,7 @@ class htrie_map {
             pages.swap(empty);
         }
 
-        inline char* get_tail_pointer(slot* s) {
+        inline char* get_tail_pointer(slot* s) const {
             return pages[s->page_id].first + s->pos;
         }
 
