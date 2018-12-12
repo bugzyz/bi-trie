@@ -93,13 +93,36 @@ class htrie_map {
         // store the suffix of hash_node or trie_node
         std::map<CharT, trie_node*> childs;
         hash_node* onlyHashNode;
+
+        // prefix
         CharT* prefix;
         uint16_t prefix_len;
 
+        // element end up here
+        bool have_value;
+        T value;
+
         trie_node(trie_node* p)
-            : onlyHashNode(nullptr), prefix(nullptr), prefix_len(0) {
+            : have_value(false),
+              value(T()),
+              onlyHashNode(nullptr),
+              prefix(nullptr),
+              prefix_len(0) {
             anode::_node_type = node_type::TRIE_NODE;
             anode::parent = p;
+        }
+
+        iterator search_kv_in_trienode() {
+            return iterator(have_value, value, this, 0, 0);
+        }
+
+        std::pair<bool, T> insert_kv_in_trienode(const CharT* key,
+                                                 size_t key_size,
+                                                 htrie_map<CharT, T>* hm, T v) {
+            set_prefix(key, key_size);
+            have_value = true;
+            value = v;
+            hm->set_v2k(v, this, nullptr);
         }
 
         size_t get_prefix(char* buf) {
@@ -109,6 +132,19 @@ class htrie_map {
 
         string get_prefix() {
             return prefix == nullptr ? string() : string(prefix, prefix_len);
+        }
+
+        void set_prefix(const CharT* key, size_t key_size) {
+            char* cur_prefix = (char*)malloc(key_size);
+            if (key_size != 0) {
+                memcpy(cur_prefix, key, key_size);
+                prefix = cur_prefix;
+                prefix_len = key_size;
+            } else {
+                if (prefix != nullptr) free(prefix);
+                prefix = nullptr;
+                prefix_len = 0;
+            }
         }
 
         void set_prefix(std::string& p) {
@@ -130,31 +166,30 @@ class htrie_map {
             childs.swap(empty);
         }
 
-        anode* findChildNode(CharT c) {
+        // finding target, if target doesn't exist, return nullptr
+        trie_node* findChildNode(CharT c) {
             auto found = childs.find(c);
             if (found != childs.end()) {
                 trie_node* target = found->second;
-                if (target->onlyHashNode != nullptr)
-                    return target->onlyHashNode;
-                return found->second;
+                return target;
             } else {
                 return nullptr;
             }
         }
 
-        anode* findChildNode(CharT c, string prefix) {
+        // finding target, if target doesn't exist, create new trie_node with
+        // hash_node son and return new trie_node
+        trie_node* findChildNode(CharT c, const CharT* key, size_t key_size) {
             auto found = childs.find(c);
             if (found != childs.end()) {
                 trie_node* target = found->second;
-                if (target->onlyHashNode != nullptr)
-                    return target->onlyHashNode;
-                return found->second;
+                return target;
             } else {
                 trie_node* son_trie_node = new trie_node(this);
                 this->addChildTrieNode(son_trie_node, c);
                 son_trie_node->onlyHashNode =
-                    new hash_node(son_trie_node, prefix + c);
-                return son_trie_node->onlyHashNode;
+                    new hash_node(son_trie_node, string(key, key_size) + c);
+                return son_trie_node;
             }
         }
 
@@ -180,9 +215,6 @@ class htrie_map {
         size_t cur_page_id;
 
         size_t cur_associativity = 1;
-
-        T onlyValue;
-        bool haveValue;
 
        public:
         struct slot {
@@ -218,9 +250,7 @@ class htrie_map {
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity),
               elem_num(0),
-              cur_page_id(0),
-              onlyValue(T()),
-              haveValue(false) {
+              cur_page_id(0) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
@@ -247,6 +277,7 @@ class htrie_map {
                  << s->pos << "," << s->page_id << "," << str << "=" << v
                  << "\n";
         }
+
         void print_key_metas() {
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
@@ -353,10 +384,6 @@ class htrie_map {
         }
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
-            if (keysize == 0) {
-                return iterator(haveValue, onlyValue, this, 0, 0);
-            }
-
             size_t bucketId1 =
                 myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
             std::pair<bool, iterator> res1 =
@@ -444,16 +471,15 @@ class htrie_map {
                     std::string temp = itt->first;
 
                     if (temp.size() == 0) {
-                        hnode->haveValue = true;
-                        hnode->onlyValue = itt->second;
-
-                        hm->set_v2k(itt->second, hnode, nullptr);
+                        cur_trie_node->insert_kv_in_trienode(
+                            (prefix + it->first).data(), prefix.size() + 1, hm,
+                            itt->second);
                         continue;
                     }
 
                     iterator target_it =
                         hnode->search_kv_in_hashnode(temp.data(), temp.size());
-                    std::pair<bool, T> res = target_it.insertKV(
+                    std::pair<bool, T> res = target_it.insert_hashnode(
                         temp.data(), temp.size(), hm, itt->second);
                     // if insert failed, it need burst
                     if (res.first == false) {
@@ -752,13 +778,6 @@ class htrie_map {
                                                  T v, size_t bucketid,
                                                  int slotid,
                                                  std::string prefix) {
-            if (keysize == 0) {
-                haveValue = true;
-                onlyValue = v;
-                hm->set_v2k(v, this, nullptr);
-                return std::pair<bool, T>(true, v);
-            }
-
             // if slotid==-1, it denotes that the bucket(bucketid) is full , so
             // we rehash the key_metas
             if (slotid == -1) {
@@ -838,26 +857,30 @@ class htrie_map {
 
     class SearchPoint {
        public:
-        hash_node* hnode;
+        anode* node;
         typename hash_node::slot* sl;
 
-        SearchPoint() : hnode(nullptr), sl(nullptr) {}
-        SearchPoint(hash_node* h, typename hash_node::slot* s)
-            : hnode(h), sl(s) {}
+        SearchPoint() : node(nullptr), sl(nullptr) {}
+        SearchPoint(anode* h, typename hash_node::slot* s) : node(h), sl(s) {}
 
         void set_slot(typename hash_node::slot* s) { sl = s; }
 
         std::string get_string() {
-            if (hnode == nullptr) return string();
+            if (node == nullptr) return string();
+            // if the node is trie_node, just return the prefix on node
+            if (node->isTrieNode()) {
+                return ((trie_node*)node)->get_prefix();
+            }
 
             // get the parent char chain
-            trie_node* cur_node = hnode->anode::parent;
+            trie_node* cur_node = ((hash_node*)node)->anode::parent;
             char* buf = (char*)malloc(200);
             size_t len = cur_node->get_prefix(buf);
 
             // get tail
             if (sl != nullptr) {
-                memcpy(buf + len, hnode->get_tail_pointer(sl), sl->length);
+                memcpy(buf + len, ((hash_node*)node)->get_tail_pointer(sl),
+                       sl->length);
                 len += sl->length;
             }
             string res = string(buf, len);
@@ -898,8 +921,8 @@ class htrie_map {
         v2k[v].set_slot(s);
     }
 
-    void set_v2k(T v, hash_node* hnode, typename hash_node::slot* s) {
-        v2k[v] = SearchPoint(hnode, s);
+    void set_v2k(T v, anode* node, typename hash_node::slot* s) {
+        v2k[v] = SearchPoint(node, s);
     }
 
     void setRoot(anode* node) { t_root = node; }
@@ -914,11 +937,11 @@ class htrie_map {
     std::string searchByValue(T v) { return v2k[v].get_string(); }
 
     // find operation
-    std::pair<bool, std::string> findByKey(std::string key) {
+    std::pair<bool, T> findByKey(std::string key) {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
     }
 
-    std::pair<bool, T> findByValue(T v) {
+    std::pair<bool, std::string> findByValue(T v) {
         if (v2k.find(v) == v2k.end()) {
             return std::pair<bool, T>(false, string());
         } else {
@@ -936,18 +959,25 @@ class htrie_map {
        public:
         bool found;
         const T v;
-        hash_node* target_node;
+        anode* target_node;
         size_t bucketid;
         int slotid;
 
-        iterator(bool f, T vv, hash_node* hnode, size_t bid, int sid)
+        iterator(bool f, T vv, anode* hnode, size_t bid, int sid)
             : found(f), v(vv), target_node(hnode), bucketid(bid), slotid(sid) {}
 
-        std::pair<bool, T> insertKV(const CharT* key, size_t key_size,
-                                    htrie_map<CharT, T>* hm, T v) {
-            return target_node->insert_kv_in_hashnode(
-                key, key_size, hm, v, bucketid, slotid,
-                target_node->get_prefix());
+        std::pair<bool, T> insert_hashnode(const CharT* key, size_t key_size,
+                                           htrie_map<CharT, T>* hm, T v) {
+            return ((hash_node*)target_node)
+                ->insert_kv_in_hashnode(
+                    key, key_size, hm, v, bucketid, slotid,
+                    ((hash_node*)target_node)->get_prefix());
+        }
+
+        std::pair<bool, T> insert_trienode(const CharT* key, size_t key_size,
+                                           htrie_map<CharT, T>* hm, T v) {
+            return ((trie_node*)target_node)
+                ->insert_kv_in_trienode(key, key_size, hm, v);
         }
     };
 
@@ -957,15 +987,25 @@ class htrie_map {
 
         for (size_t pos = 0; pos < key_size; pos++) {
             if (current_node->isTrieNode()) {
-                trie_node* parent;
-                parent = (trie_node*)current_node;
-
                 if (!findMode) {
-                    // only return the hitted trie_node* or nullptr if not found
-                    current_node =
-                        parent->findChildNode(key[pos], string(key, pos));
+                    // return the hitted trie_node* or create a new
+                    // trie_node with a hash_node son
+                    current_node = ((trie_node*)current_node)
+                                       ->findChildNode(key[pos], key, pos);
                 } else {
-                    current_node = parent->findChildNode(key[pos]);
+                    // return the hitted trie_node* or nullptr if not found
+                    current_node =
+                        ((trie_node*)current_node)->findChildNode(key[pos]);
+                    // only in the findMode==true can cause the current_node to
+                    // be nullptr
+                    if (current_node == nullptr) {
+                        return std::pair<bool, T>(false, T());
+                    }
+                }
+
+                if (((trie_node*)current_node)->onlyHashNode != nullptr &&
+                    pos != key_size - 1) {
+                    current_node = ((trie_node*)current_node)->onlyHashNode;
                 }
 
             } else {
@@ -976,7 +1016,7 @@ class htrie_map {
                     return std::pair<bool, T>(it.found, it.v);
                 } else {
                     pair<bool, T> res =
-                        it.insertKV(key + pos, key_size - pos, this, v);
+                        it.insert_hashnode(key + pos, key_size - pos, this, v);
                     if (res.first == false) {
                         // if the insert failed, we burst the target_hashnode
                         // and retry insertion
@@ -995,20 +1035,15 @@ class htrie_map {
                     return res;
                 }
             }
-            // only in the findMode==true can cause the current_node to be
-            // nullptr
-            if (current_node == nullptr) {
-                return std::pair<bool, T>(false, T());
-            }
         }
 
-        // find a key in hash_node's only value
-        iterator it = ((hash_node*)current_node)->search_kv_in_hashnode(key, 0);
+        // find a key in trie_node's only value
+        iterator it = ((trie_node*)current_node)->search_kv_in_trienode();
 
         if (findMode) {
             return std::pair<bool, T>(it.found, it.v);
         } else {
-            return it.insertKV(key, 0, this, v);
+            return it.insert_trienode(key, key_size, this, v);
         }
     }
 
