@@ -164,6 +164,7 @@ class htrie_map {
         ~trie_node() {
             std::map<CharT, trie_node*> empty;
             trie_node_childs.swap(empty);
+            if (prefix != nullptr) free(prefix);
         }
 
         // finding target, if target doesn't exist, return nullptr
@@ -332,9 +333,9 @@ class htrie_map {
         }
 
         /*---------function that changed key_metas layout---------*/
-        
+
         /*------------------ 0. helper function------------------*/
-        
+
         void apply_the_changed_searchPoint(map<T, int>& searchPoints,
                                            htrie_map<CharT, T>* hm) {
             for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
@@ -395,7 +396,7 @@ class htrie_map {
         }
 
         /*------------------ 2. rehashing function------------------*/
-        
+
         inline slot* previous_dst_slot_in_same_bucket(slot* s) {
             size_t slotid = (s - key_metas) % cur_associativity;
             if (slotid == 0) {
@@ -963,32 +964,6 @@ class htrie_map {
         }
     };
 
-    /*---------------external accessing interface-------------------*/
-
-    // access element
-    T searchByKey(std::string key) {
-        return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
-    }
-
-    std::string searchByValue(T v) { return v2k[v].get_string(); }
-
-    // find operation
-    std::pair<bool, T> findByKey(std::string key) {
-        return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
-    }
-
-    std::pair<bool, std::string> findByValue(T v) {
-        if (v2k.find(v) == v2k.end()) {
-            return std::pair<bool, T>(false, string());
-        } else {
-            return std::pair<bool, T>(true, v2k[v].get_string());
-        }
-    }
-
-    std::pair<bool, T> insertKV(std::string key, T v) {
-        return access_kv_in_htrie_map(key.data(), key.size(), v, false);
-    }
-
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
                                               T v, bool findMode) {
         anode* current_node = t_root;
@@ -1057,6 +1032,34 @@ class htrie_map {
             return it.insert_trienode(key, key_size, this, v);
         }
     }
+
+    /*---------------external accessing interface-------------------*/
+
+    // access element
+    T searchByKey(std::string key) {
+        return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
+    }
+
+    std::string searchByValue(T v) { return v2k[v].get_string(); }
+
+    // find operation
+    std::pair<bool, T> findByKey(std::string key) {
+        return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
+    }
+
+    std::pair<bool, std::string> findByValue(T v) {
+        if (v2k.find(v) == v2k.end()) {
+            return std::pair<bool, T>(false, string());
+        } else {
+            return std::pair<bool, T>(true, v2k[v].get_string());
+        }
+    }
+
+    std::pair<bool, T> insertKV(std::string key, T v) {
+        return access_kv_in_htrie_map(key.data(), key.size(), v, false);
+    }
+
+    /*---------------external cleaning interface-------------------*/
 
     void deleteMyself() {
         map<T, SearchPoint> empty;
