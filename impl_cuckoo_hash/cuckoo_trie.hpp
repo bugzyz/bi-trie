@@ -70,12 +70,12 @@ class htrie_map {
         node_type _node_type;
         trie_node* parent;
 
-        bool isHashNode() { return _node_type == node_type::HASH_NODE; }
-        bool isTrieNode() { return _node_type == node_type::TRIE_NODE; }
+        bool is_hash_node() { return _node_type == node_type::HASH_NODE; }
+        bool is_trie_node() { return _node_type == node_type::TRIE_NODE; }
         void setParent(trie_node* p) { parent = p; }
 
         void deleteMe() {
-            if (this->isTrieNode()) {
+            if (this->is_trie_node()) {
                 std::map<CharT, trie_node*> cs = ((trie_node*)this)->childs;
                 for (auto it = cs.begin(); it != cs.end(); it++) {
                     it->second->deleteMe();
@@ -781,7 +781,7 @@ class htrie_map {
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
-            if (current_node->isTrieNode()) {
+            if (current_node->is_trie_node()) {
                 trie_node* parent;
                 parent = (trie_node*)current_node;
 

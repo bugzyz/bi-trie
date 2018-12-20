@@ -122,7 +122,10 @@ int main() {
 #ifdef TEST_GROWCUCKOOHASH
         cout << "expand cost time: " << expand_cost_time << endl;
 #endif
+
+#ifndef TEST_HAT
         cout << "rehash cost time: " << rehash_cost_time << endl;
+#endif
 
         int64_t um_hm_k = 0;
         double percent_k = 0.0;
