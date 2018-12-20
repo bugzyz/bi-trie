@@ -6,7 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <stack>
-#include "../util/hashFunc.hpp"
+#include "../../util/hashFunc.hpp"
 
 #include <fstream>
 #include <ios>
@@ -216,39 +216,23 @@ class htrie_map {
         size_t elem_num;
         size_t cur_page_id;
 
-        size_t cur_bucket = 3;
+        size_t cur_associativity = 1;
 
        public:
         // debug function
         void print_slot(int i, int j) {
-            slot* s = key_metas + i * Associativity + j;
+            slot* s = key_metas + i * cur_associativity + j;
             string str = string(get_tail_pointer(s), s->length);
             T v = get_tail_v(s);
-            cout << i * Associativity + j << ":" << s->length << "," << s->pos
-                 << "," << s->page_id << "," << str << "=" << v << "\n";
+            cout << i * cur_associativity + j << ":" << s->length << ","
+                 << s->pos << "," << s->page_id << "," << str << "=" << v
+                 << "\n";
         }
 
         void print_key_metas() {
-            for (int i = 0; i != cur_bucket; i++) {
-                for (int j = 0; j != Associativity; j++) {
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != cur_associativity; j++) {
                     print_slot(i, j);
-                }
-                cout << "---\n";
-            }
-        }
-
-        void print_slot(slot* new_key_metas, int i, int j) {
-            slot* s = new_key_metas + i * Associativity + j;
-            string str = string(get_tail_pointer(s), s->length);
-            T v = get_tail_v(s);
-            cout << i * Associativity + j << ":" << s->length << "," << s->pos
-                 << "," << s->page_id << "," << str << "=" << v << "\n";
-        }
-
-        void print_key_metas(slot* new_key_metas, size_t bucket_num) {
-            for (int i = 0; i != bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    print_slot(new_key_metas, i, j);
                 }
                 cout << "---\n";
             }
@@ -262,16 +246,8 @@ class htrie_map {
 
             bool isEmpty() { return length == 0; }
 
-            slot() : length(0), pos(0), page_id(0) {}
-
             slot(KeySizeT l, size_t p, size_t pi)
                 : length(l), pos(p), page_id(pi) {}
-
-            void set_slot(slot s) {
-                length = s.length;
-                pos = s.pos;
-                page_id = s.page_id;
-            }
 
             void set_slot(KeySizeT l, size_t p, size_t pi) {
                 length = l;
@@ -287,17 +263,20 @@ class htrie_map {
         };
 
        public:
-        explicit hash_node(trie_node* p, string prefix, size_t need_bucket = 3)
-            : cur_bucket(need_bucket), elem_num(0), cur_page_id(0) {
+        explicit hash_node(trie_node* p, string prefix,
+                           size_t need_associativity = 1)
+            : cur_associativity(need_associativity),
+              elem_num(0),
+              cur_page_id(0) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
 
             key_metas =
-                (slot*)malloc(need_bucket * Associativity * sizeof(slot));
+                (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
 
             // init key space
-            for (int i = 0; i != need_bucket * Associativity; i++) {
+            for (int i = 0; i != cur_associativity * Bucket_num; i++) {
                 key_metas[i].length = 0;
                 key_metas[i].pos = 0;
                 key_metas[i].page_id = 0;
@@ -309,7 +288,7 @@ class htrie_map {
 
         ~hash_node() {
             free(key_metas);
-            // for (int i = 0; i != pages.size(); i++) free(pages[i].first);
+            for (int i = 0; i != pages.size(); i++) free(pages[i].first);
             vector<std::pair<char*, size_t>> empty;
             pages.swap(empty);
         }
@@ -324,7 +303,7 @@ class htrie_map {
         }
 
         inline slot* get_slot(size_t bucketid, size_t slotid) {
-            return key_metas + bucketid * Associativity + slotid;
+            return key_metas + bucketid * cur_associativity + slotid;
         }
 
         inline slot* get_slot(int index) { return key_metas + index; }
@@ -344,9 +323,9 @@ class htrie_map {
         }
 
         void get_all_elements(std::map<std::string, T>& elements) {
-            for (size_t i = 0; i != cur_bucket; i++) {
-                for (size_t j = 0; j != Associativity; j++) {
-                    slot& cur_slot = key_metas[i * Associativity + j];
+            for (size_t i = 0; i != Bucket_num; i++) {
+                for (size_t j = 0; j != cur_associativity; j++) {
+                    slot& cur_slot = key_metas[i * cur_associativity + j];
                     if (cur_slot.isEmpty()) break;
                     get_tail_str_v(elements, &cur_slot);
                 }
@@ -365,187 +344,41 @@ class htrie_map {
 
         /*------------------ 1. expand function------------------*/
 
-        struct slot_and_branch {
-            slot s;
-            size_t b1;
-            size_t b2;
-            int dec;
-
-            slot_and_branch(slot ss, size_t bb1)
-                : s(ss), b1(bb1), b2(bb1), dec(bb1) {}
-
-            slot_and_branch(slot ss, size_t bb1, size_t bb2)
-                : s(ss), b1(bb1), b2(bb2), dec(-1) {}
-
-            size_t right_branch() {
-                dec = b1;
-                return b1;
-            }
-
-            size_t left_branch() {
-                dec = b2;
-                return b2;
-            }
-        };
-
-        bool traverse_decision_tree(vector<slot_and_branch>& decisions,
-                                    int decision_index, int max_decision,
-                                    size_t* bucket_elem_num,
-                                    size_t bucket_num) {
-            if (decision_index == max_decision) {
-                return true;
-            }
-
-            // current element
-            slot_and_branch& snb = decisions[decision_index];
-            if (bucket_elem_num[snb.b1] + 1 <= Associativity) {
-                bucket_elem_num[snb.b1]++;
-                if (traverse_decision_tree(decisions, decision_index + 1,
-                                           max_decision, bucket_elem_num,
-                                           bucket_num)) {
-                    // set snb to b1
-                    snb.dec = snb.b1;
-                    return true;
-                } else {
-                    bucket_elem_num[snb.b1]--;
-                }
-            }
-            if (bucket_elem_num[snb.b2] + 1 <= Associativity) {
-                bucket_elem_num[snb.b2]++;
-                if (traverse_decision_tree(decisions, decision_index + 1,
-                                           max_decision, bucket_elem_num,
-                                           bucket_num)) {
-                    // set snb to b2
-                    snb.dec = snb.b2;
-                    return true;
-                } else {
-                    bucket_elem_num[snb.b2]--;
-                }
-            }
-            return false;
-        }
-
-        slot* cal_decision_tree(vector<slot_and_branch>& decisions,
-                                vector<slot_and_branch>& static_decisions,
-                                map<T, int>& updating_search_points,
-                                size_t* bucket_elem_num, size_t bucket_num) {
-            // if we have a eligible decision we write the result
-            if (traverse_decision_tree(decisions, 0, decisions.size(),
-                                       bucket_elem_num, bucket_num)) {
-                // init new key_metas
-                slot* new_key_metas =
-                    (slot*)malloc(sizeof(slot) * bucket_num * Associativity);
-                for (int i = 0; i != bucket_num * Associativity; i++) {
-                    (new_key_metas + i)->set_slot(0, 0, 0);
-                }
-
-                // set the slot that only belongs to one bucket first to avoid
-                // the rehash later
-                for (int i = 0; i != static_decisions.size(); i++) {
-                    slot_and_branch& snb = static_decisions[i];
-                    size_t bucket_index = snb.dec * Associativity;
-                    for (int j = 0; j != Associativity; j++) {
-                        slot* new_slot = new_key_metas + bucket_index + j;
-                        if (new_slot->isEmpty()) {
-                            new_slot->set_slot(snb.s);
-                            updating_search_points[get_tail_v(new_slot)] =
-                                bucket_index + j;
-                            break;
-                        }
-                    }
-                }
-
-                // set the slot that have two residents by the decision set in
-                // traverse_decision_tree
-                for (int i = 0; i != decisions.size(); i++) {
-                    slot_and_branch& snb = decisions[i];
-                    size_t bucket_index = snb.dec * Associativity;
-                    for (int j = 0; j != Associativity; j++) {
-                        slot* new_slot = new_key_metas + bucket_index + j;
-                        if (new_slot->isEmpty()) {
-                            new_slot->set_slot(snb.s);
-                            updating_search_points[get_tail_v(new_slot)] =
-                                bucket_index + j;
-                            break;
-                        }
-                    }
-                }
-                return new_key_metas;
-            }
-            return nullptr;
-        }
-
-        bool expand_key_metas_space(size_t need_bucket, htrie_map* hm,
-                                    size_t hash_val) {
+        bool expand_key_metas_space(size_t need_associativity, htrie_map* hm) {
             uint64_t sta = get_time();
             // we cannot expand anymore, return false
-            if (cur_bucket == Bucket_num) {
+            if (cur_associativity == Associativity) {
                 return false;
             }
 
-            if (need_bucket > Bucket_num) {
-                need_bucket = Bucket_num;
+            if (need_associativity > Associativity) {
+                need_associativity = Associativity;
             }
 
-            // PLAN: decide all the position and apply the decision in one time
-
-            // bucket_elem_num for recording the elem num in buckets
-            size_t* bucket_elem_num =
-                (size_t*)malloc(sizeof(size_t) * need_bucket);
-
-            // todo: whether we need a greedy insert first?
-            for (int i = 0; i != need_bucket; i++) {
-                bucket_elem_num[i] = 0;
-            }
-
-            vector<slot_and_branch> decisions;
-            vector<slot_and_branch> static_decisions;
-
-            size_t target_bucket_id = hash_val % need_bucket;
-            // save a slot for the target_bucket
-            bucket_elem_num[target_bucket_id] = 1;
-
-            for (int i = 0; i != cur_bucket; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot s = key_metas[i * Associativity + j];
-                    if (s.isEmpty()) break;
-                    char* string_pos = get_tail_pointer(&s);
-                    size_t bucketid1 =
-                        hashRelative::hash(string_pos, s.length, 1) %
-                        need_bucket;
-
-                    size_t bucketid2 =
-                        hashRelative::hash(string_pos, s.length, 2) %
-                        need_bucket;
-
-                    if (bucketid1 == bucketid2) {
-                        bucket_elem_num[bucketid1]++;
-                        static_decisions.push_back(
-                            slot_and_branch(s, bucketid1));
+            map<T, int> updating_search_points;
+            slot* new_key_metas =
+                (slot*)malloc(need_associativity * Bucket_num * sizeof(slot));
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != need_associativity; j++) {
+                    slot* cur_new_slot =
+                        new_key_metas + i * need_associativity + j;
+                    if (j < cur_associativity) {
+                        slot* cur_slot = key_metas + i * cur_associativity + j;
+                        cur_new_slot->set_slot(cur_slot);
+                        // if cur_slot is not empty which means we need to
+                        // update its slot position in v2k
+                        // adding the new position to the searchPoint update
+                        // list
+                        if (!cur_slot->isEmpty()) {
+                            T v = get_tail_v(cur_slot);
+                            updating_search_points[v] =
+                                i * need_associativity + j;
+                        }
                     } else {
-                        decisions.push_back(
-                            slot_and_branch(s, bucketid1, bucketid2));
+                        cur_new_slot->set_slot(0, 0, 0);
                     }
                 }
             }
-
-            // if the static elem cause the illegitimate result, we return false
-            for (int i = 0; i != need_bucket; i++) {
-                if (bucket_elem_num[i] > Associativity) return false;
-            }
-
-            slot* new_key_metas = nullptr;
-            map<T, int> updating_search_points;
-            new_key_metas = cal_decision_tree(decisions, static_decisions,
-                                              updating_search_points,
-                                              bucket_elem_num, need_bucket);
-
-            // decision_tree return a nullptr new_key_metas when calculating
-            // failed
-            if (new_key_metas == nullptr) {
-                return false;
-            }
-
             // applying the updating searchPoint
             apply_the_changed_searchPoint(updating_search_points, hm);
 
@@ -554,7 +387,7 @@ class htrie_map {
             free(key_metas);
             key_metas = new_key_metas;
 
-            cur_bucket = need_bucket;
+            cur_associativity = need_associativity;
             uint64_t end = get_time();
 
             expand_cost_time += end - sta;
@@ -565,7 +398,7 @@ class htrie_map {
         /*------------------ 2. rehashing function------------------*/
 
         inline slot* previous_dst_slot_in_same_bucket(slot* s) {
-            size_t slotid = (s - key_metas) % Associativity;
+            size_t slotid = (s - key_metas) % cur_associativity;
             if (slotid == 0) {
                 return nullptr;
             } else
@@ -576,10 +409,10 @@ class htrie_map {
         inline size_t get_another_bucketid(slot* s, size_t current_bucketid) {
             size_t bucketid1 =
                 myTrie::hashRelative::hash(get_tail_pointer(s), s->length, 1) %
-                cur_bucket;
+                Bucket_num;
             size_t bucketid2 =
                 myTrie::hashRelative::hash(get_tail_pointer(s), s->length, 2) %
-                cur_bucket;
+                Bucket_num;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
@@ -588,10 +421,10 @@ class htrie_map {
             uint64_t sta = get_time();
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
             std::map<size_t, size_t> bucket_list;
-            for (size_t bn = 0; bn != cur_bucket; bn++) {
-                bucket_list[bn] = Associativity;
-                for (int sn = 0; sn != Associativity; sn++) {
-                    if (key_metas[bn * Associativity + sn].isEmpty()) {
+            for (size_t bn = 0; bn != Bucket_num; bn++) {
+                bucket_list[bn] = cur_associativity;
+                for (int sn = 0; sn != cur_associativity; sn++) {
+                    if (key_metas[bn * cur_associativity + sn].isEmpty()) {
                         bucket_list[bn] = sn;
                         break;
                     }
@@ -599,10 +432,10 @@ class htrie_map {
             }
             // current bucket is definitely full
             // just pick the last slot to kick
-            int ret_slot_id = Associativity - 1;
+            int ret_slot_id = cur_associativity - 1;
 
             size_t kicked_slot_id = -1;
-            for (int i = 0; i != Associativity; i++) {
+            for (int i = 0; i != cur_associativity; i++) {
                 slot* s = get_slot(bucketid, i);
                 size_t bkid = get_another_bucketid(s, bucketid);
                 if (bkid != bucketid) {
@@ -617,9 +450,9 @@ class htrie_map {
             }
             // set up the backup for recovery if the rehash fails
             char* key_metas_backup =
-                (char*)malloc(cur_bucket * Associativity * sizeof(slot));
+                (char*)malloc(Bucket_num * cur_associativity * sizeof(slot));
             memcpy(key_metas_backup, key_metas,
-                   cur_bucket * Associativity * sizeof(slot));
+                   Bucket_num * cur_associativity * sizeof(slot));
 
             ret_slot_id = kicked_slot_id;
 
@@ -656,7 +489,7 @@ class htrie_map {
                     if (dst_slot == nullptr) {
                         // recover the key_metas
                         memcpy(key_metas, key_metas_backup,
-                               cur_bucket * Associativity * sizeof(slot));
+                               Bucket_num * cur_associativity * sizeof(slot));
                         free(key_metas_backup);
                         uint64_t end = get_time();
                         rehash_cost_time += end - sta;
@@ -680,7 +513,7 @@ class htrie_map {
                 if (dst_slot->isEmpty()) {
                     // recover the key_metas
                     memcpy(key_metas, key_metas_backup,
-                           cur_bucket * Associativity * sizeof(slot));
+                           Bucket_num * cur_associativity * sizeof(slot));
                     free(key_metas_backup);
                     uint64_t end = get_time();
                     rehash_cost_time += end - sta;
@@ -701,7 +534,7 @@ class htrie_map {
 
                 // if the destination bucket isn't full, just fill the empty
                 // slot and return
-                if (bucket_list[bucketid_kick_to] != Associativity) {
+                if (bucket_list[bucketid_kick_to] != cur_associativity) {
                     /* kick2bucket is have empty slot
                         src(a,b,c)
                         temp: d,e,f
@@ -749,7 +582,7 @@ class htrie_map {
                     kk2_bucket: |x      |x      |x      |x-dst     |
                 */
                 // update dst_slot to the dest bucket's last empty slot
-                dst_slot = get_slot(bucketid_kick_to, Associativity - 1);
+                dst_slot = get_slot(bucketid_kick_to, cur_associativity - 1);
                 /*
                      src(d,e,f)
                      cur_bucket: |x      |x      |x      |x(a,b,c)  |
@@ -769,7 +602,7 @@ class htrie_map {
             } while (rehash_count != Max_loop);
             // recover the key_metas
             memcpy(key_metas, key_metas_backup,
-                   cur_bucket * Associativity * sizeof(slot));
+                   Bucket_num * cur_associativity * sizeof(slot));
             free(key_metas_backup);
             uint64_t end = get_time();
             rehash_cost_time += end - sta;
@@ -809,20 +642,19 @@ class htrie_map {
                     return burst(curKV, cur_trie_node, hm, prefix + it->first);
                 }
 
-                size_t expected_bucket_num =
-                    (double)curKV.size() / (double)Associativity / Burst_ratio +
-                    1;
+                size_t expected_associativity =
+                    (double)curKV.size() / (double)Bucket_num / Burst_ratio + 1;
 
-                // bucket_num shouln't equal to 2^i
-                if ((expected_bucket_num & (expected_bucket_num - 1)) == 0) {
-                    expected_bucket_num++;
-                }
-                if (expected_bucket_num < 3) {
-                    expected_bucket_num = 3;
+                // ceil to the 2
+                expected_associativity >>= 1;
+                expected_associativity <<= 1;
+
+                if (expected_associativity == 0) {
+                    expected_associativity = 1;
                 }
 
                 hash_node* hnode = new hash_node(
-                    cur_trie_node, prefix + it->first, expected_bucket_num);
+                    cur_trie_node, prefix + it->first, expected_associativity);
                 cur_trie_node->set_hash_node_child(hnode);
 
                 bool stop_insert_and_burst = false;
@@ -873,7 +705,7 @@ class htrie_map {
                                                  const CharT* key,
                                                  size_t keysize) {
             // find the hitted slot in hashnode
-            for (int i = 0; i != Associativity; i++) {
+            for (int i = 0; i != cur_associativity; i++) {
                 slot* target_slot = get_slot(bucketid, i);
                 if (target_slot->isEmpty()) {
                     return std::pair<bool, iterator>(
@@ -893,12 +725,12 @@ class htrie_map {
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
             size_t bucketId1 =
-                myTrie::hashRelative::hash(key, keysize, 1) % cur_bucket;
+                myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
             std::pair<bool, iterator> res1 =
                 find_in_bucket(bucketId1, key, keysize);
 
             size_t bucketId2 =
-                myTrie::hashRelative::hash(key, keysize, 2) % cur_bucket;
+                myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
             std::pair<bool, iterator> res2 =
                 find_in_bucket(bucketId2, key, keysize);
 
@@ -964,21 +796,18 @@ class htrie_map {
             // if slotid==-1, it denotes that the bucket(bucketid) is full , so
             // we rehash the key_metas
             if (slotid == -1) {
-                size_t expect_bucket_num = (cur_bucket << 1) + 1;
-                size_t hash_val = hashRelative::hash(key, keysize, 1);
 #ifdef REHASH_BEFORE_EXPAND
                 if ((slotid = rehash(bucketid, hm)) == -1) {
                     bool expand_success =
-                        expand_key_metas_space(expect_bucket_num, hm, hash_val);
+                        expand_key_metas_space(cur_associativity << 1, hm);
                     if (!expand_success) {
                         return std::pair<bool, T>(false, T());
                     } else {
                         // if expand success, we get new elem a empty slot in
                         // bucketid
-                        bucketid = hash_val % cur_bucket;
-                        for (int i = 0; i != Associativity; i++) {
+                        for (int i = 0; i != cur_associativity; i++) {
                             slot* empty_slot =
-                                key_metas + bucketid * Associativity + i;
+                                key_metas + bucketid * cur_associativity + i;
                             if (empty_slot->isEmpty()) {
                                 slotid = i;
                                 break;
@@ -988,7 +817,7 @@ class htrie_map {
                 }
 #else
                 bool expand_success =
-                    expand_key_metas_space(expect_bucket_num, hm, hash_val);
+                    expand_key_metas_space(cur_associativity << 1, hm);
                 if (!expand_success) {
                     if ((slotid = rehash(bucketid, hm)) == -1) {
                         return std::pair<bool, T>(false, T());
@@ -996,10 +825,9 @@ class htrie_map {
                 } else {
                     // if expand success, we get new elem a empty slot in
                     // bucketid
-                    bucketid = hash_val % cur_bucket;
-                    for (int i = 0; i != Associativity; i++) {
+                    for (int i = 0; i != cur_associativity; i++) {
                         slot* empty_slot =
-                            key_metas + bucketid * Associativity + i;
+                            key_metas + bucketid * cur_associativity + i;
                         if (empty_slot->isEmpty()) {
                             slotid = i;
                             break;
@@ -1011,7 +839,7 @@ class htrie_map {
 
             // now the slotid cannot be -1 and slotid is lower than
             // Associativity
-            assert(slotid != -1 && slotid >= 0 && slotid < Associativity);
+            assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity);
 
             slot* target_slot = get_slot(bucketid, slotid);
 
@@ -1083,6 +911,7 @@ class htrie_map {
               double customized_burst_ratio = DEFAULT_Burst_ratio)
         : t_root(nullptr) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
+        cout << "GROW_ASSOCIATIVITY\n";
 #ifdef REHASH_BEFORE_EXPAND
         std::cout << "REHASH_BEFORE_EXPAND\n";
 
@@ -1099,7 +928,7 @@ class htrie_map {
         Max_slot_num = Associativity * Bucket_num;
         Max_loop = Max_slot_num * 0.5;
 
-        t_root = new hash_node(nullptr, string(), Bucket_num);
+        t_root = new hash_node(nullptr, string(), Associativity);
     }
 
     void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
