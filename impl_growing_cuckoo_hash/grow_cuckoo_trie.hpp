@@ -349,10 +349,6 @@ class htrie_map {
                     slot& cur_slot = key_metas[i * Associativity + j];
                     if (cur_slot.isEmpty()) break;
                     get_tail_str_v(elements, &cur_slot);
-                    // cout << get_tail_v(&cur_slot) << " : "
-                    //      << string(get_tail_pointer(&cur_slot),
-                    //      cur_slot.length)
-                    //      << endl;
                 }
             }
         }
@@ -396,13 +392,6 @@ class htrie_map {
                                     int decision_index, int max_decision,
                                     size_t* bucket_elem_num,
                                     size_t bucket_num) {
-            cout << "new recall: now:" << decision_index
-                 << " total:" << max_decision << "\n";
-            for (int i = 0; i != bucket_num; i++) {
-                cout << i << ": have " << bucket_elem_num[i] << endl;
-            }
-            cout << "\n";
-
             if (decision_index == max_decision) {
                 return true;
             }
@@ -440,25 +429,21 @@ class htrie_map {
                                 vector<slot_and_branch>& static_decisions,
                                 map<T, int>& updating_search_points,
                                 size_t* bucket_elem_num, size_t bucket_num) {
-            bool calculation_success = false;
-            calculation_success = traverse_decision_tree(
-                decisions, 0, decisions.size(), bucket_elem_num, bucket_num);
-
-            if (calculation_success) {
-                cout << "expand result:\n";
-                for (int i = 0; i != bucket_num; i++) {
-                    cout << i << ": have " << bucket_elem_num[i] << endl;
-                }
-                // if we have a eligible decision we write the result
+            // if we have a eligible decision we write the result
+            if (traverse_decision_tree(decisions, 0, decisions.size(),
+                                       bucket_elem_num, bucket_num)) {
+                // init new key_metas
                 slot* new_key_metas =
                     (slot*)malloc(sizeof(slot) * bucket_num * Associativity);
                 for (int i = 0; i != bucket_num * Associativity; i++) {
                     (new_key_metas + i)->set_slot(0, 0, 0);
                 }
+
+                // set the slot that only belongs to one bucket first to avoid
+                // the rehash later
                 for (int i = 0; i != static_decisions.size(); i++) {
                     slot_and_branch& snb = static_decisions[i];
                     size_t bucket_index = snb.dec * Associativity;
-                    cout << "write static at bucket: " << snb.dec << endl;
                     for (int j = 0; j != Associativity; j++) {
                         slot* new_slot = new_key_metas + bucket_index + j;
                         if (new_slot->isEmpty()) {
@@ -469,10 +454,12 @@ class htrie_map {
                         }
                     }
                 }
+
+                // set the slot that have two residents by the decision set in
+                // traverse_decision_tree
                 for (int i = 0; i != decisions.size(); i++) {
                     slot_and_branch& snb = decisions[i];
                     size_t bucket_index = snb.dec * Associativity;
-                    cout << "write movable at bucket: " << snb.dec << endl;
                     for (int j = 0; j != Associativity; j++) {
                         slot* new_slot = new_key_metas + bucket_index + j;
                         if (new_slot->isEmpty()) {
@@ -483,7 +470,6 @@ class htrie_map {
                         }
                     }
                 }
-                // print_key_metas(new_key_metas, bucket_num);
                 return new_key_metas;
             }
             return nullptr;
@@ -501,16 +487,15 @@ class htrie_map {
                 need_bucket = Bucket_num;
             }
 
-            // new idea:
-            // decide all the position and apply the decision in one time
+            // PLAN: decide all the position and apply the decision in one time
+
+            // bucket_elem_num for recording the elem num in buckets
             size_t* bucket_elem_num =
                 (size_t*)malloc(sizeof(size_t) * need_bucket);
-            // todo: whether we need a greedy insert first
-            // size_t* greedy_record =
-            //     (size_t*)malloc(sizeof(size_t) * need_bucket);
+
+            // todo: whether we need a greedy insert first?
             for (int i = 0; i != need_bucket; i++) {
                 bucket_elem_num[i] = 0;
-                // greedy_record[i] = 0;
             }
 
             vector<slot_and_branch> decisions;
@@ -533,7 +518,6 @@ class htrie_map {
                         hashRelative::hash(string_pos, s.length, 2) %
                         need_bucket;
 
-                    // decision tree implementation to cuckoo
                     if (bucketid1 == bucketid2) {
                         bucket_elem_num[bucketid1]++;
                         static_decisions.push_back(
@@ -545,19 +529,10 @@ class htrie_map {
                 }
             }
 
+            // if the static elem cause the illegitimate result, we return false
             for (int i = 0; i != need_bucket; i++) {
                 if (bucket_elem_num[i] > Associativity) return false;
             }
-
-            cout << "before expanding: key_metas:\n";
-            print_key_metas();
-
-            // debug
-            map<string, T> elem1;
-            get_all_elements(elem1);
-
-            cout << "expand operation needs target_bucket_id: "
-                 << target_bucket_id << endl;
 
             slot* new_key_metas = nullptr;
             map<T, int> updating_search_points;
@@ -565,8 +540,8 @@ class htrie_map {
                                               updating_search_points,
                                               bucket_elem_num, need_bucket);
 
-            // decision_tree return false that we cannot make a eligible
-            // decision
+            // decision_tree return a nullptr new_key_metas when calculating
+            // failed
             if (new_key_metas == nullptr) {
                 return false;
             }
@@ -580,39 +555,9 @@ class htrie_map {
             key_metas = new_key_metas;
 
             cur_bucket = need_bucket;
-            cout << "after expanding: key_metas:\n";
-            print_key_metas();
             uint64_t end = get_time();
 
             expand_cost_time += end - sta;
-
-            // debug
-            map<string, T> elem2;
-            get_all_elements(elem2);
-
-            if (elem1.size() != elem2.size()) {
-                cout << "elem1.size()" << elem1.size() << " elem2.size()"
-                     << elem2.size() << endl;
-                assert(false);
-            } else {
-                for (int i = 0; i != cur_bucket * Associativity; i++) {
-                    slot* s = get_slot(i);
-                    if (!s->isEmpty()) {
-                        size_t bucket_place1 =
-                            hashRelative::hash(get_tail_pointer(s), s->length,
-                                               1) %
-                            cur_bucket;
-                        size_t bucket_place2 =
-                            hashRelative::hash(get_tail_pointer(s), s->length,
-                                               2) %
-                            cur_bucket;
-                        if (!(i / Associativity == bucket_place1 ||
-                              i / Associativity == bucket_place2)) {
-                            assert(false);
-                        }
-                    }
-                }
-            }
 
             return true;
         }
@@ -957,19 +902,6 @@ class htrie_map {
             std::pair<bool, iterator> res2 =
                 find_in_bucket(bucketId2, key, keysize);
 
-            bool switcher = false;
-            if (switcher)
-                for (int i = 0; i != cur_bucket; i++) {
-                    for (int j = 0; j != Associativity; j++) {
-                        slot* s = get_slot(i, j);
-                        cout << i * Associativity + j << " : (" << s->length
-                             << "," << s->pos << "," << s->page_id
-                             << ") :" << string(get_tail_pointer(s), s->length)
-                             << " =" << get_tail_v(s) << endl;
-                    }
-                    cout << "---\n";
-                }
-
             // if found the existed target in bucket1 or bucket2, just return
             // the iterator for being modified or read
             if (res1.first) {
@@ -1075,9 +1007,6 @@ class htrie_map {
                     }
                 }
 #endif
-                if (!(slotid != -1 && slotid >= 0 && slotid < Associativity)) {
-                    cout << "asseertion!\n";
-                }
             }
 
             // now the slotid cannot be -1 and slotid is lower than
