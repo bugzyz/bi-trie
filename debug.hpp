@@ -129,7 +129,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         return;
     }
     // print bucket
-    if (root->isHashNode()) {
+    if (root->is_hash_node()) {
         class my::hash_node* cur_hash_node = (class my::hash_node*)root;
 #ifdef TEST_CUCKOOHASH
         hash_node_mem += sizeof(cur_hash_node);
@@ -164,8 +164,14 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         hash_node_mem += sizeof(cur_hash_node);
 
         // basic bucket cost
+#ifdef GROW_BUCKET
+        uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
+                              (cur_hash_node->cur_bucket) * Bucket_num;
+#else
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
                               (cur_hash_node->cur_associativity) * Bucket_num;
+#endif
+
         hash_node_mem += bucket_mem;
 
         // page mem cost
@@ -176,8 +182,12 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 
         size_t current_elem_num = cur_hash_node->elem_num;
         hashnode_load += current_elem_num;
+#ifdef GROW_BUCKET
+        hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Bucket_num;
+#else
         hashnode_total_slot_num +=
             (cur_hash_node->cur_associativity) * Bucket_num;
+#endif
 
         if (current_elem_num > hashnode_max_load) {
             hashnode_max_load = current_elem_num;
@@ -213,7 +223,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         h_n++;
 #endif
 
-    } else if (root->isTrieNode()) {
+    } else if (root->is_trie_node()) {
         class myTrie::htrie_map<CharT, T>::trie_node* cur_trie_node =
             (class myTrie::htrie_map<CharT, T>::trie_node*)root;
         trie_node_mem += sizeof(cur_trie_node);
@@ -223,11 +233,22 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         }
 #endif
 
+#ifdef TEST_GROWCUCKOOHASH
+        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
+            cur_trie_node->trie_node_childs;
+#else
         std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
             cur_trie_node->childs;
+#endif
+
         if (childs.size() == 0) {
-            print_tree_construct<CharT, T>(cur_trie_node->getOnlyHashNode(),
+#ifdef TEST_GROWCUCKOOHASH
+            print_tree_construct<CharT, T>(cur_trie_node->hash_node_child,
                                            depth + 1);
+#else
+            print_tree_construct<CharT, T>(cur_trie_node->onlyHashNode,
+                                           depth + 1);
+#endif
         } else {
             for (auto it = childs.begin(); it != childs.end(); it++) {
                 t_n++;
