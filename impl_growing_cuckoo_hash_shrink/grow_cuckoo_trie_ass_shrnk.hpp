@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <iostream>
+#include <queue>
 #include <sstream>
 #include <stack>
 #include "../util/hashFunc.hpp"
@@ -61,9 +62,10 @@ class htrie_map {
     // DEFAULT_Associativity * DEFAULT_Bucket_num should be set to be greater
     // than 26 for 26 alaphbet and ", @ .etc.(the test in lubm40 shows that it
     // has 50 char species)
-    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
+    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE, MULTI_NODE };
     class trie_node;
     class hash_node;
+    class MultiTrieNode;
     class iterator;
 
     class anode {
@@ -73,6 +75,7 @@ class htrie_map {
 
         bool is_hash_node() { return _node_type == node_type::HASH_NODE; }
         bool is_trie_node() { return _node_type == node_type::TRIE_NODE; }
+        bool is_multi_node() { return _node_type == node_type::MULTI_NODE; }
 
         void delete_me() {
             if (this->is_trie_node()) {
@@ -85,6 +88,30 @@ class htrie_map {
             } else {
                 delete (hash_node*)this;
             }
+        }
+    };
+
+    class multi_node : public anode {
+       public:
+        std::map<string, anode*> childs_;
+        size_t string_keysize_;
+
+        // prefix
+        CharT* prefix_;
+        uint16_t prefix_len_;
+
+        // element end up here
+        bool have_value;
+        T value;
+
+        multi_node(size_t _string_keysize_)
+            : string_keysize_(_string_keysize_),
+              prefix_(nullptr),
+              prefix_len_(0),
+              have_value(false),
+              value(T()) {
+            anode::_node_type = node_type::MULTI_NODE;
+            anode::parent = nullptr;
         }
     };
 
@@ -205,6 +232,21 @@ class htrie_map {
             // trie_node_childs map or have a single hash_node_child
             hash_node_child = nullptr;
         }
+
+        // for shrinking
+        bool isNodeInALine() {
+            return trie_node_childs.size() == 1 || hash_node_child != nullptr;
+        }
+
+        pair<CharT, trie_node*> get_only_trie_node_child() {
+            if (trie_node_childs.size() == 1) {
+                auto it = trie_node_childs.begin();
+                return pair<CharT, trie_node*>(it->first, it->second);
+            }
+            return pair<CharT, trie_node*>(CharT(), nullptr);
+        }
+
+        hash_node* get_only_hash_node_child() { return hash_node_child; }
     };
 
     class hash_node : public anode {
@@ -1061,6 +1103,91 @@ class htrie_map {
     }
 
     /*---------------external cleaning interface-------------------*/
+
+    anode* shrink_node(anode* node) {
+        if (node->is_trie_node()) {
+            trie_node* cur_node = (trie_node*)node;
+
+            vector<pair<string, anode*>> traverse_save(
+                cur_node->trie_node_childs.size());
+            vector<pair<CharT, trie_node*>> next_layer;
+
+            for (auto it = cur_node->trie_node_childs.begin();
+                 it != cur_node->trie_node_childs.end(); it++) {
+                next_layer.push_back(
+                    pair<CharT, trie_node*>(it->first, it->second));
+            }
+
+            bool allow_next_layer = true;
+            size_t string_keysize = 0;
+            do {
+                for (int i = 0; i != next_layer.size(); i++) {
+                    CharT c = next_layer[i].first;
+                    trie_node* next_layer_trie_node = next_layer[i].second;
+
+                    // current key_string add the next_layer's char
+                    string new_key_string = traverse_save[i].first + c;
+
+                    traverse_save[i].first = new_key_string;
+                    traverse_save[i].second = next_layer_trie_node;
+
+                    pair<CharT, trie_node*> next_pair;
+                    if (next_layer_trie_node->get_only_hash_node_child() ==
+                            nullptr &&
+                        next_layer_trie_node->get_only_trie_node_child()
+                                .second == nullptr) {
+                        // have several children
+                        allow_next_layer = false;
+                    } else {
+                        // only have a hash_node child or only have a trie_node
+                        // child
+                        if (next_layer_trie_node->get_only_hash_node_child() !=
+                            nullptr) {
+                            next_layer[i] =
+                                pair<CharT, trie_node*>(CharT(), nullptr);
+                            // stop at this layer
+                            allow_next_layer = false;
+                            traverse_save[i].second =
+                                next_layer_trie_node
+                                    ->get_only_hash_node_child();
+                        } else {
+                            next_pair = next_layer_trie_node
+                                            ->get_only_trie_node_child();
+                            next_layer[i] = next_pair;
+                        }
+                    }
+                }
+                string_keysize++;
+            } while (allow_next_layer);
+
+            // if all the next_layer is hash_node then return the trie_node
+            // for (int i = 0; i != next_layer.size(); i++) {
+            //     if (next_layer[i].second == nullptr) {
+            //         return cur_node;
+            //     }
+            // }
+
+            // construct the target multi_node
+            multi_node* target_node = new multi_node(string_keysize);
+
+            for (int i = 0; i != traverse_save.size(); i++) {
+                anode* res = shrink_node(traverse_save[i].second);
+                target_node->childs_[traverse_save[i].first] = res;
+            }
+            return target_node;
+        } else if (node->is_hash_node()) {
+            return node;
+        } else {
+            cout << "program are in a unexpected branch\n";
+            assert(false);
+            exit(0);
+        }
+    }
+
+    void shrink() {
+        t_root = shrink_node(t_root);
+        multi_node* finally = (multi_node*)t_root;
+    }
 
     void deleteMyself() {
         map<T, SearchPoint> empty;
