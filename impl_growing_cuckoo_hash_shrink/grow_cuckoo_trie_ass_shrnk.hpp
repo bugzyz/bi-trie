@@ -1108,6 +1108,10 @@ class htrie_map {
         if (node->is_trie_node()) {
             trie_node* cur_node = (trie_node*)node;
 
+            if (cur_node->get_only_hash_node_child() != nullptr) {
+                return cur_node;
+            }
+
             vector<pair<string, anode*>> traverse_save(
                 cur_node->trie_node_childs.size());
             vector<pair<CharT, trie_node*>> next_layer;
@@ -1147,9 +1151,7 @@ class htrie_map {
                                 pair<CharT, trie_node*>(CharT(), nullptr);
                             // stop at this layer
                             allow_next_layer = false;
-                            traverse_save[i].second =
-                                next_layer_trie_node
-                                    ->get_only_hash_node_child();
+                            traverse_save[i].second = next_layer_trie_node;
                         } else {
                             next_pair = next_layer_trie_node
                                             ->get_only_trie_node_child();
