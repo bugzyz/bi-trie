@@ -113,6 +113,15 @@ class htrie_map {
             anode::_node_type = node_type::MULTI_NODE;
             anode::parent = nullptr;
         }
+
+        anode* find_child(const CharT* key, size_t key_size) {
+            auto it = childs_.find(string(key, string_keysize_));
+            if (it == childs_.end()) {
+                return nullptr;
+            } else {
+                return it->second;
+            }
+        }
     };
 
     class trie_node : public anode {
@@ -1012,7 +1021,28 @@ class htrie_map {
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
-            if (current_node->is_trie_node()) {
+            if (current_node->is_multi_node()) {
+                if (!findMode) {
+                } else {
+                    cout << "seraching in multi_node\n";
+                    size_t jump_pos =
+                        ((multi_node*)current_node)->string_keysize_;
+                    current_node = ((multi_node*)current_node)
+                                       ->find_child(key + pos, key_size - pos);
+                    if (current_node == nullptr) {
+                        return std::pair<bool, T>(false, T());
+                    }
+                    pos += jump_pos - 1;
+
+                    if (current_node->is_trie_node() &&
+                        ((trie_node*)current_node)->get_hash_node_child() !=
+                            nullptr &&
+                        pos != key_size - 1) {
+                        current_node =
+                            ((trie_node*)current_node)->get_hash_node_child();
+                    }
+                }
+            } else if (current_node->is_trie_node()) {
                 if (!findMode) {
                     // return the hitted trie_node* or create a new
                     // trie_node with a hash_node son
