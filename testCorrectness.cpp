@@ -38,6 +38,10 @@ int main() {
     uint64_t end = get_usec();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
 
+#ifdef SHRINK_TEST_GROWCUCKOOHASH
+    hm.shrink();
+#endif
+
 #ifdef TEST_GROWCUCKOOHASH
     cout << "expand cost time: " << expand_cost_time << endl;
 #endif

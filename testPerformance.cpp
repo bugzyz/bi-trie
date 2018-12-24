@@ -109,6 +109,10 @@ int main() {
         myTrie::debuging::process_mem_usage(virt, res);
 
         myTrie::debuging::clear_num();
+#ifdef SHRINK_TEST_GROWCUCKOOHASH
+        hm.shrink();
+        cout << "shrinking cost time: " << shrink_total_time << endl;
+#endif
         myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
         double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
 
@@ -119,7 +123,7 @@ int main() {
 
         cout << "finish trie_map constructing\n";
         cout << "constructing time: " << endTm - staTm << endl;
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         cout << "expand cost time: " << expand_cost_time << endl;
 #endif
 
@@ -251,7 +255,7 @@ int main() {
 #ifdef TEST_CUCKOOHASH
         ff1 << "cuckoo_hash,,";
 #endif
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         ff1 << "grow_cuckoo_hash,";
 #ifdef REHASH_BEFORE_EXPAND
         ff1 << "rehash_before_expand,";
@@ -291,7 +295,8 @@ int main() {
             << ","
 
 #endif
-#ifdef TEST_GROWCUCKOOHASH
+
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
             ff1
             << Associativity << "," << Bucket_num << ","
             << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
@@ -351,10 +356,13 @@ int main() {
         rehash_total_num = 0;
 #endif
 
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         expand_cost_time = 0;
         rehash_cost_time = 0;
         rehash_total_num = 0;
+#endif
+#ifdef SHRINK_TEST_GROWCUCKOOHASH
+        shrink_total_time = 0;
 #endif
 
         // correctness check

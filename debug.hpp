@@ -103,19 +103,22 @@ using std::cout;
 using std::endl;
 uint64_t h_n;
 uint64_t t_n;
+uint64_t m_n;
+
 uint64_t hash_node_mem;
 uint64_t trie_node_mem;
+uint64_t multi_node_mem;
 
 size_t hashnode_load = 0;
 #ifdef TEST_CUCKOOHASH
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
 #endif
-#ifdef TEST_GROWCUCKOOHASH
+
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
 size_t hashnode_total_slot_num = 0;
-
 #endif
 
 size_t total_pass_trie_node_num = 0;
@@ -130,6 +133,8 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
     }
     // print bucket
     if (root->is_hash_node()) {
+        h_n++;
+
         class my::hash_node* cur_hash_node = (class my::hash_node*)root;
 #ifdef TEST_CUCKOOHASH
         hash_node_mem += sizeof(cur_hash_node);
@@ -160,7 +165,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             total_pass_trie_node_num += depth;
         }
 #endif
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         hash_node_mem += sizeof(cur_hash_node);
 
         // basic bucket cost
@@ -177,8 +182,6 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         // page mem cost
         size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
         hash_node_mem += pages_cost;
-
-        h_n++;
 
         size_t current_elem_num = cur_hash_node->elem_num;
         hashnode_load += current_elem_num;
@@ -224,16 +227,17 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 #endif
 
     } else if (root->is_trie_node()) {
+        t_n++;
         class myTrie::htrie_map<CharT, T>::trie_node* cur_trie_node =
             (class myTrie::htrie_map<CharT, T>::trie_node*)root;
         trie_node_mem += sizeof(cur_trie_node);
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         if (cur_trie_node->prefix_len != 0) {
             trie_node_mem += cur_trie_node->prefix_len;
         }
 #endif
 
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
             cur_trie_node->trie_node_childs;
 #else
@@ -242,7 +246,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 #endif
 
         if (childs.size() == 0) {
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
             print_tree_construct<CharT, T>(cur_trie_node->hash_node_child,
                                            depth + 1);
 #else
@@ -251,11 +255,25 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 #endif
         } else {
             for (auto it = childs.begin(); it != childs.end(); it++) {
-                t_n++;
                 print_tree_construct<CharT, T>(it->second, depth + 1);
             }
         }
     } else {
+#ifdef SHRINK_TEST_GROWCUCKOOHASH
+        if (root->is_multi_node()) {
+            m_n++;
+
+            class myTrie::htrie_map<CharT, T>::multi_node* cur_multi_node =
+                (class myTrie::htrie_map<CharT, T>::multi_node*)root;
+            multi_node_mem += sizeof(cur_multi_node);
+            std::map<string, class myTrie::htrie_map<CharT, T>::anode*> childs =
+                cur_multi_node->childs_;
+            for (auto it = childs.begin(); it != childs.end(); it++) {
+                print_tree_construct<CharT, T>(it->second, depth + 1);
+            }
+            return;
+        }
+#endif
         std::cout << "node is not trie nor hash node\n";
         exit(0);
     }
@@ -267,12 +285,13 @@ void clear_num() {
     h_n = 0;
     hash_node_mem = 0;
     trie_node_mem = 0;
+    multi_node_mem = 0;
     hashnode_load = 0;
 #ifdef TEST_CUCKOOHASH
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
 #endif
-#ifdef TEST_GROWCUCKOOHASH
+#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
     hashnode_total_slot_num = 0;
@@ -290,19 +309,25 @@ double print_res() {
 #ifdef TEST_GROWCUCKOOHASH
     std::cout << "WE ARE TESTING GROWING_CUCKOOHASH_IMPL NOW\n";
 #endif
+#ifdef SHRINK_TEST_GROWCUCKOOHASH
+    std::cout << "WE ARE TESTING SHRINKING GROWING_CUCKOOHASH_IMPL NOW\n";
+#endif
 #ifdef TEST_HAT
     std::cout << "WE ARE TESTING HAT-TRIE NOW\n";
 #endif
 
-    std::cout << "trie_node: " << t_n << " hash_node: " << h_n << std::endl;
+    std::cout << "trie_node: " << t_n << " hash_node: " << h_n
+              << " multi_node: " << m_n << std::endl;
     std::cout << "trie_node_mem: " << trie_node_mem
-              << " hash_node_mem: " << hash_node_mem << std::endl;
+              << " hash_node_mem: " << hash_node_mem
+              << " multi_node_mem: " << multi_node_mem << std::endl;
     using my = typename myTrie::htrie_map<CharT, T>;
 
-    std::cout << "total: ," << (hash_node_mem + trie_node_mem) / 1024 / 1024
+    std::cout << "total: ,"
+              << (hash_node_mem + trie_node_mem + multi_node_mem) / 1024 / 1024
               << ", mb" << std::endl;
     double ret_v;
-    ret_v = (hash_node_mem + trie_node_mem) / 1024 / 1024;
+    ret_v = (hash_node_mem + trie_node_mem + multi_node_mem) / 1024 / 1024;
 
     // todo
     // std::cout << "trienode size:" << sizeof(typename my::trie_node)
