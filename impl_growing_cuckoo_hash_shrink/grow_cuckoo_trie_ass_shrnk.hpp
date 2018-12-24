@@ -27,6 +27,8 @@ uint64_t expand_cost_time = 0;
 uint64_t rehash_cost_time = 0;
 uint64_t rehash_total_num = 0;
 
+uint64_t shrink_total_time = 0;
+
 uint64_t get_time() {
     struct timespec tp;
     /* POSIX.1-2008: Applications should use the clock_gettime() function
@@ -1024,7 +1026,6 @@ class htrie_map {
             if (current_node->is_multi_node()) {
                 if (!findMode) {
                 } else {
-                    cout << "seraching in multi_node\n";
                     size_t jump_pos =
                         ((multi_node*)current_node)->string_keysize_;
                     current_node = ((multi_node*)current_node)
@@ -1189,6 +1190,11 @@ class htrie_map {
                         }
                     }
                 }
+                if (allow_next_layer) {
+                    for (int i = 0; i != next_layer.size(); i++) {
+                        delete (next_layer[i].second)->anode::parent;
+                    }
+                }
                 string_keysize++;
             } while (allow_next_layer);
 
@@ -1217,8 +1223,11 @@ class htrie_map {
     }
 
     void shrink() {
+        cout << "Shrinking\n";
+        uint64_t sta = get_time();
         t_root = shrink_node(t_root);
-        multi_node* finally = (multi_node*)t_root;
+        uint64_t end = get_time();
+        shrink_total_time = end - sta;
     }
 
     void deleteMyself() {
