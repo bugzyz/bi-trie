@@ -403,7 +403,6 @@ class htrie_map {
 
         slot* cal_cuckoo_result(vector<slot_and_branch>& decisions,
                                 vector<slot_and_branch>& static_decisions,
-                                map<T, int>& updating_search_points,
                                 size_t bucket_num, htrie_map* hm) {
             // init new key_metas
             slot* new_key_metas =
@@ -423,8 +422,6 @@ class htrie_map {
                     slot* new_slot = new_key_metas + bucket_index + j;
                     if (new_slot->isEmpty()) {
                         new_slot->set_slot(snb.s);
-                        updating_search_points[get_tail_v(new_slot)] =
-                            bucket_index + j;
                         set_success = true;
                         break;
                     }
@@ -447,14 +444,10 @@ class htrie_map {
                     slot* new_slot2 = new_key_metas + bucket_index1 + j;
                     if (new_slot1->isEmpty()) {
                         new_slot1->set_slot(snb.s);
-                        updating_search_points[get_tail_v(new_slot1)] =
-                            bucket_index1 + j;
                         insert_success = true;
                         break;
                     } else if (new_slot2->isEmpty()) {
                         new_slot2->set_slot(snb.s);
-                        updating_search_points[get_tail_v(new_slot2)] =
-                            bucket_index2 + j;
                         insert_success = true;
                         break;
                     }
@@ -468,8 +461,6 @@ class htrie_map {
                         slot* target_slot =
                             new_key_metas + bucket_index1 + slot_id;
                         target_slot->set_slot(snb.s);
-                        updating_search_points[get_tail_v(target_slot)] =
-                            bucket_index1 + slot_id;
                         continue;
                     }
 
@@ -480,8 +471,6 @@ class htrie_map {
                         slot* target_slot =
                             new_key_metas + bucket_index2 + slot_id;
                         target_slot->set_slot(snb.s);
-                        updating_search_points[get_tail_v(target_slot)] =
-                            bucket_index2 + slot_id;
                         continue;
                     }
                     // totally failed
@@ -494,7 +483,6 @@ class htrie_map {
 
         bool expand_key_metas_space(size_t need_bucket, htrie_map* hm,
                                     size_t hash_val1, size_t hash_val2) {
-            cout << "expanding" << endl;
             uint64_t sta = get_time();
             // we cannot expand anymore, return false
             if (cur_bucket == Bucket_num) {
@@ -536,17 +524,9 @@ class htrie_map {
             }
 
             slot* new_key_metas = nullptr;
-            map<T, int> updating_search_points;
 
-            cout << "num1\n";
-            print_key_metas();
             new_key_metas =
-                cal_cuckoo_result(decisions, static_decisions,
-                                  updating_search_points, need_bucket, hm);
-            if (new_key_metas != nullptr) {
-                cout << "num2\n";
-                print_key_metas(new_key_metas, need_bucket);
-            }
+                cal_cuckoo_result(decisions, static_decisions, need_bucket, hm);
 
             // decision_tree return a nullptr new_key_metas when calculating
             // failed
@@ -571,12 +551,18 @@ class htrie_map {
             }
 
             if (need_rehash_again) {
-                if (rehash(target_bucket_id1, need_bucket, hm, new_key_metas) ==
-                        -1 &&
-                    rehash(target_bucket_id2, need_bucket, hm, new_key_metas) ==
-                        -1) {
+                if (rehash(target_bucket_id1, need_bucket, hm, new_key_metas,
+                           false) == -1 &&
+                    rehash(target_bucket_id2, need_bucket, hm, new_key_metas,
+                           false) == -1) {
                     return false;
                 }
+            }
+
+            map<T, int> updating_search_points;
+            size_t slot_num = need_bucket * Associativity;
+            for (int i = 0; i != slot_num; i++) {
+                updating_search_points[get_tail_v(new_key_metas + i)] = i;
             }
 
             // applying the updating searchPoint
@@ -619,7 +605,7 @@ class htrie_map {
         }
 
         int rehash(size_t bucketid, size_t need_bucket, htrie_map<CharT, T>* hm,
-                   slot* rehashing_key_metas) {
+                   slot* rehashing_key_metas, bool apply_change = true) {
             // print_key_metas(rehashing_key_metas, need_bucket);
             rehash_total_num++;
             uint64_t sta = get_time();
@@ -768,8 +754,9 @@ class htrie_map {
                     dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
                     searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
                         get_index(dst_slot);
-                    apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
-                                                  hm);
+                    if (apply_change)
+                        apply_the_changed_searchPoint(
+                            searchPoint_wait_2_be_update, hm);
                     free(key_metas_backup);
                     uint64_t end = get_time();
                     rehash_cost_time += end - sta;
@@ -945,10 +932,6 @@ class htrie_map {
                 find_in_bucket(bucketId2, key, keysize);
 
             bool switcher = false;
-            if (switcher) {
-                cout << get_prefix() << endl;
-                print_key_metas();
-            }
 
             // if found the existed target in bucket1 or bucket2, just return
             // the iterator for being modified or read
@@ -1018,12 +1001,8 @@ class htrie_map {
                     size_t hash_val1 = hashRelative::hash(key, keysize, 1);
                     size_t hash_val2 = hashRelative::hash(key, keysize, 2);
 
-                    map<string, T> elem1;
-                    get_all_elements(elem1);
-
                     bool expand_success = expand_key_metas_space(
                         expect_bucket_num, hm, hash_val1, hash_val2);
-                    print_key_metas();
 
                     if (expand_success) {
                         // if expand success, we get new elem a empty slot in
@@ -1049,19 +1028,6 @@ class htrie_map {
                         }
                     } else {
                         return std::pair<bool, T>(false, T());
-                    }
-
-                    map<string, T> elem2;
-                    get_all_elements(elem2);
-
-                    if (elem1.size() != elem2.size()) {
-                        for (auto it = elem1.begin(); it != elem1.end(); it++) {
-                            cout << it->first << "=" << it->second << endl;
-                        }
-                        for (auto it = elem2.begin(); it != elem2.end(); it++) {
-                            cout << it->first << "=" << it->second << endl;
-                        }
-                        assert(false);
                     }
                 }
             }
@@ -1141,13 +1107,9 @@ class htrie_map {
         : t_root(nullptr) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_BUCKET\n";
-#ifdef REHASH_BEFORE_EXPAND
+
         std::cout << "REHASH_BEFORE_EXPAND\n";
 
-#else
-        std::cout << "EXPAND_BEFORE_REHASH\n";
-
-#endif
 
         Associativity = customized_associativity;
         Bucket_num = customized_bucket_count;
