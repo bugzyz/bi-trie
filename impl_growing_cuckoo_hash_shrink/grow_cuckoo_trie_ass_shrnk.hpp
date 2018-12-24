@@ -98,20 +98,8 @@ class htrie_map {
         std::map<string, anode*> childs_;
         size_t string_keysize_;
 
-        // prefix
-        CharT* prefix_;
-        uint16_t prefix_len_;
-
-        // element end up here
-        bool have_value;
-        T value;
-
         multi_node(size_t _string_keysize_)
-            : string_keysize_(_string_keysize_),
-              prefix_(nullptr),
-              prefix_len_(0),
-              have_value(false),
-              value(T()) {
+            : string_keysize_(_string_keysize_) {
             anode::_node_type = node_type::MULTI_NODE;
             anode::parent = nullptr;
         }
