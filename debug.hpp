@@ -187,7 +187,6 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         hashnode_load += current_elem_num;
 #ifdef GROW_BUCKET
         hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Associativity;
-        double slot_num = (cur_hash_node->cur_bucket) * Associativity;
 #else
         hashnode_total_slot_num +=
             (cur_hash_node->cur_associativity) * Bucket_num;
