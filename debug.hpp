@@ -171,7 +171,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         // basic bucket cost
 #ifdef GROW_BUCKET
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
-                              (cur_hash_node->cur_bucket) * Bucket_num;
+                              (cur_hash_node->cur_bucket) * Associativity;
 #else
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
                               (cur_hash_node->cur_associativity) * Bucket_num;
@@ -186,7 +186,15 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         size_t current_elem_num = cur_hash_node->elem_num;
         hashnode_load += current_elem_num;
 #ifdef GROW_BUCKET
-        hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Bucket_num;
+        hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Associativity;
+        double slot_num = (cur_hash_node->cur_bucket) * Associativity;
+        if ((double)current_elem_num / slot_num < 0.2) {
+            // cout << "-----------------------------------\n";
+            // ((class myTrie::htrie_map<CharT, T>::hash_node*)root)
+            //     ->print_key_metas();
+            // cout << "elem: " << current_elem_num << " slot_num: " << slot_num
+            //      << endl;
+        }
 #else
         hashnode_total_slot_num +=
             (cur_hash_node->cur_associativity) * Bucket_num;

@@ -190,7 +190,7 @@ class htrie_map {
                 trie_node* son_trie_node = new trie_node(this);
                 this->add_trie_node_child(son_trie_node, c);
                 son_trie_node->set_hash_node_child(
-                    new hash_node(son_trie_node, string(key, key_size) + c));
+                    new hash_node(son_trie_node, string(key, key_size) + c, 1));
                 return son_trie_node;
             }
         }
@@ -455,7 +455,8 @@ class htrie_map {
 
                 if (!insert_success) {
                     // try rehash bucket1 first
-                    int slot_id = rehash(snb.b1, bucket_num, hm, new_key_metas);
+                    int slot_id =
+                        rehash(snb.b1, bucket_num, hm, new_key_metas, false);
                     // success in bucket1
                     if (slot_id != -1) {
                         slot* target_slot =
@@ -465,7 +466,8 @@ class htrie_map {
                     }
 
                     // bucket1 failed, try rehash bucket2
-                    slot_id = rehash(snb.b2, bucket_num, hm, new_key_metas);
+                    slot_id =
+                        rehash(snb.b2, bucket_num, hm, new_key_metas, false);
                     // bucket2 success
                     if (slot_id != -1) {
                         slot* target_slot =
@@ -562,7 +564,8 @@ class htrie_map {
             map<T, int> updating_search_points;
             size_t slot_num = need_bucket * Associativity;
             for (int i = 0; i != slot_num; i++) {
-                updating_search_points[get_tail_v(new_key_metas + i)] = i;
+                if (!(new_key_metas + i)->isEmpty())
+                    updating_search_points[get_tail_v(new_key_metas + i)] = i;
             }
 
             // applying the updating searchPoint
@@ -723,7 +726,7 @@ class htrie_map {
                                    src_slot.page_id);
                 if (!dst_slot->isEmpty())
                     searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
-                        get_index(dst_slot);
+                        get_index(dst_slot, rehashing_key_metas);
 
                 // if the destination bucket isn't full, just fill the empty
                 // slot and return
@@ -753,7 +756,7 @@ class htrie_map {
                     */
                     dst_slot->set_slot(temp_length, temp_pos, temp_page_id);
                     searchPoint_wait_2_be_update[get_tail_v(dst_slot)] =
-                        get_index(dst_slot);
+                        get_index(dst_slot, rehashing_key_metas);
                     if (apply_change)
                         apply_the_changed_searchPoint(
                             searchPoint_wait_2_be_update, hm);
@@ -846,8 +849,8 @@ class htrie_map {
                 if ((expected_bucket_num & (expected_bucket_num - 1)) == 0) {
                     expected_bucket_num++;
                 }
-                if (expected_bucket_num < 3) {
-                    expected_bucket_num = 3;
+                if (expected_bucket_num < 2) {
+                    expected_bucket_num = 1;
                 }
 
                 hash_node* hnode = new hash_node(
@@ -1086,6 +1089,7 @@ class htrie_map {
 
             // get tail
             if (index != -1) {
+                // ((hash_node*)node)->print_key_metas();
                 class hash_node::slot* sl = ((hash_node*)node)->get_slot(index);
                 memcpy(buf + len, ((hash_node*)node)->get_tail_pointer(sl),
                        sl->length);
@@ -1109,7 +1113,6 @@ class htrie_map {
         cout << "GROW_BUCKET\n";
 
         std::cout << "REHASH_BEFORE_EXPAND\n";
-
 
         Associativity = customized_associativity;
         Bucket_num = customized_bucket_count;
