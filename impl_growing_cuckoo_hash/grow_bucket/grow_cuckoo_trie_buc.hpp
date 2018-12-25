@@ -998,14 +998,34 @@ class htrie_map {
             // if slotid==-1, it denotes that the bucket(bucketid) is full , so
             // we rehash the key_metas
             if (slotid == -1) {
+#ifdef REHASH_BEFORE_EXPAND
                 if ((slotid = rehash(bucketid, cur_bucket, hm, key_metas)) ==
                     -1) {
                     size_t expect_bucket_num = (cur_bucket << 1) + 1;
                     size_t hash_val1 = hashRelative::hash(key, keysize, 1);
                     size_t hash_val2 = hashRelative::hash(key, keysize, 2);
 
-                    bool expand_success = expand_key_metas_space(
-                        expect_bucket_num, hm, hash_val1, hash_val2);
+                    if (expect_bucket_num > Bucket_num) {
+                        expect_bucket_num = Bucket_num;
+                    }
+
+                    bool expand_success = false;
+                    bool expand_again = true;
+                    int count = 0;
+                    do {
+                        expand_success = expand_key_metas_space(
+                            expect_bucket_num, hm, hash_val1, hash_val2);
+
+                        if (expect_bucket_num == Bucket_num &&
+                            !expand_success) {
+                            expand_again = false;
+                        } else {
+                            expect_bucket_num = (expect_bucket_num << 1) + 1;
+                            if (expect_bucket_num > Bucket_num) {
+                                expect_bucket_num = Bucket_num;
+                            }
+                        }
+                    } while (expand_again && !expand_success);
 
                     if (expand_success) {
                         // if expand success, we get new elem a empty slot in
@@ -1033,6 +1053,58 @@ class htrie_map {
                         return std::pair<bool, T>(false, T());
                     }
                 }
+#else
+                size_t expect_bucket_num = (cur_bucket << 1) + 1;
+                size_t hash_val1 = hashRelative::hash(key, keysize, 1);
+                size_t hash_val2 = hashRelative::hash(key, keysize, 2);
+
+                if (expect_bucket_num > Bucket_num) {
+                    expect_bucket_num = Bucket_num;
+                }
+
+                bool expand_success = false;
+                bool expand_again = true;
+                int count = 0;
+                do {
+                    expand_success = expand_key_metas_space(
+                        expect_bucket_num, hm, hash_val1, hash_val2);
+
+                    if (expect_bucket_num == Bucket_num && !expand_success) {
+                        expand_again = false;
+                    } else {
+                        expect_bucket_num = (expect_bucket_num << 1) + 1;
+                        if (expect_bucket_num > Bucket_num) {
+                            expect_bucket_num = Bucket_num;
+                        }
+                    }
+                } while (expand_again && !expand_success);
+
+                if (expand_success) {
+                    // if expand success, we get new elem a empty slot in
+                    // bucketid
+                    size_t bucketid1 = hash_val1 % cur_bucket;
+                    size_t bucketid2 = hash_val2 % cur_bucket;
+
+                    for (int i = 0; i != Associativity; i++) {
+                        slot* empty_slot1 =
+                            key_metas + bucketid1 * Associativity + i;
+                        slot* empty_slot2 =
+                            key_metas + bucketid2 * Associativity + i;
+                        if (empty_slot1->isEmpty()) {
+                            slotid = i;
+                            bucketid = bucketid1;
+                            break;
+                        }
+                        if (empty_slot2->isEmpty()) {
+                            slotid = i;
+                            bucketid = bucketid2;
+                            break;
+                        }
+                    }
+                } else {
+                    return std::pair<bool, T>(false, T());
+                }
+#endif
             }
 
             // now the slotid cannot be -1 and slotid is lower than
