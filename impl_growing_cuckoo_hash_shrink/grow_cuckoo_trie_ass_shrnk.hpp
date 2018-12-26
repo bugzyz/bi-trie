@@ -232,11 +232,6 @@ class htrie_map {
             hash_node_child = nullptr;
         }
 
-        // for shrinking
-        bool isNodeInALine() {
-            return trie_node_childs.size() == 1 || hash_node_child != nullptr;
-        }
-
         pair<CharT, trie_node*> get_only_trie_node_child() {
             if (trie_node_childs.size() == 1) {
                 auto it = trie_node_childs.begin();
@@ -654,8 +649,6 @@ class htrie_map {
 
         int cal_common_prefix_len(const string& s1, const string& s2,
                                   int cur_longest_prefix_len) {
-            const char* c1 = s1.data();
-            const char* c2 = s2.data();
             if (cur_longest_prefix_len > s2.size()) {
                 cur_longest_prefix_len = s2.size();
             }
@@ -678,10 +671,10 @@ class htrie_map {
             // find the longest common prefix to decide the length of the chain
             // with single trie_node at first
             auto elements_it = elements.begin();
-            string first_key = elements_it->first;
+            const string& first_key = elements_it->first;
             int com_prefix_len = first_key.size();
 
-            // compared all the element to find the longest common prefix
+            // compared all the elements to find the longest common prefix
             elements_it++;
             for (; elements_it != elements.end(); elements_it++) {
                 int cur_com_prefix_len = cal_common_prefix_len(
@@ -748,7 +741,7 @@ class htrie_map {
 
                 bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
-                    const string &temp = itt->first;
+                    const string& temp = itt->first;
 
                     if (temp.size() == 0) {
                         cur_trie_node->insert_kv_in_trienode(
@@ -813,21 +806,23 @@ class htrie_map {
         }
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
+            // if found the existed target in bucket1 or bucket2, just return
+            // the iterator for being modified or read
             size_t bucketId1 =
                 myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
             std::pair<bool, iterator> res1 =
                 find_in_bucket(bucketId1, key, keysize);
+
+            if (res1.first) {
+                return res1.second;
+            }
 
             size_t bucketId2 =
                 myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
             std::pair<bool, iterator> res2 =
                 find_in_bucket(bucketId2, key, keysize);
 
-            // if found the existed target in bucket1 or bucket2, just return
-            // the iterator for being modified or read
-            if (res1.first) {
-                return res1.second;
-            } else if (res2.first) {
+            if (res2.first) {
                 return res2.second;
             }
 
@@ -1059,77 +1054,86 @@ class htrie_map {
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
-            if (current_node->is_multi_node()) {
-                if (!findMode) {
-                } else {
-                    size_t jump_pos =
-                        ((multi_node*)current_node)->string_keysize_;
-                    current_node = ((multi_node*)current_node)
-                                       ->find_child(key + pos, key_size - pos);
-                    if (current_node == nullptr) {
-                        return std::pair<bool, T>(false, T());
-                    }
-                    pos += jump_pos - 1;
+            switch (current_node->anode::_node_type) {
+                case node_type::MULTI_NODE: {
+                    if (!findMode) {
+                    } else {
+                        size_t jump_pos =
+                            ((multi_node*)current_node)->string_keysize_;
+                        current_node =
+                            ((multi_node*)current_node)
+                                ->find_child(key + pos, key_size - pos);
+                        if (current_node == nullptr) {
+                            return std::pair<bool, T>(false, T());
+                        }
+                        pos += jump_pos - 1;
 
-                    if (current_node->is_trie_node() &&
-                        ((trie_node*)current_node)->get_hash_node_child() !=
+                        if (current_node->is_trie_node() &&
+                            ((trie_node*)current_node)->get_hash_node_child() !=
+                                nullptr &&
+                            pos != key_size - 1) {
+                            current_node = ((trie_node*)current_node)
+                                               ->get_hash_node_child();
+                        }
+                    }
+                } break;
+                case node_type::TRIE_NODE: {
+                    if (!findMode) {
+                        // return the hitted trie_node* or create a new
+                        // trie_node with a hash_node son
+                        current_node =
+                            ((trie_node*)current_node)
+                                ->find_trie_node_child(key[pos], key, pos);
+                    } else {
+                        // return the hitted trie_node* or nullptr if not
+                        // found
+                        current_node = ((trie_node*)current_node)
+                                           ->find_trie_node_child(key[pos]);
+                        // only in the findMode==true can cause the
+                        // current_node to be nullptr
+                        if (current_node == nullptr) {
+                            return std::pair<bool, T>(false, T());
+                        }
+                    }
+
+                    if (((trie_node*)current_node)->get_hash_node_child() !=
                             nullptr &&
                         pos != key_size - 1) {
                         current_node =
                             ((trie_node*)current_node)->get_hash_node_child();
                     }
-                }
-            } else if (current_node->is_trie_node()) {
-                if (!findMode) {
-                    // return the hitted trie_node* or create a new
-                    // trie_node with a hash_node son
-                    current_node =
-                        ((trie_node*)current_node)
-                            ->find_trie_node_child(key[pos], key, pos);
-                } else {
-                    // return the hitted trie_node* or nullptr if not found
-                    current_node = ((trie_node*)current_node)
-                                       ->find_trie_node_child(key[pos]);
-                    // only in the findMode==true can cause the current_node to
-                    // be nullptr
-                    if (current_node == nullptr) {
-                        return std::pair<bool, T>(false, T());
+                } break;
+                case node_type::HASH_NODE: {
+                    iterator it =
+                        ((hash_node*)current_node)
+                            ->search_kv_in_hashnode(key + pos, key_size - pos);
+                    if (findMode) {
+                        return std::pair<bool, T>(it.found, it.v);
+                    } else {
+                        pair<bool, T> res = it.insert_hashnode(
+                            key + pos, key_size - pos, this, v);
+                        if (res.first == false) {
+                            // if the insert failed, we burst the
+                            // target_hashnode and retry insertion
+                            hash_node* hnode_burst_needed =
+                                (hash_node*)current_node;
+                            map<string, T> hnode_elems;
+                            hnode_burst_needed->get_all_elements(hnode_elems);
+
+                            string prefix = string(key, pos);
+                            hnode_burst_needed->burst(
+                                hnode_elems, hnode_burst_needed->anode::parent,
+                                this, prefix);
+                            delete hnode_burst_needed;
+                            return access_kv_in_htrie_map(key, key_size, v,
+                                                          false);
+                        }
+                        return res;
                     }
-                }
-
-                if (((trie_node*)current_node)->get_hash_node_child() !=
-                        nullptr &&
-                    pos != key_size - 1) {
-                    current_node =
-                        ((trie_node*)current_node)->get_hash_node_child();
-                }
-
-            } else {
-                iterator it =
-                    ((hash_node*)current_node)
-                        ->search_kv_in_hashnode(key + pos, key_size - pos);
-                if (findMode) {
-                    return std::pair<bool, T>(it.found, it.v);
-                } else {
-                    pair<bool, T> res =
-                        it.insert_hashnode(key + pos, key_size - pos, this, v);
-                    if (res.first == false) {
-                        // if the insert failed, we burst the target_hashnode
-                        // and retry insertion
-                        hash_node* hnode_burst_needed =
-                            (hash_node*)current_node;
-                        map<string, T> hnode_elems;
-                        hnode_burst_needed->get_all_elements(hnode_elems);
-
-                        string prefix = string(key, pos);
-                        hnode_burst_needed->burst(
-                            hnode_elems, hnode_burst_needed->anode::parent,
-                            this, prefix);
-                        delete hnode_burst_needed;
-                        return access_kv_in_htrie_map(key, key_size, v, false);
-                    }
-                    return res;
-                }
+                } break;
+                default:
+                    cout << "wrong type!";
+                    exit(0);
             }
         }
 
@@ -1210,8 +1214,8 @@ class htrie_map {
                         // have several children
                         allow_next_layer = false;
                     } else {
-                        // only have a hash_node child or only have a trie_node
-                        // child
+                        // only have a hash_node child or only have a
+                        // trie_node child
                         if (next_layer_trie_node->get_only_hash_node_child() !=
                             nullptr) {
                             next_layer[i] =
