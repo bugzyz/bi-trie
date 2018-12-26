@@ -1238,13 +1238,6 @@ class htrie_map {
                 string_keysize++;
             } while (allow_next_layer);
 
-            // if all the next_layer is hash_node then return the trie_node
-            // for (int i = 0; i != next_layer.size(); i++) {
-            //     if (next_layer[i].second == nullptr) {
-            //         return cur_node;
-            //     }
-            // }
-
             // construct the target multi_node
             multi_node* target_node = new multi_node(string_keysize);
 
