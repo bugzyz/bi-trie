@@ -652,6 +652,21 @@ class htrie_map {
 
         /*------------------ 3. bursting function------------------*/
 
+        int cal_common_prefix_len(const string& s1, const string& s2,
+                                  int cur_longest_prefix_len) {
+            const char* c1 = s1.data();
+            const char* c2 = s2.data();
+            if (cur_longest_prefix_len > s2.size()) {
+                cur_longest_prefix_len = s2.size();
+            }
+            for (int i = 0; i != cur_longest_prefix_len; i++) {
+                if (s1[i] != s2[i]) {
+                    return i;
+                }
+            }
+            return cur_longest_prefix_len;
+        }
+
         inline bool need_burst() const {
             return elem_num >= Max_slot_num * Burst_ratio;
         }
@@ -660,14 +675,24 @@ class htrie_map {
         // their hashnode
         void burst(std::map<std::string, T>& elements, trie_node* p,
                    htrie_map* hm, std::string prefix) {
-            std::map<CharT, std::map<std::string, T>> preprocElements;
-            for (auto it = elements.begin(); it != elements.end(); it++) {
-                preprocElements[(it->first)[0]][it->first.substr(1)] =
-                    it->second;
+            // find the longest common prefix to decide the length of the chain
+            // with single trie_node at first
+            auto elements_it = elements.begin();
+            string first_key = elements_it->first;
+            int com_prefix_len = first_key.size();
+
+            // compared all the element to find the longest common prefix
+            elements_it++;
+            for (; elements_it != elements.end(); elements_it++) {
+                int cur_com_prefix_len = cal_common_prefix_len(
+                    first_key, elements_it->first, com_prefix_len);
+                if (com_prefix_len > cur_com_prefix_len) {
+                    com_prefix_len = cur_com_prefix_len;
+                }
             }
 
-            for (auto it = preprocElements.begin(); it != preprocElements.end();
-                 it++) {
+            // create the chain with several single trie_node
+            for (int i = 0; i != com_prefix_len; i++) {
                 if (p == nullptr) {
                     // bursting in a root hashnode
                     // the t_root is update to a empty trie_node
@@ -676,12 +701,35 @@ class htrie_map {
                 }
 
                 trie_node* cur_trie_node = new trie_node(p);
+                p->add_trie_node_child(cur_trie_node, first_key[i]);
+                p = cur_trie_node;
+            }
+
+            // after now, the subsequent key are different at first char
+            std::map<CharT, std::map<std::string, T>> preprocElements;
+            for (auto it = elements.begin(); it != elements.end(); it++) {
+                const string& cur_string = it->first;
+                preprocElements[cur_string[com_prefix_len]]
+                               [cur_string.substr(com_prefix_len + 1)] =
+                                   it->second;
+            }
+
+            // update prefix to (prior prefix + common chain prefix)
+            prefix = prefix + first_key.substr(0, com_prefix_len);
+
+            // deal with the element with several different head char
+            for (auto it = preprocElements.begin(); it != preprocElements.end();
+                 it++) {
+                if (p == nullptr) {
+                    // bursting in a root hashnode
+                    // the t_root is update to a empty trie_node
+                    p = new trie_node(nullptr);
+                    hm->setRoot(p);
+                }
+                trie_node* cur_trie_node = new trie_node(p);
                 p->add_trie_node_child(cur_trie_node, it->first);
 
                 std::map<std::string, T>& curKV = it->second;
-                if (preprocElements.size() == 1) {
-                    return burst(curKV, cur_trie_node, hm, prefix + it->first);
-                }
 
                 size_t expected_associativity =
                     (double)curKV.size() / (double)Bucket_num / Burst_ratio + 1;
@@ -700,7 +748,7 @@ class htrie_map {
 
                 bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
-                    std::string temp = itt->first;
+                    const string &temp = itt->first;
 
                     if (temp.size() == 0) {
                         cur_trie_node->insert_kv_in_trienode(
