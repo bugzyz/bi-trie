@@ -679,7 +679,7 @@ class htrie_map {
                     }
                 }
                 if (stop_insert_and_burst) {
-                    burst(curKV, cur_trie_node, hm, prefix + it->first);
+                    hnode->burst(curKV, cur_trie_node, hm, prefix + it->first);
                     delete hnode;
                 }
             }
