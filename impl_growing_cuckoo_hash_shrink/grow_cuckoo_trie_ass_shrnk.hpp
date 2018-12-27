@@ -1,5 +1,7 @@
 #include <stddef.h>
+#include <climits>
 #include <cstdint>
+
 #include <cstdlib>
 #include <vector>
 
@@ -254,6 +256,8 @@ class htrie_map {
 
         size_t cur_associativity = 1;
 
+        int common_prefix_len;
+
        public:
         // debug function
         void print_slot(int i, int j) {
@@ -303,7 +307,8 @@ class htrie_map {
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity),
               elem_num(0),
-              cur_page_id(0) {
+              cur_page_id(0),
+              common_prefix_len(INT_MAX) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
@@ -647,10 +652,12 @@ class htrie_map {
 
         /*------------------ 3. bursting function------------------*/
 
-        int cal_common_prefix_len(const string& s1, const string& s2,
-                                  int cur_longest_prefix_len) {
-            if (cur_longest_prefix_len > s2.size()) {
-                cur_longest_prefix_len = s2.size();
+        inline const char* get_first_key_pointer() { return pages[0].first; }
+
+        int cal_common_prefix_len(const char* s1, int cur_longest_prefix_len,
+                                  const char* s2, int new_key_size) {
+            if (cur_longest_prefix_len > new_key_size) {
+                cur_longest_prefix_len = new_key_size;
             }
             for (int i = 0; i != cur_longest_prefix_len; i++) {
                 if (s1[i] != s2[i]) {
@@ -667,25 +674,27 @@ class htrie_map {
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
         void burst(std::map<std::string, T>& elements, trie_node* p,
-                   htrie_map* hm, std::string prefix) {
-            // find the longest common prefix to decide the length of the chain
-            // with single trie_node at first
-            auto elements_it = elements.begin();
-            const string& first_key = elements_it->first;
-            int com_prefix_len = first_key.size();
+                   htrie_map* hm, std::string prefix,
+                   bool recal_common_prefix_len = false) {
+            const char* first_key_p = get_first_key_pointer();
 
-            // compared all the elements to find the longest common prefix
-            elements_it++;
-            for (; elements_it != elements.end(); elements_it++) {
-                int cur_com_prefix_len = cal_common_prefix_len(
-                    first_key, elements_it->first, com_prefix_len);
-                if (com_prefix_len > cur_com_prefix_len) {
-                    com_prefix_len = cur_com_prefix_len;
+            // those hash_node that without inserting all elements will have a
+            // wrong common_prefix_len, so here we recalculate the
+            // common_prefix_len
+            if (recal_common_prefix_len) {
+                for (auto it = elements.begin(); it != elements.end(); it++) {
+                    const string& cur_string = it->first;
+                    int cur_common_prefix = cal_common_prefix_len(
+                        first_key_p, common_prefix_len, cur_string.data(),
+                        cur_string.size());
+                    if (common_prefix_len > cur_common_prefix) {
+                        common_prefix_len = cur_common_prefix;
+                    }
                 }
             }
 
             // create the chain with several single trie_node
-            for (int i = 0; i != com_prefix_len; i++) {
+            for (int i = 0; i != common_prefix_len; i++) {
                 if (p == nullptr) {
                     // bursting in a root hashnode
                     // the t_root is update to a empty trie_node
@@ -694,21 +703,22 @@ class htrie_map {
                 }
 
                 trie_node* cur_trie_node = new trie_node(p);
-                p->add_trie_node_child(cur_trie_node, first_key[i]);
+                p->add_trie_node_child(cur_trie_node, first_key_p[i]);
                 p = cur_trie_node;
             }
 
-            // after now, the subsequent key are different at first char
+            // after now, the subsequent key are different at first
+            // char
             std::map<CharT, std::map<std::string, T>> preprocElements;
             for (auto it = elements.begin(); it != elements.end(); it++) {
                 const string& cur_string = it->first;
-                preprocElements[cur_string[com_prefix_len]]
-                               [cur_string.substr(com_prefix_len + 1)] =
+                preprocElements[cur_string[common_prefix_len]]
+                               [cur_string.substr(common_prefix_len + 1)] =
                                    it->second;
             }
 
             // update prefix to (prior prefix + common chain prefix)
-            prefix = prefix + first_key.substr(0, com_prefix_len);
+            prefix = prefix + string(first_key_p, common_prefix_len);
 
             // deal with the element with several different head char
             for (auto it = preprocElements.begin(); it != preprocElements.end();
@@ -761,7 +771,8 @@ class htrie_map {
                     }
                 }
                 if (stop_insert_and_burst) {
-                    burst(curKV, cur_trie_node, hm, prefix + it->first);
+                    hnode->burst(curKV, cur_trie_node, hm, prefix + it->first,
+                                 true);
                     delete hnode;
                 }
             }
@@ -936,6 +947,13 @@ class htrie_map {
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
             elem_num++;
+
+            // update the common_prefix_len
+            int cur_com_prefix_len = cal_common_prefix_len(
+                get_first_key_pointer(), common_prefix_len, key, keysize);
+            if (common_prefix_len > cur_com_prefix_len) {
+                common_prefix_len = cur_com_prefix_len;
+            }
 
             // todo: need to burst elegantly
             if (need_burst()) {
