@@ -1014,6 +1014,7 @@ class htrie_map {
         : t_root(nullptr) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
+        cout << "SHRINKING CONFIG\n";
 #ifdef REHASH_BEFORE_EXPAND
         std::cout << "REHASH_BEFORE_EXPAND\n";
 
