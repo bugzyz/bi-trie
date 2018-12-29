@@ -4,8 +4,11 @@
 // #define TEST_HAT
 #define SHRINK_TEST_GROWCUCKOOHASH
 
+// SHRINK AND IMPROVE BURSTING
+#define IMPROVE_BURST
+
 // decide the growing cuckoo hash is rehash first or expand first
-// #define REHASH_BEFORE_EXPAND
+#define REHASH_BEFORE_EXPAND
 
 // decide grow the associativity or bucket
 // #define GROW_BUCKET
@@ -25,5 +28,9 @@
 #endif
 
 #ifdef SHRINK_TEST_GROWCUCKOOHASH
+#ifdef IMPROVE_BURST
+#include "impl_growing_cuckoo_hash_shrink/grow_cuckoo_trie_ass_shrnk_improve_burst.hpp"
+#else
 #include "impl_growing_cuckoo_hash_shrink/grow_cuckoo_trie_ass_shrnk.hpp"
+#endif
 #endif
