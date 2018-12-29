@@ -108,6 +108,9 @@ uint64_t m_n;
 uint64_t hash_node_mem;
 uint64_t trie_node_mem;
 uint64_t multi_node_mem;
+uint64_t v2k_mem;
+
+uint64_t child_first_char_mem;
 
 size_t hashnode_load = 0;
 #ifdef TEST_CUCKOOHASH
@@ -123,6 +126,21 @@ size_t hashnode_total_slot_num = 0;
 
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
+
+template <typename CharT, typename T>
+void print_tree_construct_v2k(
+    map<T, class myTrie::htrie_map<CharT, T>::SearchPoint>& v2k) {
+    size_t counter_sz = v2k.size();
+    size_t entry_sz =
+        sizeof(T) + sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint);
+    cout << "sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint): "
+         << sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint) << endl;
+
+    cout << "sizeof(int32_t): " << sizeof(int32_t) << endl;
+    cout << "sizeof(void*): " << sizeof(void*) << endl;
+
+    v2k_mem = counter_sz * entry_sz;
+}
 
 template <typename CharT, typename T>
 void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
@@ -167,6 +185,13 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 #endif
 #if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         hash_node_mem += sizeof(cur_hash_node);
+#ifdef IMPROVE_BURST
+        size_t counter_sz = (cur_hash_node->element_num_of_1st_char).size();
+        size_t entry_sz = sizeof(CharT) + sizeof(uint16_t);
+
+        hash_node_mem += counter_sz * entry_sz;
+        child_first_char_mem += counter_sz * entry_sz;
+#endif
 
         // basic bucket cost
 #ifdef GROW_BUCKET
@@ -286,6 +311,9 @@ void clear_num() {
     hash_node_mem = 0;
     trie_node_mem = 0;
     multi_node_mem = 0;
+    v2k_mem = 0;
+    child_first_char_mem = 0;
+
     hashnode_load = 0;
 #ifdef TEST_CUCKOOHASH
     hashnode_max_load = Max_slot_num / 2;
@@ -320,14 +348,21 @@ double print_res() {
               << " multi_node: " << m_n << std::endl;
     std::cout << "trie_node_mem: " << trie_node_mem
               << " hash_node_mem: " << hash_node_mem
-              << " multi_node_mem: " << multi_node_mem << std::endl;
+              << " multi_node_mem: " << multi_node_mem
+              << " child_first_char_mem: " << child_first_char_mem
+              << " v2k_mem: " << v2k_mem << std::endl;
+
     using my = typename myTrie::htrie_map<CharT, T>;
 
     std::cout << "total: ,"
-              << (hash_node_mem + trie_node_mem + multi_node_mem) / 1024 / 1024
+              << (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
+                  child_first_char_mem) /
+                     1024 / 1024
               << ", mb" << std::endl;
     double ret_v;
-    ret_v = (hash_node_mem + trie_node_mem + multi_node_mem) / 1024 / 1024;
+    ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
+             child_first_char_mem) /
+            1024 / 1024;
 
     // todo
     // std::cout << "trienode size:" << sizeof(typename my::trie_node)

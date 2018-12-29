@@ -114,6 +114,7 @@ int main() {
         cout << "shrinking cost time: " << shrink_total_time << endl;
 #endif
         myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
+        myTrie::debuging::print_tree_construct_v2k<char, uint32_t>(hm.v2k);
         double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
 
         uint64_t endUsedMemTm = getLftMem();
