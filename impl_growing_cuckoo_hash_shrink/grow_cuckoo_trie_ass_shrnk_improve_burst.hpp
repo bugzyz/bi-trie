@@ -24,6 +24,11 @@
 #define DEFAULT_Max_bytes_per_kv 1000
 #define DEFAULT_Burst_ratio 0.75
 
+static uint32_t longest_string_size;
+
+uint32_t recal_element_num_of_1st_char_counter = 0;
+uint32_t burst_total_counter = 0;
+
 // todo: wait to be deleted, just for recording the time that expand() cost
 uint64_t expand_cost_time = 0;
 uint64_t rehash_cost_time = 0;
@@ -695,6 +700,7 @@ class htrie_map {
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
+            burst_total_counter++;
             // when the size of element_num_of_1st_char == 1, it means those
             // elements have a common prefix
             if (common_prefix_len != 0) {
@@ -746,6 +752,8 @@ class htrie_map {
                         element_num_of_1st_char[key[common_prefix_len]]++;
                     }
                 }
+
+                recal_element_num_of_1st_char_counter++;
 
                 // update prefix to (prior prefix + common chain prefix)
                 prefix = prefix + string(first_key_p, common_prefix_len);
@@ -1054,19 +1062,31 @@ class htrie_map {
         std::pair<size_t, size_t> alloc_insert_space(size_t keysize) {
             std::pair<char*, size_t> res = pages[cur_page_id];
 
-            // if the cur_page is full, malloc a new page
-            if (res.second + keysize * sizeof(CharT) + sizeof(T) >
-                Max_bytes_per_kv) {
-                char* page = (char*)malloc(Max_bytes_per_kv);
-                // set up the page information
-                pages.push_back(std::pair<char*, size_t>(
-                    page, keysize * sizeof(CharT) + sizeof(T)));
-                cur_page_id++;
-                return std::pair<size_t, size_t>(cur_page_id, 0);
-            }
+            size_t need_size = keysize * sizeof(CharT) + sizeof(T);
             size_t offset = res.second;
+
+            // if the cur_page is full, malloc a new page
+            if (offset + need_size > Max_bytes_per_kv) {
+                if (need_size <= Max_bytes_per_kv) {
+                    char* page = (char*)malloc(Max_bytes_per_kv);
+                    // set up the page information
+                    pages.push_back(std::pair<char*, size_t>(page, need_size));
+                    cur_page_id++;
+                    return std::pair<size_t, size_t>(cur_page_id, 0);
+                }
+
+                // the need_size is surpass the max_byte_per_kv
+                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
+                                                    offset + need_size);
+                pages[cur_page_id].first = realloc_page;
+                pages[cur_page_id].second = offset + need_size;
+
+                size_t ret_page_id = cur_page_id;
+
+                return pair<size_t, size_t>(cur_page_id, offset);
+            }
             // update the page information
-            pages[cur_page_id].second += keysize * sizeof(CharT) + sizeof(T);
+            pages[cur_page_id].second += need_size;
             return std::pair<size_t, size_t>(cur_page_id, offset);
         }
 
@@ -1175,7 +1195,8 @@ class htrie_map {
 
             // get the parent char chain
             trie_node* cur_node = ((hash_node*)node)->anode::parent;
-            char* buf = (char*)malloc(200);
+            char* buf = (char*)malloc(longest_string_size);
+
             size_t len = cur_node->get_prefix(buf);
 
             // get tail
@@ -1258,6 +1279,10 @@ class htrie_map {
 
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
                                               T v, bool findMode) {
+        // update longest_string_size
+        longest_string_size =
+            longest_string_size > key_size ? longest_string_size : key_size;
+
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
