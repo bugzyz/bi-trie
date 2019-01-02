@@ -8,10 +8,13 @@
 #define IMPROVE_BURST
 
 // decide the growing cuckoo hash is rehash first or expand first
-#define REHASH_BEFORE_EXPAND
+// #define REHASH_BEFORE_EXPAND
 
 // decide grow the associativity or bucket
-// #define GROW_BUCKET
+#define GROW_BUCKET
+
+//decide whether test yago dataset
+#define TEST_YAGO
 
 #ifdef TEST_CUCKOOHASH
 #include "impl_cuckoo_hash/cuckoo_trie.hpp"

@@ -26,7 +26,16 @@ int main() {
     myTrie::htrie_map<char, uint32_t> hm(4, 31);
     map<string, uint32_t> m1;
     map<uint32_t, string> m2;
-    fstream f("dataset/str_normal");
+
+#ifdef TEST_YAGO
+    string testing_dataset = "dataset/id_yago/cut_str_normal";
+#else
+    string testing_dataset = "dataset/str_normal";
+#endif
+
+    cout << "testing file: " << testing_dataset << endl;
+
+    fstream f(testing_dataset);
     string url;
     uint32_t v;
     uint64_t sta = get_usec();

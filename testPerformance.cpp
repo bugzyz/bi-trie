@@ -50,6 +50,14 @@ int main() {
     bucket_nums.push_back(97);
     bucket_nums.push_back(101);
 
+#ifdef TEST_YAGO
+    string testing_dataset = "dataset/id_yago/cut_str_normal";
+#else
+    string testing_dataset = "dataset/str_normal";
+#endif
+
+    cout << "testing file: " << testing_dataset << endl;
+
     // configs: pair<bucket_num, elem_per_bucket>
     // stable bucket_num
     for (auto itt = elem_per_buck.begin(); itt != elem_per_buck.end(); itt++) {
@@ -68,7 +76,7 @@ int main() {
     uint64_t staTm;
     uint64_t endTm;
 
-    std::fstream f("dataset/str_normal");
+    std::fstream f(testing_dataset);
     boost::unordered_map<string, uint32_t> m1;
     boost::unordered_map<uint32_t, string> m2;
 
@@ -99,7 +107,7 @@ int main() {
         staTm = get_usec();
 
         myTrie::htrie_map<char, uint32_t> hm(ass, bn);
-        std::fstream f1("dataset/str_normal");
+        std::fstream f1(testing_dataset);
 
         uint64_t startUsedMemTm = getLftMem();
         myTrie::debuging::clear_process_mem_usage();
@@ -355,6 +363,17 @@ int main() {
 #ifdef TEST_CUCKOOHASH
         rehash_cost_time = 0;
         rehash_total_num = 0;
+#endif
+
+#ifdef IMPROVE_BURST
+        fstream recal_time_file("recal_record", ios::out | ios::app);
+        recal_time_file << testing_dataset << "," << Associativity << ","
+                        << Bucket_num << ",";
+        recal_time_file << recal_element_num_of_1st_char_counter;
+        recal_time_file << "," << burst_total_counter << endl;
+        recal_time_file.flush();
+        recal_element_num_of_1st_char_counter = 0;
+        burst_total_counter = 0;
 #endif
 
 #if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
