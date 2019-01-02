@@ -4,22 +4,13 @@
 #include <string>
 
 #include "test_which.hpp"
+#include "debug.hpp"
 
 #include <stdint.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #include <sys/sysinfo.h>
-
-static uint64_t get_usec() {
-    struct timespec tp;
-    /* POSIX.1-2008: Applications should use the clock_gettime() function
-       instead of the obsolescent gettimeofday() function. */
-    /* NOTE: The clock_gettime() function is only available on Linux.
-       The mach_absolute_time() function is an alternative on OSX. */
-    clock_gettime(CLOCK_MONOTONIC, &tp);
-    return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
-}
 
 using namespace std;
 int main() {
@@ -46,6 +37,9 @@ int main() {
     }
     uint64_t end = get_usec();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
+
+    // myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
+    // double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
 
 #ifdef SHRINK_TEST_GROWCUCKOOHASH
     hm.shrink();

@@ -11,10 +11,10 @@
 // #define REHASH_BEFORE_EXPAND
 
 // decide grow the associativity or bucket
-#define GROW_BUCKET
+// #define GROW_BUCKET
 
 //decide whether test yago dataset
-#define TEST_YAGO
+// #define TEST_YAGO
 
 #ifdef TEST_CUCKOOHASH
 #include "impl_cuckoo_hash/cuckoo_trie.hpp"
