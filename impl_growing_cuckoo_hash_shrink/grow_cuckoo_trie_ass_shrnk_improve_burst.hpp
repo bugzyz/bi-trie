@@ -741,7 +741,9 @@ class htrie_map {
                 // clear the element_num_of_1st_char
                 element_num_of_1st_char.clear();
 
+                // debug
                 // print_key_metas();
+
                 // recalculate the capacity of hashnode we need
                 for (int i = 0; i != Bucket_num; i++) {
                     for (int j = 0; j != Associativity; j++) {
@@ -753,6 +755,7 @@ class htrie_map {
                     }
                 }
 
+                // debug
                 recal_element_num_of_1st_char_counter++;
 
                 // update prefix to (prior prefix + common chain prefix)
@@ -849,7 +852,6 @@ class htrie_map {
             }
 
             // check if there is some failure when insert in hash_node
-            // the nullptr means that there is a failure
             for (auto it = burst_again_list.begin();
                  it != burst_again_list.end(); it++) {
                 // If burst() fail at this prefix char, we use the old way to
