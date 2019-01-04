@@ -310,9 +310,20 @@ class htrie_map {
                 int cur_common_prefix_len = cal_common_prefix_len(
                     common_prefix, common_prefix_len, key, keysize);
 
+                string previous_prefix =
+                    string(common_prefix, common_prefix_len);
+                int previous_prefix_len = common_prefix_len;
+
                 common_prefix_len = cur_common_prefix_len > common_prefix_len
                                         ? common_prefix_len
                                         : cur_common_prefix_len;
+                if (common_prefix_len == 0) {
+                    cout << "hey\n!";
+                    cout << "previous prefix: " << previous_prefix << " with "
+                         << previous_prefix_len << endl;
+                    cout << "now compare with " << string(key, keysize)
+                         << " and update with " << common_prefix_len << endl;
+                }
                 return;
             }
         };
@@ -745,6 +756,9 @@ class htrie_map {
                 cout << it->first << ": (" << t.char_elem_num << ","
                      << string(t.common_prefix, t.common_prefix_len) << ","
                      << t.common_prefix_len << ")\n";
+                if (t.common_prefix_len == 0) {
+                    cout << "ohno!\n";
+                }
             }
 
             size_t global_common_prefix_len = 0;
@@ -820,6 +834,12 @@ class htrie_map {
             // start with the same char
             for (auto it = element_num_of_1st_char.begin();
                  it != element_num_of_1st_char.end(); it++) {
+                if (it->second.char_elem_num == 1) {
+                    it->second.common_prefix_len = global_common_prefix_len + 1;
+                }
+
+                // if (it->second.common_prefix_len == 0) continue;
+
                 size_t local_common_prefix_len = it->second.common_prefix_len;
                 char* local_common_prefix = it->second.common_prefix;
 
@@ -849,19 +869,6 @@ class htrie_map {
                     local_parent->add_trie_node_child(cur_trie_node,
                                                       local_common_prefix[i]);
                     local_parent = cur_trie_node;
-                    if (global_common_prefix_len + 1 <
-                        global_common_prefix_len + local_common_prefix_len) {
-                        // cout << "global_common_prefix_len + 1: "
-                        //      << global_common_prefix_len + 1
-                        //      << " global_common_prefix_len + "
-                        //         "local_common_prefix_len: "
-                        //      << global_common_prefix_len +
-                        //             local_common_prefix_len
-                        //      << endl;
-                        assert(global_common_prefix_len + 1 <
-                               global_common_prefix_len +
-                                   local_common_prefix_len);
-                    }
                 }
 
                 // calculate capacity
@@ -1205,23 +1212,15 @@ class htrie_map {
 
             // if the cur_page is full, malloc a new page
             if (offset + need_size > Max_bytes_per_kv) {
-                if (need_size <= Max_bytes_per_kv) {
-                    char* page = (char*)malloc(Max_bytes_per_kv);
-                    // set up the page information
-                    pages.push_back(std::pair<char*, size_t>(page, need_size));
-                    cur_page_id++;
-                    return std::pair<size_t, size_t>(cur_page_id, 0);
+                size_t alloc_size = Max_bytes_per_kv;
+                if (need_size > Max_bytes_per_kv) {
+                    alloc_size = need_size;
                 }
-
-                // the need_size is surpass the max_byte_per_kv
-                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
-                                                    offset + need_size);
-                pages[cur_page_id].first = realloc_page;
-                pages[cur_page_id].second = offset + need_size;
-
-                size_t ret_page_id = cur_page_id;
-
-                return pair<size_t, size_t>(cur_page_id, offset);
+                char* page = (char*)malloc(alloc_size);
+                // set up the page information
+                pages.push_back(std::pair<char*, size_t>(page, need_size));
+                cur_page_id++;
+                return std::pair<size_t, size_t>(cur_page_id, 0);
             }
             // update the page information
             pages[cur_page_id].second += need_size;
@@ -1300,6 +1299,10 @@ class htrie_map {
             // update the element_num_of_1st_char
             element_num_of_1st_char[*key].cal_new_key(
                 get_tail_pointer(target_slot), keysize);
+            bool switcher = false;
+            if (switcher) print_key_metas();
+
+            assert(keysize != 0);
 
             // todo: need to burst elegantly
             if (need_burst()) {
