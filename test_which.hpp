@@ -5,7 +5,8 @@
 #define SHRINK_TEST_GROWCUCKOOHASH
 
 // SHRINK AND IMPROVE BURSTING
-#define IMPROVE_BURST
+// #define IMPROVE_BURST
+#define BURST_IN_ADVANCE
 
 // decide the growing cuckoo hash is rehash first or expand first
 // #define REHASH_BEFORE_EXPAND
@@ -13,7 +14,7 @@
 // decide grow the associativity or bucket
 // #define GROW_BUCKET
 
-//decide whether test yago dataset
+// decide whether test yago dataset
 // #define TEST_YAGO
 
 #ifdef TEST_CUCKOOHASH
@@ -34,6 +35,10 @@
 #ifdef IMPROVE_BURST
 #include "impl_growing_cuckoo_hash_shrink/grow_cuckoo_trie_ass_shrnk_improve_burst.hpp"
 #else
+#ifdef BURST_IN_ADVANCE
+#include "impl_growing_cuckoo_hash_shrink/grow_cuckoo_trie_ass_shrnk_improve_burst_inadvance.hpp"
+#else
 #include "impl_growing_cuckoo_hash_shrink/grow_cuckoo_trie_ass_shrnk.hpp"
+#endif
 #endif
 #endif
