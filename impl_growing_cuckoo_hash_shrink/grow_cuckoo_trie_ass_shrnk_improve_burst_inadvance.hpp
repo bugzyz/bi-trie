@@ -317,13 +317,6 @@ class htrie_map {
                 common_prefix_len = cur_common_prefix_len > common_prefix_len
                                         ? common_prefix_len
                                         : cur_common_prefix_len;
-                if (common_prefix_len == 0) {
-                    cout << "hey\n!";
-                    cout << "previous prefix: " << previous_prefix << " with "
-                         << previous_prefix_len << endl;
-                    cout << "now compare with " << string(key, keysize)
-                         << " and update with " << common_prefix_len << endl;
-                }
                 return;
             }
         };
@@ -743,27 +736,12 @@ class htrie_map {
         // their hashnode
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
             burst_total_counter++;
-            // when the size of element_num_of_1st_char == 1, it means those
-            // elements have a common prefix, we re-calculate the prefix_len
-            // after the common_prefix_len of current elements
-
-            // debug
-            // print_key_metas();
-            cout << "printing element_num_of_1st_char:\n";
-            for (auto it = element_num_of_1st_char.begin();
-                 it != element_num_of_1st_char.end(); it++) {
-                triple t = it->second;
-                cout << it->first << ": (" << t.char_elem_num << ","
-                     << string(t.common_prefix, t.common_prefix_len) << ","
-                     << t.common_prefix_len << ")\n";
-                if (t.common_prefix_len == 0) {
-                    cout << "ohno!\n";
-                }
-            }
 
             size_t global_common_prefix_len = 0;
 
-            cout << "ha\n";
+            // when the size of element_num_of_1st_char == 1, it means those
+            // elements have a common prefix, we re-calculate the prefix_len
+            // after the common_prefix_len of current elements
             if (element_num_of_1st_char.size() == 1) {
                 const char* first_key_p = get_first_key_pointer();
 
@@ -786,14 +764,10 @@ class htrie_map {
                     trie_node* cur_trie_node = new trie_node(p);
                     p->add_trie_node_child(cur_trie_node, first_key_p[i]);
                     p = cur_trie_node;
-                    cout << "create global chain: " << first_key_p[i] << endl;
                 }
 
                 // clear the element_num_of_1st_char
                 element_num_of_1st_char.clear();
-
-                // debug
-                // print_key_metas();
 
                 // recalculate the capacity of hashnode we need
                 for (int i = 0; i != Bucket_num; i++) {
@@ -807,27 +781,8 @@ class htrie_map {
                     }
                 }
 
-                // debug
                 recal_element_num_of_1st_char_counter++;
-
-                // update prefix to (prior prefix + common chain prefix)
-                // prefix = prefix + string(first_key_p,
-                // global_common_prefix_len);
-
-                // // debug
-                // print_key_metas();
-                cout
-                    << "After recaculation printing element_num_of_1st_char:\n";
-                for (auto it = element_num_of_1st_char.begin();
-                     it != element_num_of_1st_char.end(); it++) {
-                    triple t = it->second;
-                    cout << it->first << ": (" << t.char_elem_num << ","
-                         << string(t.common_prefix, t.common_prefix_len) << ","
-                         << t.common_prefix_len << ")\n";
-                }
             }
-
-            cout << "ha1\n";
 
             map<char, hash_node*> hnode_set;
             // create several hashnode based on the number of the elements that
@@ -837,8 +792,6 @@ class htrie_map {
                 if (it->second.char_elem_num == 1) {
                     it->second.common_prefix_len = global_common_prefix_len + 1;
                 }
-
-                // if (it->second.common_prefix_len == 0) continue;
 
                 size_t local_common_prefix_len = it->second.common_prefix_len;
                 char* local_common_prefix = it->second.common_prefix;
@@ -854,17 +807,10 @@ class htrie_map {
                 p->add_trie_node_child(cur_trie_node, it->first);
                 trie_node* local_parent = cur_trie_node;
 
-                cout << global_common_prefix_len << " "
-                     << local_common_prefix_len << endl;
                 // create the chain that cause by the fixed pattern in
                 // artificial dataset
-
-                cout << "create local chain header: " << it->first << endl;
                 for (int i = global_common_prefix_len + 1;
                      i != local_common_prefix_len; i++) {
-                    cout << "create local chain: " << local_common_prefix[i]
-                         << endl;
-
                     cur_trie_node = new trie_node(local_parent);
                     local_parent->add_trie_node_child(cur_trie_node,
                                                       local_common_prefix[i]);
@@ -891,8 +837,6 @@ class htrie_map {
                 hnode_set[it->first] = hnode;
             }
 
-            cout << "ha2\n";
-
             // a map for the hashnode that insert fail
             map<char, pair<hash_node*, map<string, T>>> burst_again_list;
 
@@ -916,18 +860,10 @@ class htrie_map {
                     char* key_in_new_pos = key + local_common_prefix_len;
                     size_t length_left = s->length - local_common_prefix_len;
 
-                    // cout << "inserting: " << string(key_in_new_pos,
-                    // length_left)
-                    //      << " = " << v << " into set:" << (char)first_char
-                    //      << endl;
-
                     if (hnode == nullptr) {
                         map<string, T>& temp_elements =
                             burst_again_list[first_char].second;
                         temp_elements[string(key_in_new_pos, length_left)] = v;
-                        cout << temp_elements.size() << " --collect element: "
-                             << string(key_in_new_pos, length_left) << " = "
-                             << v << endl;
                         continue;
                     }
 
@@ -948,12 +884,6 @@ class htrie_map {
                         key_in_new_pos, length_left);
                     std::pair<bool, T> res = target_it.insert_hashnode(
                         key_in_new_pos, length_left, hm, v);
-
-                    cout << "global=" << global_common_prefix_len
-                         << " local=" << local_common_prefix_len << endl;
-
-                    cout << "inserting " << string(key_in_new_pos, length_left)
-                         << " = " << v << endl;
 
                     // if insert failed, it need burst
                     // we filter the inserted element and place it in a
@@ -976,8 +906,6 @@ class htrie_map {
                 }
             }
 
-            cout << "ha3\n";
-
             // check if there is some failure when insert in hash_node
             for (auto it = burst_again_list.begin();
                  it != burst_again_list.end(); it++) {
@@ -990,19 +918,6 @@ class htrie_map {
                 burst_hnode->burst_by_elements(temp_pair.second,
                                                burst_hnode->anode::parent, hm,
                                                burst_again_prefix);
-
-                cout << "ready to burst by elements!\n";
-                int count = 1;
-                for (auto itt = temp_pair.second.begin();
-                     itt != temp_pair.second.end(); itt++) {
-                    cout << count++ << "see element: " << itt->first << " = "
-                         << itt->second << endl;
-                }
-
-                cout << "burst finish\n";
-                // static int burst_twice_counting = 0;
-                // cout << "burst_twice_counting: " << burst_twice_counting++
-                //      << endl;
             }
             return;
         }
@@ -1151,12 +1066,6 @@ class htrie_map {
         }
 
         iterator search_kv_in_hashnode(const CharT* key, size_t keysize) {
-            bool switcher = false;
-            if (switcher) {
-                cout << "searching " << string(key, keysize)
-                     << "with prefix: " << get_prefix() << endl;
-                print_key_metas();
-            }
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
             size_t bucketId1 =
