@@ -24,6 +24,8 @@
 #define DEFAULT_Max_bytes_per_kv 1000
 #define DEFAULT_Burst_ratio 0.75
 
+std::map<uint32_t, uint32_t> insert_time_counting;
+
 static uint32_t longest_string_size;
 
 uint32_t recal_element_num_of_1st_char_counter = 0;
@@ -33,6 +35,22 @@ uint32_t burst_total_counter = 0;
 uint64_t expand_cost_time = 0;
 uint64_t rehash_cost_time = 0;
 uint64_t rehash_total_num = 0;
+
+uint64_t time_is_zero_time = 0;
+
+bool afterShrink = false;
+uint64_t burst_cost_time = 0;
+uint64_t burst_preprocess_time = 0;
+
+uint64_t insert_in_hashnode_cost_time = 0;
+uint64_t insert_in_trienode_cost_time = 0;
+
+uint64_t non_shrink_find_hashnode_in_trienode_cost_time = 0;
+uint64_t non_shrink_find_hashnode_in_hashnode_cost_time = 0;
+
+uint64_t shrink_find_hashnode_in_multinode_cost_time = 0;
+uint64_t shrink_find_hashnode_in_trienode_cost_time = 0;
+uint64_t shrink_find_hashnode_in_hashnode_cost_time = 0;
 
 uint64_t shrink_total_time = 0;
 
@@ -701,6 +719,8 @@ class htrie_map {
         // their hashnode
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
             burst_total_counter++;
+            uint64_t sta = get_time();
+
             // when the size of element_num_of_1st_char == 1, it means those
             // elements have a common prefix
             if (common_prefix_len != 0) {
@@ -790,6 +810,9 @@ class htrie_map {
                 hnode_set[it->first] = hnode;
             }
 
+            uint64_t end = get_time();
+            burst_preprocess_time += end - sta;
+
             // a map for the hashnode that insert fail
             map<char, pair<hash_node*, map<string, T>>> burst_again_list;
 
@@ -867,6 +890,8 @@ class htrie_map {
                 // cout << "burst_twice_counting: " << burst_twice_counting++
                 //      << endl;
             }
+
+            burst_cost_time += get_time() - sta;
             return;
         }
 
@@ -1034,6 +1059,11 @@ class htrie_map {
                 return res2.second;
             }
 
+            bool switcher = false;
+            if (switcher) {
+                print_key_metas();
+            }
+
             // if the code reach here it means the target doesn't exist
             // we return the iterator with empty slot
             if (res1.second.slotid != -1) {
@@ -1069,16 +1099,24 @@ class htrie_map {
 
             // if the cur_page is full, malloc a new page
             if (offset + need_size > Max_bytes_per_kv) {
-                size_t alloc_size = Max_bytes_per_kv;
-                if (need_size > Max_bytes_per_kv) {
-                    alloc_size = need_size;
-                }
-                char* page = (char*)malloc(alloc_size);
+                if (need_size <= Max_bytes_per_kv) {
+                    char* page = (char*)malloc(Max_bytes_per_kv);
                     // set up the page information
                     pages.push_back(std::pair<char*, size_t>(page, need_size));
                     cur_page_id++;
                     return std::pair<size_t, size_t>(cur_page_id, 0);
                 }
+
+                // the need_size is surpass the max_byte_per_kv
+                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
+                                                    offset + need_size);
+                pages[cur_page_id].first = realloc_page;
+                pages[cur_page_id].second = offset + need_size;
+
+                size_t ret_page_id = cur_page_id;
+
+                return pair<size_t, size_t>(cur_page_id, offset);
+            }
             // update the page information
             pages[cur_page_id].second += need_size;
             return std::pair<size_t, size_t>(cur_page_id, offset);
@@ -1133,6 +1171,8 @@ class htrie_map {
 #endif
             }
 
+            size_t sta = get_time();
+
             // now the slotid cannot be -1 and slotid is lower than
             // Associativity
             assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity);
@@ -1148,6 +1188,7 @@ class htrie_map {
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
             elem_num++;
+            insert_time_counting[v]++;
 
             // update the element_num_of_1st_char
             element_num_of_1st_char[*key]++;
@@ -1158,6 +1199,8 @@ class htrie_map {
             if (common_prefix_len > cur_com_prefix_len) {
                 common_prefix_len = cur_com_prefix_len;
             }
+
+            insert_in_hashnode_cost_time += get_time() - sta;
 
             // todo: need to burst elegantly
             if (need_burst()) {
@@ -1280,6 +1323,8 @@ class htrie_map {
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
+            uint64_t sta = get_time();
+
             switch (current_node->anode::_node_type) {
                 case node_type::MULTI_NODE: {
                     if (!findMode) {
@@ -1301,6 +1346,9 @@ class htrie_map {
                             current_node = ((trie_node*)current_node)
                                                ->get_hash_node_child();
                         }
+                        uint64_t end = get_time();
+                        shrink_find_hashnode_in_multinode_cost_time +=
+                            end - sta;
                     }
                 } break;
                 case node_type::TRIE_NODE: {
@@ -1328,11 +1376,31 @@ class htrie_map {
                         current_node =
                             ((trie_node*)current_node)->get_hash_node_child();
                     }
+
+                    uint64_t end = get_time();
+                    // yo
+                    if ((end - sta) == 0) {
+                        time_is_zero_time++;
+                    }
+                    if (afterShrink) {
+                        shrink_find_hashnode_in_trienode_cost_time += end - sta;
+                    } else {
+                        non_shrink_find_hashnode_in_trienode_cost_time +=
+                            end - sta;
+                    }
+
                 } break;
                 case node_type::HASH_NODE: {
                     iterator it =
                         ((hash_node*)current_node)
                             ->search_kv_in_hashnode(key + pos, key_size - pos);
+                    if (afterShrink) {
+                        shrink_find_hashnode_in_hashnode_cost_time +=
+                            get_time() - sta;
+                    } else {
+                        non_shrink_find_hashnode_in_hashnode_cost_time +=
+                            get_time() - sta;
+                    }
                     if (findMode) {
                         return std::pair<bool, T>(it.found, it.v);
                     } else {
@@ -1361,13 +1429,27 @@ class htrie_map {
             }
         }
 
+        uint64_t sta = get_time();
         // find a key in trie_node's only value
         iterator it = ((trie_node*)current_node)->search_kv_in_trienode();
-
+        uint64_t end = get_time();
+        non_shrink_find_hashnode_in_trienode_cost_time += end - sta;
+        // yo
+        if ((end - sta) == 0) {
+            time_is_zero_time++;
+        }
         if (findMode) {
             return std::pair<bool, T>(it.found, it.v);
         } else {
-            return it.insert_trienode(key, key_size, this, v);
+            uint64_t sta1 = get_time();
+            pair<bool, T> res = it.insert_trienode(key, key_size, this, v);
+            uint64_t end1 = get_time();
+            insert_in_trienode_cost_time += end1 - sta1;
+            // yo
+            if ((end - sta) == 0) {
+                time_is_zero_time++;
+            }
+            return res;
         }
     }
 
@@ -1485,6 +1567,7 @@ class htrie_map {
         t_root = shrink_node(t_root);
         uint64_t end = get_time();
         shrink_total_time = end - sta;
+        afterShrink = true;
     }
 
     void deleteMyself() {
