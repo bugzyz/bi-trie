@@ -187,14 +187,16 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         hash_node_mem += sizeof(cur_hash_node);
         size_t entry_sz = 0;
         size_t counter_sz = 0;
-#ifdef IMPROVE_BURST
-        counter_sz = (cur_hash_node->element_num_of_1st_char).size();
-        entry_sz = sizeof(CharT) + sizeof(uint16_t);
-#endif
-#ifdef BURST_IN_ADVANCE
-        counter_sz = (cur_hash_node->element_num_of_1st_char).size();
-        entry_sz = sizeof(CharT) + sizeof(class my::hash_node::triple);
-#endif
+        // skip the data structure that used to burst
+        // #ifdef IMPROVE_BURST
+        //         counter_sz = (cur_hash_node->element_num_of_1st_char).size();
+        //         entry_sz = sizeof(CharT) + sizeof(uint16_t);
+        // #endif
+        // #ifdef BURST_IN_ADVANCE
+        //         counter_sz = (cur_hash_node->element_num_of_1st_char).size();
+        //         entry_sz = sizeof(CharT) + sizeof(class
+        //         my::hash_node::triple);
+        // #endif
 
         hash_node_mem += counter_sz * entry_sz;
         child_first_char_mem += counter_sz * entry_sz;
