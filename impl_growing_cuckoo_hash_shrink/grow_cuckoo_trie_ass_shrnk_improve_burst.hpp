@@ -1069,16 +1069,24 @@ class htrie_map {
 
             // if the cur_page is full, malloc a new page
             if (offset + need_size > Max_bytes_per_kv) {
-                size_t alloc_size = Max_bytes_per_kv;
-                if (need_size > Max_bytes_per_kv) {
-                    alloc_size = need_size;
-                }
-                char* page = (char*)malloc(alloc_size);
+                if (need_size <= Max_bytes_per_kv) {
+                    char* page = (char*)malloc(Max_bytes_per_kv);
                     // set up the page information
                     pages.push_back(std::pair<char*, size_t>(page, need_size));
                     cur_page_id++;
                     return std::pair<size_t, size_t>(cur_page_id, 0);
                 }
+
+                // the need_size is surpass the max_byte_per_kv
+                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
+                                                    offset + need_size);
+                pages[cur_page_id].first = realloc_page;
+                pages[cur_page_id].second = offset + need_size;
+
+                size_t ret_page_id = cur_page_id;
+
+                return pair<size_t, size_t>(cur_page_id, offset);
+            }
             // update the page information
             pages[cur_page_id].second += need_size;
             return std::pair<size_t, size_t>(cur_page_id, offset);
