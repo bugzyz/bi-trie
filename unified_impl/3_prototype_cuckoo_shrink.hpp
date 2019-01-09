@@ -1085,7 +1085,7 @@ class htrie_map {
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
         : t_root(nullptr) {
-        std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
+        std::cout << "SET UP CUCKOOHASH-TRIE MAP\n";
         cout << "NO GROW\n";
 
         Associativity = customized_associativity;
