@@ -75,7 +75,6 @@ class htrie_map {
         HASH_NODE,
         TRIE_NODE,
         MULTI_NODE,
-        BURST_NODE
     };
 
     class trie_node;
@@ -91,7 +90,6 @@ class htrie_map {
         bool is_hash_node() { return _node_type == node_type::HASH_NODE; }
         bool is_trie_node() { return _node_type == node_type::TRIE_NODE; }
         bool is_multi_node() { return _node_type == node_type::MULTI_NODE; }
-        bool is_burst_node() { return _node_type == node_type::BURST_NODE; }
 
         void delete_me() {
             if (this->is_trie_node()) {
@@ -830,9 +828,7 @@ class htrie_map {
                     std::pair<bool, T> res = target_it.insert_hashnode(
                         key + common_prefix_len + 1, length_left, hm, v);
 
-                    // if insert failed, it need burst
-                    // we filter the inserted element and place it in a
-                    // burst_node
+                    // if insert failed, it need burst again
                     if (res.first == false) {
                         hnode_set[key[common_prefix_len]] = nullptr;
 
