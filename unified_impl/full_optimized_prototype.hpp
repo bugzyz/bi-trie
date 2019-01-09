@@ -163,12 +163,13 @@ class htrie_map {
             hm->set_v2k(v, this, -1);
         }
 
+        /*-------------------prefix relative-------------------*/
         size_t get_prefix(char* buf) {
             memcpy(buf, prefix, prefix_len);
             return prefix_len;
         }
 
-        string get_prefix() {
+        inline string get_prefix() {
             return prefix == nullptr ? string() : string(prefix, prefix_len);
         }
 
@@ -233,7 +234,7 @@ class htrie_map {
             }
         }
 
-        void set_hash_node_child(hash_node* node) { hash_node_child = node; }
+        inline void set_hash_node_child(hash_node* node) { hash_node_child = node; }
 
         inline hash_node* get_hash_node_child() { return hash_node_child; }
 
@@ -469,7 +470,7 @@ class htrie_map {
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
-        int rehash(size_t bucketid, htrie_map<CharT, T>* hm) {
+        int cuckoo_hash(size_t bucketid, htrie_map<CharT, T>* hm) {
             rehash_total_num++;
             uint64_t sta = get_time();
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
@@ -704,23 +705,6 @@ class htrie_map {
             if (common_prefix_len != 0) {
                 const char* first_key_p = get_first_key_pointer();
 
-                // code for calculating the common_prefix_len
-                // keep the code for rechecking that calculate here or in the
-                // insert_kv_in_hashnode is better?
-                // for (int i = 0; i != Bucket_num; i++) {
-                //     for (int j = 0; j != Associativity; j++) {
-                //         slot* s = get_slot(i, j);
-                //         if (s->isEmpty()) break;
-
-                //         int cur_common_prefix = cal_common_prefix_len(
-                //             first_key_p, common_prefix_len,
-                //             get_tail_pointer(s), s->length);
-                //         if (common_prefix_len > cur_common_prefix) {
-                //             common_prefix_len = cur_common_prefix;
-                //         }
-                //     }
-                // }
-
                 // create the chain with several single trie_node
                 // the number of node is common_prefix_len
                 for (int i = 0; i != common_prefix_len; i++) {
@@ -738,9 +722,6 @@ class htrie_map {
 
                 // clear the element_num_of_1st_char
                 element_num_of_1st_char.clear();
-
-                // debug
-                // print_key_metas();
 
                 // recalculate the capacity of hashnode we need
                 for (int i = 0; i != Bucket_num; i++) {
@@ -814,7 +795,6 @@ class htrie_map {
 
                     // rarely, insert in trie_node
                     if (length_left == 0) {
-                        // todo: is the new_prefix neccessary?
                         string new_prefix = prefix + key[common_prefix_len];
 
                         hnode->anode::parent->insert_kv_in_trienode(
@@ -859,9 +839,6 @@ class htrie_map {
                                                burst_hnode->anode::parent, hm,
                                                burst_again_prefix);
 
-                // static int burst_twice_counting = 0;
-                // cout << "burst_twice_counting: " << burst_twice_counting++
-                //      << endl;
             }
             return;
         }
@@ -1097,7 +1074,7 @@ class htrie_map {
             // so we rehash the key_metas
             if (slotid == -1) {
 #ifdef REHASH_BEFORE_EXPAND
-                if ((slotid = rehash(bucketid, hm)) == -1) {
+                if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
                     bool expand_success =
                         expand_key_metas_space(cur_associativity << 1, hm);
                     if (!expand_success) {
@@ -1119,7 +1096,7 @@ class htrie_map {
                 bool expand_success =
                     expand_key_metas_space(cur_associativity << 1, hm);
                 if (!expand_success) {
-                    if ((slotid = rehash(bucketid, hm)) == -1) {
+                    if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
                         return std::pair<bool, T>(false, T());
                     }
                 } else {
@@ -1163,7 +1140,6 @@ class htrie_map {
                 common_prefix_len = cur_com_prefix_len;
             }
 
-            // todo: need to burst elegantly
             if (need_burst()) {
                 burst(this->anode::parent, hm, prefix);
 
@@ -1220,8 +1196,7 @@ class htrie_map {
         : t_root(nullptr) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
-        cout << "SHRINKING CONFIG\n";
-        cout << "improve burst\n";
+
 #ifdef REHASH_BEFORE_EXPAND
         std::cout << "REHASH_BEFORE_EXPAND\n";
 
