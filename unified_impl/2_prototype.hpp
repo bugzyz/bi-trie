@@ -56,9 +56,7 @@ uint64_t get_time() {
 size_t Associativity;
 size_t Bucket_num;
 size_t Max_bytes_per_kv;
-double Burst_ratio;
 size_t Max_slot_num;
-size_t Max_loop;
 
 using namespace std;
 
@@ -831,7 +829,6 @@ class htrie_map {
         Max_bytes_per_kv = customized_byte_per_kv;
 
         Max_slot_num = Associativity * Bucket_num;
-        Max_loop = Max_slot_num * 0.5;
 
         t_root = new hash_node(nullptr, string());
     }
