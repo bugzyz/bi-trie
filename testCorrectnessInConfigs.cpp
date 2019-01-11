@@ -17,7 +17,6 @@ bool manually_test = false;
 #include <vector>
 
 #include <stdint.h>
-#include <sys/time.h>
 
 #include <fstream>
 #include <iostream>
