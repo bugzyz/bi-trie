@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stack>
 #include "../util/hashFunc.hpp"
+#include "../util/my_timer.hpp"
 
 #include <fstream>
 #include <ios>
@@ -33,16 +34,6 @@ uint64_t rehash_cost_time = 0;
 uint64_t rehash_total_num = 0;
 
 uint64_t shrink_total_time = 0;
-
-uint64_t get_time() {
-    struct timespec tp;
-    /* POSIX.1-2008: Applications should use the clock_gettime() function
-       instead of the obsolescent gettimeofday() function. */
-    /* NOTE: The clock_gettime() function is only available on Linux.
-       The mach_absolute_time() function is an alternative on OSX. */
-    clock_gettime(CLOCK_MONOTONIC, &tp);
-    return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
-}
 
 // configuration
 // static size_t Associativity;
