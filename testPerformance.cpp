@@ -3,7 +3,6 @@ bool manually_test = false;
 
 #include "test_which.hpp"
 
-// #include "myTrie.hpp"
 // debug
 #include <fstream>
 #include "debug.hpp"
@@ -11,21 +10,12 @@ bool manually_test = false;
 #include <boost/unordered_map.hpp>
 #include <map>
 #include <vector>
-using std::fstream;
 
 #include <stdint.h>
 #include <sys/time.h>
 
 #include <fstream>
 #include <iostream>
-
-using std::cout;
-using std::endl;
-
-class NullBuffer : public std::streambuf {
-   public:
-    int overflow(int c) { return c; }
-};
 
 using namespace std;
 
@@ -80,7 +70,7 @@ int main() {
     boost::unordered_map<string, uint32_t> m1;
     boost::unordered_map<uint32_t, string> m2;
 
-    staUm = get_usec();
+    staUm = get_time();
     uint64_t startUsedMemUm = getLftMem();
 
     uint32_t count = 0;
@@ -90,7 +80,7 @@ int main() {
         count++;
     }
     uint64_t endUsedMemUm = getLftMem();
-    endUm = get_usec();
+    endUm = get_time();
     f.close();
     cout << "unordered_map use time: usec: \t\t\t" << endUm - staUm
          << std::endl;
@@ -104,7 +94,7 @@ int main() {
         size_t ass = it->first;
         size_t bn = it->second;
 
-        staTm = get_usec();
+        staTm = get_time();
 
         myTrie::htrie_map<char, uint32_t> hm(ass, bn);
         std::fstream f1(testing_dataset);
@@ -117,10 +107,10 @@ int main() {
         myTrie::debuging::process_mem_usage(virt, res);
 
         myTrie::debuging::clear_num();
-#ifdef SHRINK_TEST_GROWCUCKOOHASH
+
         hm.shrink();
         cout << "shrinking cost time: " << shrink_total_time << endl;
-#endif
+
         myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
         myTrie::debuging::print_tree_construct_v2k<char, uint32_t>(hm.v2k);
         double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
@@ -128,20 +118,17 @@ int main() {
         uint64_t endUsedMemTm = getLftMem();
         f1.close();
 
-        endTm = get_usec();
+        endTm = get_time();
 
         cout << "finish trie_map constructing\n";
         cout << "constructing time: " << endTm - staTm << endl;
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         cout << "expand cost time: " << expand_cost_time << endl;
-#endif
-
-#ifndef TEST_HAT
         cout << "rehash cost time: " << rehash_cost_time << endl;
-#endif
 
-        int64_t um_hm_k = 0;
-        double percent_k = 0.0;
+
+        int64_t hm_k_total_time = 0;
+        int64_t um_k_total_time = 0;
+
         double max_percent_k = 0.0;
         double min_percent_k = 0.0;
 
@@ -161,36 +148,37 @@ int main() {
                 break;
             }
 
-            int64_t hm_get_start = get_usec();
             uint32_t gotfromhm;
+            int64_t hm_get_start = get_time();
             gotfromhm = hm.searchByKey(url1);
             gotfromhm = hm.searchByKey(url2);
             gotfromhm = hm.searchByKey(url3);
             gotfromhm = hm.searchByKey(url4);
             gotfromhm = hm.searchByKey(url5);
-            int64_t hm_get_end = get_usec();
+            int64_t hm_get_end = get_time();
 
-            int64_t um_get_start = get_usec();
             uint32_t gotfromum;
+            int64_t um_get_start = get_time();
             gotfromum = m1[url1];
             gotfromum = m1[url2];
             gotfromum = m1[url3];
             gotfromum = m1[url4];
             gotfromum = m1[url5];
-            int64_t um_get_end = get_usec();
+            int64_t um_get_end = get_time();
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
-
-            um_hm_k += hm_used_time - um_used_time;
 
             if (um_used_time == 0) {
                 um_used_time = 1;
             }
 
+            hm_k_total_time += hm_used_time;
+            um_k_total_time += um_used_time;
+
+
             double cur_percent_k =
                 (double)hm_used_time / (double)um_used_time - 1.0;
-            percent_k += cur_percent_k;
 
             if (max_percent_k < cur_percent_k) {
                 max_percent_k = cur_percent_k;
@@ -200,12 +188,12 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << um_hm_k / count << endl;
-        ;
+             << hm_k_total_time / count << endl;
 
         // checking:
-        int64_t um_hm_v = 0;
-        double percent_v = 0.0;
+        int64_t hm_v_total_time = 0;
+        int64_t um_v_total_time = 0;
+
         double max_percent_v = 0.0;
         double min_percent_v = 0.0;
         for (auto it = m2.begin(); it != m2.end(); it++) {
@@ -223,33 +211,35 @@ int main() {
                 break;
             }
 
-            int64_t hm_get_start = get_usec();
+            int64_t hm_get_start = get_time();
             std::string gotfromhm = hm.searchByValue(v1);
             gotfromhm = hm.searchByValue(v2);
             gotfromhm = hm.searchByValue(v3);
             gotfromhm = hm.searchByValue(v4);
             gotfromhm = hm.searchByValue(v5);
-            int64_t hm_get_end = get_usec();
+            int64_t hm_get_end = get_time();
 
-            int64_t um_get_start = get_usec();
+            int64_t um_get_start = get_time();
             std::string gotfromum = m2[v1];
             gotfromum = m2[v2];
             gotfromum = m2[v3];
             gotfromum = m2[v4];
             gotfromum = m2[v5];
-            int64_t um_get_end = get_usec();
+            int64_t um_get_end = get_time();
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
 
-            um_hm_v += hm_used_time - um_used_time;
             if (um_used_time == 0) {
                 um_used_time = 1;
             }
 
+            hm_v_total_time += hm_used_time;
+            um_v_total_time += um_used_time;
+
             double cur_percent_v =
                 (double)hm_used_time / (double)um_used_time - 1.0;
-            percent_v += cur_percent_v;
+
             if (max_percent_v < cur_percent_v) {
                 max_percent_v = cur_percent_v;
             }
@@ -258,70 +248,73 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << um_hm_v / count << endl;
-        ;
+             << hm_v_total_time / count << endl;
 
+#ifdef TEST_HAT
+        cout << "unified_impl/1_tessil_hat_impl.hpp" << endl;
+
+        ff1 << "hat_trie,,";
+#endif
+#ifdef TEST_HASH
+        cout << "unified_impl/2_prototype_shrink.hpp" << endl;
+
+        ff1 << "prototype,,";
+#endif
 #ifdef TEST_CUCKOOHASH
+        cout << "unified_impl/3_prototype_cuckoo_shrink.hpp" << endl;
+
         ff1 << "cuckoo_hash,,";
 #endif
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-        ff1 << "grow_cuckoo_hash,";
+#ifdef TEST_GROW_CUCKOOHASH_ASS
+        cout << "unified_impl/4_prototype_cuckoo_grow_ass_shrink.hpp" << endl;
+
+        ff1 << "grow_cuckoo_hash_ass,";
+
 #ifdef REHASH_BEFORE_EXPAND
         ff1 << "rehash_before_expand,";
 #else
         ff1 << "expand_before_rehash,";
 #endif
+
 #endif
-#ifdef TEST_HAT
-        ff1 << "hat,,";
+#ifdef TEST_GROW_CUCKOOHASH_BUC
+        cout << "unified_impl/5_prototype_cuckoo_grow_buc_shrink.hpp" << endl;
+
+        ff1 << "grow_cuckoo_hash_buc,";
+
+#ifdef REHASH_BEFORE_EXPAND
+        ff1 << "rehash_before_expand,";
+#else
+        ff1 << "expand_before_rehash,";
 #endif
-#ifdef TEST_CUCKOOHASH
+
+#endif
+
+        // config and memory
         ff1 << Associativity << "," << Bucket_num << ","
             << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
             << res << "," << mem_cal_inside;
-        ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
-            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
-            << "," << min_percent_k * 100.0;
-        ff1 << "," << um_hm_v << "," << (double)um_hm_v / (double)count << ","
-            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0 << ","
-            << (double)rehash_total_num / (double)count << ","
-            << ((double)myTrie::debuging::total_pass_trie_node_num /
-                (double)count) -
-                   1
-            << ","
-            << (double)myTrie::debuging::hashnode_load /
-                   (double)myTrie::debuging::h_n / (double)Max_slot_num *
-                   (double)100
-            << ","
-            << (double)myTrie::debuging::hashnode_max_load /
-                   (double)Max_slot_num * (double)100
-            << ","
-            << (double)myTrie::debuging::hashnode_min_load /
-                   (double)Max_slot_num * (double)100
-            << "," << 0 << ","
-            << (double)rehash_cost_time / (double)1000 / (double)1000
-            << ","
 
-#endif
+        // search by key
+        ff1 << "," << hm_k_total_time << ","
+            << (double)hm_k_total_time / (double)count << ","
+            << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << ","
+            << max_percent_k * 100.0 << "," << min_percent_k * 100.0;
 
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-            ff1
-            << Associativity << "," << Bucket_num << ","
-            << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
-            << res << "," << mem_cal_inside;
-        ff1 << "," << um_hm_k << "," << (double)um_hm_k / (double)count << ","
-            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
-            << "," << min_percent_k * 100.0;
-        ff1 << "," << um_hm_v << "," << (double)um_hm_v / (double)count << ","
-            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0 << ","
-            << (double)rehash_total_num / (double)count << ","
+        // search by value
+        ff1 << "," << hm_v_total_time << ","
+            << (double)hm_v_total_time / (double)count << ","
+            << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << ","
+            << max_percent_v * 100.0 << "," << min_percent_v * 100.0 << ",";
+
+        // rehash counter and parent number
+        ff1 << (double)rehash_total_num / (double)count << ","
             << ((double)myTrie::debuging::total_pass_trie_node_num /
-                (double)count) -
-                   1
-            << ","
-            << (double)myTrie::debuging::hashnode_load /
+                (double)count)
+            << ",";
+
+        // loading ratio
+        ff1 << (double)myTrie::debuging::hashnode_total_element /
                    (double)myTrie::debuging::hashnode_total_slot_num *
                    (double)100
             << ","
@@ -329,61 +322,17 @@ int main() {
                    (double)Max_slot_num * (double)100
             << ","
             << (double)myTrie::debuging::hashnode_min_load /
-                   (double)Max_slot_num * (double)100
-            << "," << (double)expand_cost_time / (double)1000 / (double)1000
-            << "," << (double)rehash_cost_time / (double)1000 / (double)1000
-            << ","
+                   (double)Max_slot_num * (double)100;
 
-#endif
-#ifdef TEST_HAT
-            ff1
-            << hm.burst_threshold << "," << hm.bucket_num << ","
-            << (endTm - staTm) / 1000 / (double)1000 << "," << virt << ","
-            << res << "," << mem_cal_inside;
-        ff1 << "," << um_hm_k << "," << um_hm_k / count << ","
-            << percent_k / (count / 5) * 100.0 << "," << max_percent_k * 100.0
-            << "," << min_percent_k * 100.0;
-        ff1 << "," << um_hm_v << "," << um_hm_v / count << ","
-            << percent_v / (count / 5) * 100.0 << "," << max_percent_v * 100.0
-            << "," << min_percent_v * 100.0
-            << ","
-            // << (double)rehash_total_num / (double)count << ","
-            << ((double)myTrie::debuging::total_pass_trie_node_num /
-                (double)count) -
-                   1
-            << ","
-            << (double)myTrie::debuging::hashnode_load /
-                   (double)myTrie::debuging::h_n / (double)hm.burst_threshold
-            << ","
-#endif
-            << myTrie::debuging::t_n << "," << myTrie::debuging::h_n << endl;
+        // expand and rehash cost time
+        ff1 << "," << (double)expand_cost_time / (double)1000 / (double)1000
+            << "," << (double)rehash_cost_time / (double)1000 / (double)1000;
+
+        // node number
+        ff1 << "," << myTrie::debuging::t_n << "," << myTrie::debuging::h_n
+            << "," << myTrie::debuging::m_n << endl;
 
         ff1.flush();
-
-#ifdef TEST_CUCKOOHASH
-        rehash_cost_time = 0;
-        rehash_total_num = 0;
-#endif
-
-#ifdef IMPROVE_BURST
-        fstream recal_time_file("recal_record", ios::out | ios::app);
-        recal_time_file << testing_dataset << "," << Associativity << ","
-                        << Bucket_num << ",";
-        recal_time_file << recal_element_num_of_1st_char_counter;
-        recal_time_file << "," << burst_total_counter << endl;
-        recal_time_file.flush();
-        recal_element_num_of_1st_char_counter = 0;
-        burst_total_counter = 0;
-#endif
-
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-        expand_cost_time = 0;
-        rehash_cost_time = 0;
-        rehash_total_num = 0;
-#endif
-#ifdef SHRINK_TEST_GROWCUCKOOHASH
-        shrink_total_time = 0;
-#endif
 
         // correctness check
         if (test_and_print_wrong_test) {
@@ -422,6 +371,25 @@ int main() {
                 cout << "get value: " << hm.searchByKey(url) << endl;
             }
         }
+
+        // clear status
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+
+        fstream recal_time_file("recal_record", ios::out | ios::app);
+        recal_time_file << testing_dataset << "," << Associativity << ","
+                        << Bucket_num << ",";
+        recal_time_file << recal_element_num_of_1st_char_counter;
+        recal_time_file << "," << burst_total_counter << endl;
+        recal_time_file.flush();
+
+        recal_element_num_of_1st_char_counter = 0;
+        burst_total_counter = 0;
+
+        expand_cost_time = 0;
+        rehash_cost_time = 0;
+        rehash_total_num = 0;
+        shrink_total_time = 0;
     }
     ff1.close();
 }

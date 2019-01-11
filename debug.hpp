@@ -112,17 +112,11 @@ uint64_t v2k_mem;
 
 uint64_t child_first_char_mem;
 
-size_t hashnode_load = 0;
-#ifdef TEST_CUCKOOHASH
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
-#endif
 
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-size_t hashnode_max_load = Max_slot_num / 2;
-size_t hashnode_min_load = Max_slot_num / 2;
 size_t hashnode_total_slot_num = 0;
-#endif
+size_t hashnode_total_element = 0;
 
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
@@ -133,11 +127,6 @@ void print_tree_construct_v2k(
     size_t counter_sz = v2k.size();
     size_t entry_sz =
         sizeof(T) + sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint);
-    cout << "sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint): "
-         << sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint) << endl;
-
-    cout << "sizeof(int32_t): " << sizeof(int32_t) << endl;
-    cout << "sizeof(void*): " << sizeof(void*) << endl;
 
     v2k_mem = counter_sz * entry_sz;
 }
@@ -154,76 +143,53 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         h_n++;
 
         class my::hash_node* cur_hash_node = (class my::hash_node*)root;
-#ifdef TEST_CUCKOOHASH
         hash_node_mem += sizeof(cur_hash_node);
 
-        // basic bucket cost
-        uint32_t bucket_mem = sizeof(class my::hash_node::slot) * Max_slot_num;
-        hash_node_mem += bucket_mem;
-
-        // page mem cost
-        size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
-        hash_node_mem += pages_cost;
-
-        h_n++;
-
-        size_t current_elem_num = cur_hash_node->elem_num;
-        hashnode_load += current_elem_num;
-        if (current_elem_num > hashnode_max_load) {
-            hashnode_max_load = current_elem_num;
-        }
-
-        if (current_elem_num < hashnode_min_load) {
-            hashnode_min_load = current_elem_num;
-        }
-
-        total_pass_trie_node_num += cur_hash_node->elem_num * depth;
-
-        if (cur_hash_node->haveValue) {
-            total_pass_trie_node_num += depth;
-        }
-#endif
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-        hash_node_mem += sizeof(cur_hash_node);
-        size_t entry_sz = 0;
-        size_t counter_sz = 0;
-        // skip the data structure that used to burst
-        // #ifdef IMPROVE_BURST
-        //         counter_sz = (cur_hash_node->element_num_of_1st_char).size();
-        //         entry_sz = sizeof(CharT) + sizeof(uint16_t);
-        // #endif
-        // #ifdef BURST_IN_ADVANCE
-        //         counter_sz = (cur_hash_node->element_num_of_1st_char).size();
-        //         entry_sz = sizeof(CharT) + sizeof(class
-        //         my::hash_node::triple);
-        // #endif
-
-        hash_node_mem += counter_sz * entry_sz;
-        child_first_char_mem += counter_sz * entry_sz;
-
-        // basic bucket cost
-#ifdef GROW_BUCKET
+// bucket mem cost
+#ifndef TEST_HAT
+#ifdef TEST_GROW_CUCKOOHASH_BUC
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
                               (cur_hash_node->cur_bucket) * Associativity;
-#else
+        hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Associativity;
+
+#endif
+#ifdef TEST_GROW_CUCKOOHASH_ASS
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
                               (cur_hash_node->cur_associativity) * Bucket_num;
-#endif
+        hashnode_total_slot_num +=
+            (cur_hash_node->cur_associativity) * Bucket_num;
 
+#endif
+#if (defined TEST_CUCKOOHASH) || (defined TEST_HASH)
+        uint32_t bucket_mem =
+            sizeof(class my::hash_node::slot) * Associativity * Bucket_num;
+        hashnode_total_slot_num += Associativity * Bucket_num;
+
+#endif
+        // add the bucket mem to hash_node_mem
         hash_node_mem += bucket_mem;
 
         // page mem cost
         size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
         hash_node_mem += pages_cost;
-
-        size_t current_elem_num = cur_hash_node->elem_num;
-        hashnode_load += current_elem_num;
-#ifdef GROW_BUCKET
-        hashnode_total_slot_num += (cur_hash_node->cur_bucket) * Associativity;
 #else
-        hashnode_total_slot_num +=
-            (cur_hash_node->cur_associativity) * Bucket_num;
+        // add the bucket mem to hash_node_mem
+        std::vector<class my::hash_node::array_bucket>& buckets =
+            cur_hash_node->kvs;
+
+        for (int i = 0; i != buckets.size(); i++) {
+            size_t current_bucket_mem =
+                sizeof(class my::hash_node::array_bucket);
+            hash_node_mem += buckets[i].buffer_size;
+        }
+
+        hashnode_total_slot_num += Associativity * Bucket_num;
 #endif
+
+        // load ratio calculation
+        size_t current_elem_num = cur_hash_node->elem_num;
+
+        hashnode_total_element += current_elem_num;
 
         if (current_elem_num > hashnode_max_load) {
             hashnode_max_load = current_elem_num;
@@ -233,66 +199,34 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             hashnode_min_load = current_elem_num;
         }
 
+        // total parent calculation
         total_pass_trie_node_num += cur_hash_node->elem_num * depth;
-#endif
-#ifdef TEST_HAT
-        hash_node_mem += sizeof(cur_hash_node);
-
-        std::vector<class my::array_bucket> buckets = cur_hash_node->kvs;
-        // basic bucket cost
-        uint32_t bucket_num = buckets.size();
-        uint32_t bucket_mem = sizeof(class my::array_bucket) * bucket_num;
-        hash_node_mem += bucket_mem;
-
-        uint32_t bucket_buffer_mem = 0;
-        // bucket buffer cost
-        for (auto it = buckets.begin(); it != buckets.end(); it++) {
-            bucket_buffer_mem += it->buffer_size;
-        }
-        hash_node_mem += bucket_buffer_mem;
-
-        hashnode_load += cur_hash_node->element_count * depth;
-
-        total_pass_trie_node_num += cur_hash_node->element_count * depth;
-
-        if (cur_hash_node->haveValue) total_pass_trie_node_num += depth;
-        h_n++;
-#endif
-
     } else if (root->is_trie_node()) {
         t_n++;
         class myTrie::htrie_map<CharT, T>::trie_node* cur_trie_node =
             (class myTrie::htrie_map<CharT, T>::trie_node*)root;
         trie_node_mem += sizeof(cur_trie_node);
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
+
         if (cur_trie_node->prefix_len != 0) {
             trie_node_mem += cur_trie_node->prefix_len;
         }
-#endif
 
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
         std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
             cur_trie_node->trie_node_childs;
-#else
-        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
-            cur_trie_node->childs;
-#endif
 
         if (childs.size() == 0) {
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
-            print_tree_construct<CharT, T>(cur_trie_node->hash_node_child,
+            print_tree_construct<CharT, T>(cur_trie_node->get_hash_node_child(),
                                            depth + 1);
-#else
-            print_tree_construct<CharT, T>(cur_trie_node->onlyHashNode,
-                                           depth + 1);
-#endif
         } else {
+            size_t entry_size =
+                sizeof(CharT) +
+                sizeof(class myTrie::htrie_map<CharT, T>::trie_node*);
             for (auto it = childs.begin(); it != childs.end(); it++) {
                 print_tree_construct<CharT, T>(it->second, depth + 1);
             }
         }
+
     } else {
-#ifdef SHRINK_TEST_GROWCUCKOOHASH
         if (root->is_multi_node()) {
             m_n++;
 
@@ -306,7 +240,6 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             }
             return;
         }
-#endif
         std::cout << "node is not trie nor hash node\n";
         exit(0);
     }
@@ -322,16 +255,11 @@ void clear_num() {
     v2k_mem = 0;
     child_first_char_mem = 0;
 
-    hashnode_load = 0;
-#ifdef TEST_CUCKOOHASH
-    hashnode_max_load = Max_slot_num / 2;
-    hashnode_min_load = Max_slot_num / 2;
-#endif
-#if (defined SHRINK_TEST_GROWCUCKOOHASH) || (defined TEST_GROWCUCKOOHASH)
+    hashnode_total_element = 0;
+
     hashnode_max_load = Max_slot_num / 2;
     hashnode_min_load = Max_slot_num / 2;
     hashnode_total_slot_num = 0;
-#endif
 
     total_pass_trie_node_num = 0;
     return;
@@ -339,71 +267,46 @@ void clear_num() {
 
 template <typename CharT, typename T>
 double print_res() {
-#ifdef TEST_CUCKOOHASH
-    std::cout << "WE ARE TESTING CUCKOOHASH_IMPL NOW\n";
-#endif
-#ifdef TEST_GROWCUCKOOHASH
-    std::cout << "WE ARE TESTING GROWING_CUCKOOHASH_IMPL NOW\n";
-#endif
-#ifdef SHRINK_TEST_GROWCUCKOOHASH
-    std::cout << "WE ARE TESTING SHRINKING GROWING_CUCKOOHASH_IMPL NOW\n";
-#endif
 #ifdef TEST_HAT
-    std::cout << "WE ARE TESTING HAT-TRIE NOW\n";
+    cout << "unified_impl/1_tessil_hat_impl.hpp" << endl;
+#endif
+#ifdef TEST_HASH
+    cout << "unified_impl/2_prototype_shrink.hpp" << endl;
+#endif
+#ifdef TEST_CUCKOOHASH
+    cout << "unified_impl/3_prototype_cuckoo_shrink.hpp" << endl;
+#endif
+#ifdef TEST_GROW_CUCKOOHASH_ASS
+    cout << "unified_impl/4_prototype_cuckoo_grow_ass_shrink.hpp" << endl;
+#endif
+#ifdef TEST_GROW_CUCKOOHASH_BUC
+    cout << "unified_impl/5_prototype_cuckoo_grow_buc_shrink.hpp" << endl;
 #endif
 
-    std::cout << "trie_node: " << t_n << " hash_node: " << h_n
-              << " multi_node: " << m_n << std::endl;
-    std::cout << "trie_node_mem: " << trie_node_mem
-              << " hash_node_mem: " << hash_node_mem
-              << " multi_node_mem: " << multi_node_mem
-              << " child_first_char_mem: " << child_first_char_mem
-              << " v2k_mem: " << v2k_mem << std::endl;
+    cout << "trie_node: " << t_n << " hash_node: " << h_n
+         << " multi_node: " << m_n << std::endl;
+    cout << "trie_node_mem: " << trie_node_mem
+         << " hash_node_mem: " << hash_node_mem
+         << " multi_node_mem: " << multi_node_mem
+         << " child_first_char_mem: " << child_first_char_mem
+         << " v2k_mem: " << v2k_mem << std::endl;
 
     using my = typename myTrie::htrie_map<CharT, T>;
 
-    std::cout << "total: ,"
-              << (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
-                  child_first_char_mem) /
-                     1024 / 1024
-              << ", mb" << std::endl;
+    cout << "total: ,"
+         << (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
+             child_first_char_mem) /
+                1024 / 1024
+         << ", mb" << std::endl;
     double ret_v;
     ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
              child_first_char_mem) /
             1024 / 1024;
 
-    // todo
-    // std::cout << "trienode size:" << sizeof(typename my::trie_node)
-    //           << std::endl;
-    // std::cout << "hashnode size:" << sizeof(typename my::hash_node)
-    //           << std::endl;
-    // std::cout << "arraybucket size:" << sizeof(typename my::array_bucket)
-    //           << std::endl;
-    // std::cout << "htrie_map size:"
-    //           << sizeof(typename myTrie::htrie_map<CharT, T>) << std::endl;
-    // std::cout
-    //     << "htrie_map::v2k size:"
-    //     << sizeof(
-    //            std::map<T, typename myTrie::htrie_map<CharT,
-    //            T>::SearchPoint>)
-    //     << std::endl;
-    // std::cout << "arraybucket::kvs size:"
-    //           << sizeof(std::vector<typename my::array_bucket>) << std::endl;
-
     return ret_v;
 }
 }  // namespace debuging
 }  // namespace myTrie
-
-uint64_t get_usec() {
-    struct timespec tp;
-    /* POSIX.1-2008: Applications should use the clock_gettime() function
-       instead of the obsolescent gettimeofday() function. */
-    /* NOTE: The clock_gettime() function is only available on Linux.
-       The mach_absolute_time() function is an alternative on OSX. */
-    clock_gettime(CLOCK_MONOTONIC, &tp);
-    return ((tp.tv_sec * 1000 * 1000) + (tp.tv_nsec / 1000));
-}
 
 #include <sys/sysinfo.h>
 uint64_t getLftMem() {

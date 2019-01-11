@@ -35,13 +35,13 @@ int main() {
     fstream f(testing_dataset);
     string url;
     uint32_t v;
-    uint64_t sta = get_usec();
+    uint64_t sta = get_time();
     while (f >> url >> v) {
         hm.insertKV(url, v);
         m1[url] = v;
         m2[v] = url;
     }
-    uint64_t end = get_usec();
+    uint64_t end = get_time();
     std::cout << "loaded 3 map in " << (end - sta) / 1000 << " ms" << std::endl;
 
     // myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
