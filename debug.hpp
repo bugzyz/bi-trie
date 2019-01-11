@@ -180,7 +180,9 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         for (int i = 0; i != buckets.size(); i++) {
             size_t current_bucket_mem =
                 sizeof(class my::hash_node::array_bucket);
+            
             hash_node_mem += buckets[i].buffer_size;
+            hash_node_mem += sizeof(class my::hash_node::array_bucket);
         }
 
         hashnode_total_slot_num += Associativity * Bucket_num;
