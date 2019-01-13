@@ -121,6 +121,10 @@ size_t hashnode_total_element = 0;
 size_t total_pass_trie_node_num = 0;
 size_t myCount = 0;
 
+size_t byte_used_in_page = 0;
+size_t byte_pages_have = 0;
+size_t total_page_number = 0;
+
 template <typename CharT, typename T>
 void print_tree_construct_v2k(
     map<T, class myTrie::htrie_map<CharT, T>::SearchPoint>& v2k) {
@@ -171,6 +175,19 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 
         // page mem cost
         size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
+        byte_used_in_page = 0;
+        byte_pages_have = 0;
+        for (int i = 0; i != cur_hash_node->pages.size(); i++) {
+            size_t page_used = (cur_hash_node->pages)[i].second;
+            size_t alloc_page_used = Max_bytes_per_kv;
+            if (page_used > Max_bytes_per_kv) {
+                alloc_page_used = page_used;
+            }
+            byte_pages_have += alloc_page_used;
+            byte_used_in_page += (cur_hash_node->pages)[i].second;
+            total_page_number++;
+        }
+
         hash_node_mem += pages_cost;
 #else
         // add the bucket mem to hash_node_mem
@@ -180,7 +197,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         for (int i = 0; i != buckets.size(); i++) {
             size_t current_bucket_mem =
                 sizeof(class my::hash_node::array_bucket);
-            
+
             hash_node_mem += buckets[i].buffer_size;
             hash_node_mem += sizeof(class my::hash_node::array_bucket);
         }
@@ -264,6 +281,10 @@ void clear_num() {
     hashnode_total_slot_num = 0;
 
     total_pass_trie_node_num = 0;
+
+    byte_used_in_page = 0;
+    byte_pages_have = 0;
+    total_page_number = 0;
     return;
 }
 
@@ -292,6 +313,11 @@ double print_res() {
          << " multi_node_mem: " << multi_node_mem
          << " child_first_char_mem: " << child_first_char_mem
          << " v2k_mem: " << v2k_mem << std::endl;
+    cout << "page load:"
+         << (double)byte_used_in_page / (double)byte_pages_have * 100 << "%"
+         << endl;
+    cout << "average page number:" << (double)total_page_number / (double)h_n
+         << endl;
 
     using my = typename myTrie::htrie_map<CharT, T>;
 
