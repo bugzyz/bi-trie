@@ -329,7 +329,16 @@ int main() {
 
         // node number
         ff1 << "," << myTrie::debuging::t_n << "," << myTrie::debuging::h_n
-            << "," << myTrie::debuging::m_n << endl;
+            << "," << myTrie::debuging::m_n;
+
+        // page situation
+        ff1 << ","
+            << (double)myTrie::debuging::byte_used_in_page /
+                   (double)myTrie::debuging::byte_pages_have * 100;
+        ff1 << ","
+            << (double)myTrie::debuging::total_page_number /
+                   (double)myTrie::debuging::h_n
+            << endl;
 
         ff1.flush();
 
