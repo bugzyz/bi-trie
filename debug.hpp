@@ -175,16 +175,19 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 
         // page mem cost
         size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
-        byte_used_in_page = 0;
-        byte_pages_have = 0;
+
+        size_t byte_used_in_page_in_node = 0;
+        size_t byte_pages_have_in_node = 0;
+
         for (int i = 0; i != cur_hash_node->pages.size(); i++) {
             size_t page_used = (cur_hash_node->pages)[i].second;
-            size_t alloc_page_used = Max_bytes_per_kv;
+            size_t page_have = Max_bytes_per_kv;
             if (page_used > Max_bytes_per_kv) {
-                alloc_page_used = page_used;
+                page_have = page_used;
             }
-            byte_pages_have += alloc_page_used;
-            byte_used_in_page += (cur_hash_node->pages)[i].second;
+            byte_pages_have += page_have;
+            byte_used_in_page += page_used;
+
             total_page_number++;
         }
 

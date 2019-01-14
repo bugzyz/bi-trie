@@ -335,6 +335,7 @@ int main() {
         ff1 << ","
             << (double)myTrie::debuging::byte_used_in_page /
                    (double)myTrie::debuging::byte_pages_have * 100;
+        ff1 << "," << myTrie::debuging::byte_pages_have / 1000 / 1000;
         ff1 << ","
             << (double)myTrie::debuging::total_page_number /
                    (double)myTrie::debuging::h_n
