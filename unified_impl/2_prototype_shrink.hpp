@@ -253,7 +253,7 @@ class htrie_map {
         slot* key_metas;
         vector<std::pair<char*, size_t>> pages;
         size_t elem_num;
-        size_t cur_page_id;
+        int cur_page_id;
 
         int common_prefix_len;
 
@@ -304,7 +304,7 @@ class htrie_map {
 
        public:
         explicit hash_node(trie_node* p, string prefix)
-            : elem_num(0), cur_page_id(0), common_prefix_len(INT_MAX) {
+            : elem_num(0), cur_page_id(-1), common_prefix_len(INT_MAX) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
@@ -318,9 +318,6 @@ class htrie_map {
                 key_metas[i].pos = 0;
                 key_metas[i].page_id = 0;
             }
-
-            char* page = (char*)malloc(Max_bytes_per_kv);
-            pages.push_back(std::pair<char*, size_t>(page, 0));
         }
 
         ~hash_node() {
@@ -700,34 +697,28 @@ class htrie_map {
 
         // return: page_id, pos
         std::pair<size_t, size_t> alloc_insert_space(size_t keysize) {
-            std::pair<char*, size_t> res = pages[cur_page_id];
-
             size_t need_size = keysize * sizeof(CharT) + sizeof(T);
-            size_t offset = res.second;
+            if (cur_page_id != -1) {
+                size_t offset = pages[cur_page_id].second;
 
-            // if the cur_page is full, malloc a new page
-            if (offset + need_size > Max_bytes_per_kv) {
-                if (need_size <= Max_bytes_per_kv) {
-                    char* page = (char*)malloc(Max_bytes_per_kv);
-                    // set up the page information
-                    pages.push_back(std::pair<char*, size_t>(page, need_size));
-                    cur_page_id++;
-                    return std::pair<size_t, size_t>(cur_page_id, 0);
+                // if the cur_page is full, malloc a new page
+                if (offset + need_size <= Max_bytes_per_kv) {
+                    // update the page information
+                    pages[cur_page_id].second += need_size;
+                    return std::pair<size_t, size_t>(cur_page_id, offset);
                 }
-
-                // the need_size is surpass the max_byte_per_kv
-                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
-                                                    offset + need_size);
-                pages[cur_page_id].first = realloc_page;
-                pages[cur_page_id].second = offset + need_size;
-
-                size_t ret_page_id = cur_page_id;
-
-                return pair<size_t, size_t>(cur_page_id, offset);
             }
-            // update the page information
-            pages[cur_page_id].second += need_size;
-            return std::pair<size_t, size_t>(cur_page_id, offset);
+
+            size_t alloc_size = Max_bytes_per_kv;
+            if (need_size > Max_bytes_per_kv) {
+                alloc_size = need_size;
+            }
+            char* page = (char*)malloc(alloc_size);
+
+            // set up the page information
+            pages.push_back(std::pair<char*, size_t>(page, need_size));
+            cur_page_id++;
+            return std::pair<size_t, size_t>(cur_page_id, 0);
         }
 
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
