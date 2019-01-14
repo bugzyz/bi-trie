@@ -2,8 +2,8 @@ bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
 // test which
-// #include "unified_impl/5_prototype_cuckoo_grow_buc_shrink.hpp"
-#include "unified_impl/4_prototype_cuckoo_grow_ass_shrink.hpp"
+#include "unified_impl/5_prototype_cuckoo_grow_buc_shrink.hpp"
+// #include "unified_impl/4_prototype_cuckoo_grow_ass_shrink.hpp"
 // #include "unified_impl/3_prototype_cuckoo_shrink.hpp"
 // #include "unified_impl/2_prototype_shrink.hpp"
 // #include "unified_impl/1_tessil_hat_impl.hpp"
@@ -104,8 +104,10 @@ int main() {
                 vector<string> wrong_search_key;
                 vector<uint32_t> wrong_search_value;
 
+                size_t counter1 = 0;
                 for (auto test_it = m1.begin(); test_it != m1.end();
                      test_it++) {
+                    counter1++;
                     if (test_it->second != hm.searchByKey(test_it->first)) {
                         wrong_search_key.push_back(test_it->first);
                     }
@@ -113,18 +115,20 @@ int main() {
 
                 cout << "test key finish!\n";
                 cout << "wrong key_searching num: " << wrong_search_key.size()
-                     << endl;
+                     << "/" << counter1 << endl;
 
+                size_t counter2 = 0;
                 for (auto test_it = m2.begin(); test_it != m2.end();
                      test_it++) {
+                    counter2++;
                     if (test_it->second != hm.searchByValue(test_it->first)) {
                         wrong_search_value.push_back(test_it->first);
                     }
                 }
 
                 cout << "test value finish!\n";
-                cout << "wrong value_searching num: "
-                     << wrong_search_value.size() << endl;
+                cout << "wrong val_searching num: " << wrong_search_value.size()
+                     << "/" << counter2 << endl;
 
                 if (wrong_search_value.size() != 0 ||
                     wrong_search_key.size() != 0) {
