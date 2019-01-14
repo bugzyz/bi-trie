@@ -57,6 +57,7 @@ int main() {
     }
 
     fstream ff1("result", std::ios::out | std::ios::app);
+    ff1 << testing_dataset << ":" << endl;
 
     //------------testing--------------
     std::string url;
@@ -125,7 +126,6 @@ int main() {
         cout << "expand cost time: " << expand_cost_time << endl;
         cout << "rehash cost time: " << rehash_cost_time << endl;
 
-
         int64_t hm_k_total_time = 0;
         int64_t um_k_total_time = 0;
 
@@ -175,7 +175,6 @@ int main() {
 
             hm_k_total_time += hm_used_time;
             um_k_total_time += um_used_time;
-
 
             double cur_percent_k =
                 (double)hm_used_time / (double)um_used_time - 1.0;
@@ -391,5 +390,6 @@ int main() {
         rehash_total_num = 0;
         shrink_total_time = 0;
     }
+    ff1 << endl;
     ff1.close();
 }
