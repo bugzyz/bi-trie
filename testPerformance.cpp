@@ -95,36 +95,35 @@ int main() {
         size_t ass = it->first;
         size_t bn = it->second;
 
-        staTm = get_time();
 
         myTrie::htrie_map<char, uint32_t> hm(ass, bn);
         std::fstream f1(testing_dataset);
+        
+        staTm = get_time();
 
-        uint64_t startUsedMemTm = getLftMem();
         myTrie::debuging::clear_process_mem_usage();
         while (f1 >> url >> v) {
             hm.insertKV(url, v);
         }
+        endTm = get_time();
+
+        cout << "finish trie_map constructing\n";
+        cout << "constructing time: " << endTm - staTm << endl;
+
         myTrie::debuging::process_mem_usage(virt, res);
 
         myTrie::debuging::clear_num();
 
         hm.shrink();
-        cout << "shrinking cost time: " << shrink_total_time << endl;
+        cout << "-shrinking cost time: " << shrink_total_time << endl;
+        cout << "-expand cost time: " << expand_cost_time << endl;
+        cout << "-rehash cost time: " << rehash_cost_time << endl;
 
         myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
         myTrie::debuging::print_tree_construct_v2k<char, uint32_t>(hm.v2k);
         double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
 
-        uint64_t endUsedMemTm = getLftMem();
         f1.close();
-
-        endTm = get_time();
-
-        cout << "finish trie_map constructing\n";
-        cout << "constructing time: " << endTm - staTm << endl;
-        cout << "expand cost time: " << expand_cost_time << endl;
-        cout << "rehash cost time: " << rehash_cost_time << endl;
 
         int64_t hm_k_total_time = 0;
         int64_t um_k_total_time = 0;
