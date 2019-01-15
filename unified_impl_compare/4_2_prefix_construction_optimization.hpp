@@ -260,7 +260,7 @@ class htrie_map {
         slot* key_metas;
         vector<std::pair<char*, size_t>> pages;
         size_t elem_num;
-        size_t cur_page_id;
+        int cur_page_id;        
 
         size_t cur_associativity = 1;
 
@@ -317,7 +317,7 @@ class htrie_map {
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity),
               elem_num(0),
-              cur_page_id(0),
+              cur_page_id(-1),
               common_prefix_len(INT_MAX) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
@@ -332,9 +332,6 @@ class htrie_map {
                 key_metas[i].pos = 0;
                 key_metas[i].page_id = 0;
             }
-
-            char* page = (char*)malloc(Max_bytes_per_kv);
-            pages.push_back(std::pair<char*, size_t>(page, 0));
         }
 
         ~hash_node() {
@@ -1031,34 +1028,28 @@ class htrie_map {
 
         // return: page_id, pos
         std::pair<size_t, size_t> alloc_insert_space(size_t keysize) {
-            std::pair<char*, size_t> res = pages[cur_page_id];
-
             size_t need_size = keysize * sizeof(CharT) + sizeof(T);
-            size_t offset = res.second;
+            if (cur_page_id != -1) {
+                size_t offset = pages[cur_page_id].second;
 
-            // if the cur_page is full, malloc a new page
-            if (offset + need_size > Max_bytes_per_kv) {
-                if (need_size <= Max_bytes_per_kv) {
-                    char* page = (char*)malloc(Max_bytes_per_kv);
-                    // set up the page information
-                    pages.push_back(std::pair<char*, size_t>(page, need_size));
-                    cur_page_id++;
-                    return std::pair<size_t, size_t>(cur_page_id, 0);
+                // if the cur_page is full, malloc a new page
+                if (offset + need_size <= Max_bytes_per_kv) {
+                    // update the page information
+                    pages[cur_page_id].second += need_size;
+                    return std::pair<size_t, size_t>(cur_page_id, offset);
                 }
-
-                // the need_size is surpass the max_byte_per_kv
-                char* realloc_page = (char*)realloc(pages[cur_page_id].first,
-                                                    offset + need_size);
-                pages[cur_page_id].first = realloc_page;
-                pages[cur_page_id].second = offset + need_size;
-
-                size_t ret_page_id = cur_page_id;
-
-                return pair<size_t, size_t>(cur_page_id, offset);
             }
-            // update the page information
-            pages[cur_page_id].second += need_size;
-            return std::pair<size_t, size_t>(cur_page_id, offset);
+
+            size_t alloc_size = Max_bytes_per_kv;
+            if (need_size > Max_bytes_per_kv) {
+                alloc_size = need_size;
+            }
+            char* page = (char*)malloc(alloc_size);
+
+            // set up the page information
+            pages.push_back(std::pair<char*, size_t>(page, need_size));
+            cur_page_id++;
+            return std::pair<size_t, size_t>(cur_page_id, 0);
         }
 
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
@@ -1371,92 +1362,11 @@ class htrie_map {
 
     /*---------------external cleaning interface-------------------*/
 
-    anode* shrink_node(anode* node) {
-        if (node->is_trie_node()) {
-            trie_node* cur_node = (trie_node*)node;
-
-            if (cur_node->get_only_hash_node_child() != nullptr) {
-                return cur_node;
-            }
-
-            vector<pair<string, anode*>> traverse_save(
-                cur_node->trie_node_childs.size());
-            vector<pair<CharT, trie_node*>> next_layer;
-
-            for (auto it = cur_node->trie_node_childs.begin();
-                 it != cur_node->trie_node_childs.end(); it++) {
-                next_layer.push_back(
-                    pair<CharT, trie_node*>(it->first, it->second));
-            }
-
-            bool allow_next_layer = true;
-            size_t string_keysize = 0;
-            do {
-                for (int i = 0; i != next_layer.size(); i++) {
-                    CharT c = next_layer[i].first;
-                    trie_node* next_layer_trie_node = next_layer[i].second;
-
-                    // current key_string add the next_layer's char
-                    string new_key_string = traverse_save[i].first + c;
-
-                    traverse_save[i].first = new_key_string;
-                    traverse_save[i].second = next_layer_trie_node;
-
-                    pair<CharT, trie_node*> next_pair;
-                    if (next_layer_trie_node->get_only_hash_node_child() ==
-                            nullptr &&
-                        next_layer_trie_node->get_only_trie_node_child()
-                                .second == nullptr) {
-                        // have several children
-                        allow_next_layer = false;
-                    } else {
-                        // only have a hash_node child or only have a
-                        // trie_node child
-                        if (next_layer_trie_node->get_only_hash_node_child() !=
-                            nullptr) {
-                            next_layer[i] =
-                                pair<CharT, trie_node*>(CharT(), nullptr);
-                            // stop at this layer
-                            allow_next_layer = false;
-                            traverse_save[i].second = next_layer_trie_node;
-                        } else {
-                            next_pair = next_layer_trie_node
-                                            ->get_only_trie_node_child();
-                            next_layer[i] = next_pair;
-                        }
-                    }
-                }
-                if (allow_next_layer) {
-                    for (int i = 0; i != next_layer.size(); i++) {
-                        delete (next_layer[i].second)->anode::parent;
-                    }
-                }
-                string_keysize++;
-            } while (allow_next_layer);
-
-            // construct the target multi_node
-            multi_node* target_node = new multi_node(string_keysize);
-
-            for (int i = 0; i != traverse_save.size(); i++) {
-                anode* res = shrink_node(traverse_save[i].second);
-                target_node->childs_[traverse_save[i].first] = res;
-            }
-            return target_node;
-        } else if (node->is_hash_node()) {
-            return node;
-        } else {
-            cout << "program are in a unexpected branch\n";
-            assert(false);
-            exit(0);
-        }
-    }
+    anode* shrink_node(anode* node) { cout << "empty shrink() function\n"; }
 
     void shrink() {
-        cout << "Shrinking\n";
-        uint64_t sta = get_time();
-        t_root = shrink_node(t_root);
-        uint64_t end = get_time();
-        shrink_total_time = end - sta;
+        cout << "No shrinking\n";
+        shrink_total_time = 0;
     }
 
     void deleteMyself() {
