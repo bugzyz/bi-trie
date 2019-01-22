@@ -225,7 +225,9 @@ class htrie_map {
             }
         }
 
-        inline void set_hash_node_child(hash_node* node) { hash_node_child = node; }
+        inline void set_hash_node_child(hash_node* node) {
+            hash_node_child = node;
+        }
 
         inline hash_node* get_hash_node_child() { return hash_node_child; }
 
@@ -254,7 +256,7 @@ class htrie_map {
         slot* key_metas;
         vector<std::pair<char*, size_t>> pages;
         size_t elem_num;
-        int cur_page_id;        
+        int cur_page_id;
 
         size_t cur_associativity = 1;
 
@@ -826,7 +828,6 @@ class htrie_map {
                 burst_hnode->burst_by_elements(temp_pair.second,
                                                burst_hnode->anode::parent, hm,
                                                burst_again_prefix);
-
             }
             return;
         }
@@ -1151,7 +1152,7 @@ class htrie_map {
 
             // get the parent char chain
             trie_node* cur_node = ((hash_node*)node)->anode::parent;
-            char* buf = (char*)malloc(longest_string_size);
+            static char* buf = (char*)malloc(longest_string_size);
 
             size_t len = cur_node->get_prefix(buf);
 
@@ -1163,7 +1164,7 @@ class htrie_map {
                 len += sl->length;
             }
             string res = string(buf, len);
-            free(buf);
+            // free(buf);
             return res;
         }
     };

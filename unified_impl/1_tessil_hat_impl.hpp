@@ -672,7 +672,7 @@ class htrie_map {
 
             // get the parent char chain
             trie_node* cur_node = ((hash_node*)node)->anode::parent;
-            char* buf = (char*)malloc(longest_string_size);
+            static char* buf = (char*)malloc(longest_string_size);
 
             size_t len = cur_node != nullptr ? cur_node->get_prefix(buf) : 0;
 
@@ -686,7 +686,7 @@ class htrie_map {
                 len += keysize;
             }
             string res = string(buf, len);
-            free(buf);
+            // free(buf);
             return res;
         }
     };

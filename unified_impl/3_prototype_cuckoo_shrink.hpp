@@ -1042,7 +1042,7 @@ class htrie_map {
 
             // get the parent char chain
             trie_node* cur_node = ((hash_node*)node)->anode::parent;
-            char* buf = (char*)malloc(longest_string_size);
+            static char* buf = (char*)malloc(longest_string_size);
 
             size_t len = cur_node->get_prefix(buf);
 
@@ -1054,7 +1054,7 @@ class htrie_map {
                 len += sl->length;
             }
             string res = string(buf, len);
-            free(buf);
+            // free(buf);
             return res;
         }
     };
