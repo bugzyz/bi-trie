@@ -384,12 +384,6 @@ int main() {
         rehash_cost_time = 0;
         rehash_total_num = 0;
 
-        fstream recal_time_file("recal_record", ios::out | ios::app);
-        recal_time_file << testing_dataset << "," << Associativity << ","
-                        << Bucket_num << ",";
-        recal_time_file << recal_element_num_of_1st_char_counter;
-        recal_time_file << "," << burst_total_counter << endl;
-        recal_time_file.flush();
 
         recal_element_num_of_1st_char_counter = 0;
         burst_total_counter = 0;
