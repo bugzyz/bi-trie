@@ -932,16 +932,6 @@ class htrie_map {
             hm->set_v2k(v, this, get_index(target_slot));
             elem_num++;
 
-            // update the element_num_of_1st_char
-            element_num_of_1st_char[*key]++;
-
-            // update the common_prefix_len
-            int cur_com_prefix_len = cal_common_prefix_len(
-                get_first_key_pointer(), common_prefix_len, key, keysize);
-            if (common_prefix_len > cur_com_prefix_len) {
-                common_prefix_len = cur_com_prefix_len;
-            }
-
             if (need_burst()) {
                 std::map<std::string, T> elements;
                 get_all_elements(elements);

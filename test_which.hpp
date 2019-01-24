@@ -1,8 +1,8 @@
 // decide test which version of trie-map
 // #define TEST_HAT
-#define TEST_HASH
+// #define TEST_HASH
 // #define TEST_CUCKOOHASH
-// #define TEST_GROW_CUCKOOHASH_ASS
+#define TEST_GROW_CUCKOOHASH_ASS
 // #define TEST_GROW_CUCKOOHASH_BUC
 
 // decide the growing cuckoo hash is rehash first or expand first
@@ -29,7 +29,8 @@
 // comparison group
 // #include "unified_impl_compare/4_1_trie_traverse_optimization.hpp"
 // #include "unified_impl_compare/4_2_prefix_construction_optimization.hpp"
-// #include "unified_impl_compare/4_3_common_prefix_optimization.hpp"
+// #include "unified_impl_compare/4_3_1_burst_optimization_original.hpp"
+// #include "unified_impl_compare/4_3_2_burst_optimization_common_prefix.hpp"
 #endif
 
 #ifdef TEST_GROW_CUCKOOHASH_BUC

@@ -256,7 +256,7 @@ class htrie_map {
         slot* key_metas;
         vector<std::pair<char*, size_t>> pages;
         size_t elem_num;
-        int cur_page_id;        
+        int cur_page_id;
 
         size_t cur_associativity = 1;
 
@@ -689,15 +689,27 @@ class htrie_map {
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
         void burst(std::map<std::string, T>& elements, trie_node* p,
-                   htrie_map* hm, std::string prefix) {
-            std::map<CharT, std::map<std::string, T>> preprocElements;
-            for (auto it = elements.begin(); it != elements.end(); it++) {
-                preprocElements[(it->first)[0]][it->first.substr(1)] =
-                    it->second;
+                   htrie_map* hm, std::string prefix,
+                   bool recal_common_prefix_len = false) {
+            const char* first_key_p = get_first_key_pointer();
+
+            // those hash_node that without inserting all elements will have a
+            // wrong common_prefix_len, so here we recalculate the
+            // common_prefix_len
+            if (recal_common_prefix_len) {
+                for (auto it = elements.begin(); it != elements.end(); it++) {
+                    const string& cur_string = it->first;
+                    int cur_common_prefix = cal_common_prefix_len(
+                        first_key_p, common_prefix_len, cur_string.data(),
+                        cur_string.size());
+                    if (common_prefix_len > cur_common_prefix) {
+                        common_prefix_len = cur_common_prefix;
+                    }
+                }
             }
 
-            for (auto it = preprocElements.begin(); it != preprocElements.end();
-                 it++) {
+            // create the chain with several single trie_node
+            for (int i = 0; i != common_prefix_len; i++) {
                 if (p == nullptr) {
                     // bursting in a root hashnode
                     // the t_root is update to a empty trie_node
@@ -706,12 +718,36 @@ class htrie_map {
                 }
 
                 trie_node* cur_trie_node = new trie_node(p);
+                p->add_trie_node_child(cur_trie_node, first_key_p[i]);
+                p = cur_trie_node;
+            }
+
+            // after now, the subsequent key are different at first
+            // char
+            std::map<CharT, std::map<std::string, T>> preprocElements;
+            for (auto it = elements.begin(); it != elements.end(); it++) {
+                const string& cur_string = it->first;
+                preprocElements[cur_string[common_prefix_len]]
+                               [cur_string.substr(common_prefix_len + 1)] =
+                                   it->second;
+            }
+
+            // update prefix to (prior prefix + common chain prefix)
+            prefix = prefix + string(first_key_p, common_prefix_len);
+
+            // deal with the element with several different head char
+            for (auto it = preprocElements.begin(); it != preprocElements.end();
+                 it++) {
+                if (p == nullptr) {
+                    // bursting in a root hashnode
+                    // the t_root is update to a empty trie_node
+                    p = new trie_node(nullptr);
+                    hm->setRoot(p);
+                }
+                trie_node* cur_trie_node = new trie_node(p);
                 p->add_trie_node_child(cur_trie_node, it->first);
 
                 std::map<std::string, T>& curKV = it->second;
-                if (preprocElements.size() == 1) {
-                    return burst(curKV, cur_trie_node, hm, prefix + it->first);
-                }
 
                 size_t expected_associativity =
                     (double)curKV.size() / (double)Bucket_num / Burst_ratio + 1;
@@ -730,7 +766,7 @@ class htrie_map {
 
                 bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
-                    std::string temp = itt->first;
+                    const string& temp = itt->first;
 
                     if (temp.size() == 0) {
                         cur_trie_node->insert_kv_in_trienode(
@@ -750,7 +786,8 @@ class htrie_map {
                     }
                 }
                 if (stop_insert_and_burst) {
-                    hnode->burst(curKV, cur_trie_node, hm, prefix + it->first);
+                    hnode->burst(curKV, cur_trie_node, hm, prefix + it->first,
+                                 true);
                     delete hnode;
                 }
             }
