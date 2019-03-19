@@ -22,7 +22,7 @@
 
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
-#define DEFAULT_Max_bytes_per_kv 50
+#define DEFAULT_Max_bytes_per_kv 1024
 
 static uint32_t longest_string_size;
 
