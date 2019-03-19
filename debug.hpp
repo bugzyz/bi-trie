@@ -125,6 +125,10 @@ size_t byte_used_in_page = 0;
 size_t byte_pages_have = 0;
 size_t total_page_number = 0;
 
+size_t prefix_extra_mem = 0;
+
+size_t hashnode_keymetas_mem = 0;
+
 template <typename CharT, typename T>
 void print_tree_construct_v2k(
     map<T, class myTrie::htrie_map<CharT, T>::SearchPoint>& v2k) {
@@ -208,6 +212,11 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         hashnode_total_slot_num += Associativity * Bucket_num;
 #endif
 
+#if (defined TEST_HASH) || (defined TEST_CUCKOOHASH) || \
+    (defined TEST_GROW_CUCKOOHASH_ASS) || (defined TEST_GROW_CUCKOOHASH_BUC)
+        hashnode_keymetas_mem += bucket_mem;
+#endif
+
         // load ratio calculation
         size_t current_elem_num = cur_hash_node->elem_num;
 
@@ -235,6 +244,9 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 
         std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
             cur_trie_node->trie_node_childs;
+
+        prefix_extra_mem +=
+            sizeof(CharT*) + sizeof(uint16_t) + cur_trie_node->prefix_len;
 
         if (childs.size() == 0) {
             print_tree_construct<CharT, T>(cur_trie_node->get_hash_node_child(),
@@ -288,6 +300,9 @@ void clear_num() {
     byte_used_in_page = 0;
     byte_pages_have = 0;
     total_page_number = 0;
+
+    prefix_extra_mem = 0;
+    hashnode_keymetas_mem = 0;
     return;
 }
 
@@ -333,7 +348,11 @@ double print_res() {
     ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
              child_first_char_mem) /
             1024 / 1024;
+    cout << "prefix_extra_mem: " << prefix_extra_mem << endl;
 
+    cout << "-----for breakdown-----" << endl;
+    cout << "byte_pages_have: " << byte_pages_have << endl;
+    cout << "hashnode_keymetas_mem: " << hashnode_keymetas_mem << endl;
     return ret_v;
 }
 }  // namespace debuging
