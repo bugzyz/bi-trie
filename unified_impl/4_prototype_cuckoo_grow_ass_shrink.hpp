@@ -35,6 +35,10 @@ static uint32_t longest_string_size;
 uint32_t recal_element_num_of_1st_char_counter = 0;
 uint32_t burst_total_counter = 0;
 
+uint64_t burst_total_time = 0;
+uint64_t cal_prefix_total_time = 0;
+uint64_t write_page_total_time = 0;
+
 // todo: wait to be deleted, just for recording the time that expand() cost
 uint64_t expand_cost_time = 0;
 uint64_t rehash_cost_time = 0;
@@ -263,8 +267,6 @@ class htrie_map {
         size_t cur_associativity = 1;
 
         int common_prefix_len;
-
-        map<CharT, uint16_t> element_num_of_1st_char;
 
         slot first_slot;
 
@@ -658,46 +660,55 @@ class htrie_map {
         // their hashnode
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
             burst_total_counter++;
-            // when the size of element_num_of_1st_char == 1, it means those
-            // elements have a common prefix
-            if (common_prefix_len != 0) {
-                const char* first_key_p = get_first_key_pointer(hm);
 
-                // create the chain with several single trie_node
-                // the number of node is common_prefix_len
-                for (int i = 0; i != common_prefix_len; i++) {
-                    if (p == nullptr) {
-                        // bursting in a root hashnode
-                        // the t_root is update to a empty trie_node
-                        p = new trie_node(nullptr);
-                        hm->setRoot(p);
-                    }
+            // calculate the capacity of hashnode we need
+            const char* first_key_p = get_first_key_pointer(hm);
 
-                    trie_node* cur_trie_node = new trie_node(p);
-                    p->add_trie_node_child(cur_trie_node, first_key_p[i]);
-                    p = cur_trie_node;
-                }
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != Associativity && common_prefix_len != 0;
+                     j++) {
+                    slot* s = get_slot(i, j);
+                    if (s->isEmpty()) break;
 
-                // clear the element_num_of_1st_char
-                element_num_of_1st_char.clear();
+                    char* key = hm->get_tail_pointer(s);
 
-                // recalculate the capacity of hashnode we need
-                for (int i = 0; i != Bucket_num; i++) {
-                    for (int j = 0; j != Associativity; j++) {
-                        slot* s = get_slot(i, j);
-                        if (s->isEmpty()) break;
-
-                        char* key = hm->get_tail_pointer(s);
-                        element_num_of_1st_char[key[common_prefix_len]]++;
+                    // update the common_prefix_len
+                    int cur_com_prefix_len = cal_common_prefix_len(
+                        first_key_p, common_prefix_len, key, s->length);
+                    if (common_prefix_len > cur_com_prefix_len) {
+                        common_prefix_len = cur_com_prefix_len;
                     }
                 }
-
-                // debug
-                recal_element_num_of_1st_char_counter++;
-
-                // update prefix to (prior prefix + common chain prefix)
-                prefix = prefix + string(first_key_p, common_prefix_len);
             }
+
+            map<CharT, uint16_t> element_num_of_1st_char;
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != Associativity; j++) {
+                    slot* s = get_slot(i, j);
+                    if (s->isEmpty()) break;
+
+                    char* key = hm->get_tail_pointer(s);
+                    element_num_of_1st_char[key[common_prefix_len]]++;
+                }
+            }
+
+            // create the chain with several single trie_node
+            // the number of node is common_prefix_len
+            for (int i = 0; i != common_prefix_len; i++) {
+                if (p == nullptr) {
+                    // bursting in a root hashnode
+                    // the t_root is update to a empty trie_node
+                    p = new trie_node(nullptr);
+                    hm->setRoot(p);
+                }
+
+                trie_node* cur_trie_node = new trie_node(p);
+                p->add_trie_node_child(cur_trie_node, first_key_p[i]);
+                p = cur_trie_node;
+            }
+
+            // update prefix to (prior prefix + common chain prefix)
+            prefix = prefix + string(first_key_p, common_prefix_len);
 
             map<char, hash_node*> hnode_set;
             // create several hashnode based on the number of the elements that
@@ -1043,10 +1054,6 @@ class htrie_map {
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
 
-            CharT* key = hm->get_tail_pointer(target_slot);
-            // update the element_num_of_1st_char
-            element_num_of_1st_char[*key]++;
-
             if (first_slot.isEmpty()) {
                 first_slot.length = target_slot->length;
                 first_slot.page_id = target_slot->page_id;
@@ -1055,14 +1062,6 @@ class htrie_map {
             }
 
             elem_num++;
-
-            // update the common_prefix_len
-            int cur_com_prefix_len = cal_common_prefix_len(
-                get_first_key_pointer(hm), common_prefix_len, key,
-                target_slot->length);
-            if (common_prefix_len > cur_com_prefix_len) {
-                common_prefix_len = cur_com_prefix_len;
-            }
 
             if (need_burst()) {
                 burst(this->anode::parent, hm, prefix);
@@ -1136,16 +1135,6 @@ class htrie_map {
 
             elem_num++;
 
-            // update the element_num_of_1st_char
-            element_num_of_1st_char[*key]++;
-
-            // update the common_prefix_len
-            int cur_com_prefix_len = cal_common_prefix_len(
-                get_first_key_pointer(hm), common_prefix_len, key, keysize);
-            if (common_prefix_len > cur_com_prefix_len) {
-                common_prefix_len = cur_com_prefix_len;
-            }
-
             if (need_burst()) {
                 burst(this->anode::parent, hm, prefix);
 
@@ -1177,7 +1166,7 @@ class htrie_map {
             trie_node* cur_node = ((hash_node*)node)->anode::parent;
             static char* buf = (char*)malloc(longest_string_size);
 
-            size_t len = cur_node->get_prefix(buf);
+            size_t len = cur_node == nullptr ? 0 : cur_node->get_prefix(buf);
 
             // get tail
             if (index != -1) {
