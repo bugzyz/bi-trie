@@ -266,7 +266,6 @@ class htrie_map {
 
         map<CharT, uint16_t> element_num_of_1st_char;
 
-        vector<string> common_update_record;
         slot first_slot;
 
        public:
@@ -352,10 +351,7 @@ class htrie_map {
         /*------------------ 1. expand function------------------*/
 
         bool expand_key_metas_space(size_t need_associativity, htrie_map* hm) {
-            cout << this << "expanding\n";
             uint64_t sta = get_time();
-            cout << "cur: " << cur_associativity
-                 << " need: " << need_associativity << endl;
             // we cannot expand anymore, return false
             if (cur_associativity == Associativity) {
                 return false;
@@ -661,14 +657,6 @@ class htrie_map {
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
-            print_key_metas(hm);
-
-            cout << "bursting start!\n";
-            cout << "bursting prefix len:" << common_prefix_len << endl;
-            for (auto b = common_update_record.begin();
-                 b != common_update_record.end(); b++) {
-                cout << *b << endl;
-            }
             burst_total_counter++;
             // when the size of element_num_of_1st_char == 1, it means those
             // elements have a common prefix
@@ -752,11 +740,6 @@ class htrie_map {
 
                     size_t pos_move = s->pos + 1 + common_prefix_len;
                     size_t length_left = s->length - common_prefix_len - 1;
-                    if (s->length == common_prefix_len) {
-                        // print_key_metas(hm);
-                        cout << this << "common_prefix: "
-                             << string(key, common_prefix_len) << endl;
-                    }
 
                     T v = hm->get_tail_v(s);
                     hash_node* hnode = hnode_set[key[common_prefix_len]];
@@ -1028,28 +1011,20 @@ class htrie_map {
                     }
                 }
 #else
-                cout << "Associa: " << Associativity << endl;
-                cout << "before cur_associ: " << cur_associativity << endl;
                 bool expand_success =
                     expand_key_metas_space(cur_associativity << 1, hm);
-                cout << "after cur_associ: " << cur_associativity << endl;
-                cout << expand_success << endl;
                 if (expand_success) {
                     // if expand success, we get new elem a empty slot in
                     // bucketid
                     for (int i = 0; i != cur_associativity; i++) {
                         slot* empty_slot = get_slot(bucketid, i);
-                        cout << "check empty slot:"
-                             << bucketid * cur_associativity + i << endl;
                         if (empty_slot->isEmpty()) {
                             slotid = i;
                             break;
                         }
                     }
-                    print_key_metas(hm);
                 } else {
                     if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                        cout << "return false in insert_slot_in_hashnode()\n";
                         return std::pair<bool, T>(false, T());
                     }
                 }
@@ -1088,11 +1063,6 @@ class htrie_map {
             if (common_prefix_len > cur_com_prefix_len) {
                 common_prefix_len = cur_com_prefix_len;
             }
-            string record = "slot insert: " + string(key, target_slot->length) +
-                            "\t\t\t\t" + string(key, common_prefix_len);
-            common_update_record.push_back(record);
-            cout << this << "====insert_slot_in_hashnode=common prefix:"
-                 << string(key, common_prefix_len) << endl;
 
             if (need_burst()) {
                 burst(this->anode::parent, hm, prefix);
@@ -1175,13 +1145,6 @@ class htrie_map {
             if (common_prefix_len > cur_com_prefix_len) {
                 common_prefix_len = cur_com_prefix_len;
             }
-            string record =
-                "kv insert: " + string(key, keysize) + "\t\t\t\t" +
-                string(key, common_prefix_len) + "  " +
-                string(get_first_key_pointer(hm), common_prefix_len);
-            common_update_record.push_back(record);
-            cout << this << "====insert_string_in_hashnode=common prefix:"
-                 << string(key, common_prefix_len) << endl;
 
             if (need_burst()) {
                 burst(this->anode::parent, hm, prefix);
@@ -1329,8 +1292,6 @@ class htrie_map {
                         sizeof(T));
 
             cur_pos += keysize * sizeof(CharT) + sizeof(T);
-
-            // cout << "current page: " << string(content, cur_pos) << endl;
         }
     };
 
