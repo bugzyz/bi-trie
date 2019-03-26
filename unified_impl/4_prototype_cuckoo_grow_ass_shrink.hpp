@@ -27,7 +27,7 @@
 
 #define NBITS_SPECIAL 1
 #define NBITS_LEN 7
-#define NBITS_PID 12
+#define NBITS_PID 16
 #define NBITS_POS 12
 
 static uint32_t longest_string_size;
@@ -1241,14 +1241,14 @@ class htrie_map {
 
     class slot {
        public:
-        // uint16_t special : NBITS_SPECIAL;  // 1 special
-        // uint16_t length : NBITS_LEN;       // 128 length
-        // uint16_t page_id : NBITS_PID;      // 65536 page
-        // uint16_t pos : NBITS_POS;          // 256 pos 4-byte-alignment
-        uint16_t special;
-        uint16_t page_id;
-        uint16_t length;
-        uint16_t pos;
+        uint8_t special : NBITS_SPECIAL;  // 1 special
+        uint8_t length : NBITS_LEN;       // 128 length
+        uint16_t pos : NBITS_POS;         // 4096 pos
+        uint16_t page_id : NBITS_PID;     // 65536 page
+        // uint16_t special;
+        // uint16_t page_id;
+        // uint16_t length;
+        // uint16_t pos;
 
         bool isEmpty() { return length == 0; }
 
@@ -1652,7 +1652,6 @@ class htrie_map {
         t_root = shrink_node(t_root, old_page);
         uint64_t end = get_time();
         shrink_total_time = end - sta;
-
     }
 
     void deleteMyself() {
