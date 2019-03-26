@@ -25,10 +25,10 @@
 #define DEFAULT_Max_bytes_per_kv 4096
 #define DEFAULT_Burst_ratio 0.75
 
-#define NBITS_LEN 7
-#define NBITS_PID 16
-#define NBITS_POS 8
 #define NBITS_SPECIAL 1
+#define NBITS_LEN 7
+#define NBITS_PID 12
+#define NBITS_POS 12
 
 static uint32_t longest_string_size;
 
@@ -81,6 +81,7 @@ class htrie_map {
     class hash_node;
     class MultiTrieNode;
     class iterator;
+    class page;
 
     class anode {
        public:
@@ -921,6 +922,22 @@ class htrie_map {
         }
 
         /*----------------searching in hash_node----------------*/
+        char* clean_useless_prefix(htrie_map<CharT, T>* hm,
+                                   vector<page>& old_page) {
+            for (int i = 0; i != Bucket_num; i++) {
+                for (int j = 0; j != cur_associativity; j++) {
+                    slot* s = get_slot(i, j);
+
+                    if (s->isEmpty()) break;
+
+                    s->set_slot(hm->write_kv_to_page(
+                        hm->get_tail_pointer(s, old_page), s->length,
+                        hm->get_tail_v(s, old_page)));
+                }
+            }
+        }
+
+        /*----------------searching in hash_node----------------*/
 
         std::pair<bool, T> find_kv_in_pages(htrie_map<CharT, T>* hm, slot* s,
                                             const CharT* key,
@@ -1187,7 +1204,7 @@ class htrie_map {
               size_t customized_bucket_count = DEFAULT_Bucket_num,
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
-        : t_root(nullptr), cur_normal_page_id(0), cur_special_page_id(0) {
+        : t_root(nullptr), cur_normal_page_id(0) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
 
@@ -1224,9 +1241,9 @@ class htrie_map {
 
     class slot {
        public:
-        // uint16_t page_id : NBITS_PID;      // 65536 page
         // uint16_t special : NBITS_SPECIAL;  // 1 special
         // uint16_t length : NBITS_LEN;       // 128 length
+        // uint16_t page_id : NBITS_PID;      // 65536 page
         // uint16_t pos : NBITS_POS;          // 256 pos 4-byte-alignment
         uint16_t special;
         uint16_t page_id;
@@ -1264,11 +1281,10 @@ class htrie_map {
 
     class page {
        public:
-        int elem_number;
         int cur_pos;
         char* content;
 
-        page(size_t size_per_page) : elem_number(0), cur_pos(0) {
+        page(size_t size_per_page) : cur_pos(0) {
             content = (char*)malloc(size_per_page);
         }
 
@@ -1282,6 +1298,10 @@ class htrie_map {
 
             cur_pos += keysize * sizeof(CharT) + sizeof(T);
         }
+
+        ~page() {
+            // free(content);
+        }
     };
 
     int cur_normal_page_id;
@@ -1294,6 +1314,10 @@ class htrie_map {
         return normal_pages[s->page_id].content + s->pos;
     }
 
+    inline char* get_tail_pointer(slot* s, vector<page>& specific_page) const {
+        return specific_page[s->page_id].content + s->pos;
+    }
+
     void get_tail_str_v(std::map<std::string, T>& elements, slot* s) {
         char* tail_pointer = get_tail_pointer(s);
         std::string res(tail_pointer, s->length);
@@ -1303,6 +1327,13 @@ class htrie_map {
     T get_tail_v(slot* s) {
         T v;
         std::memcpy(&v, get_tail_pointer(s) + s->length, sizeof(T));
+        return v;
+    }
+
+    T get_tail_v(slot* s, vector<page>& specific_page) {
+        T v;
+        std::memcpy(&v, get_tail_pointer(s, specific_page) + s->length,
+                    sizeof(T));
         return v;
     }
 
@@ -1334,7 +1365,6 @@ class htrie_map {
 
         // write content
         target_page.append_impl(key, keysize, v);
-        target_page.elem_number++;
 
         return ret_slot;
     }
@@ -1360,7 +1390,6 @@ class htrie_map {
 
         // write content
         target_page.append_impl(key, keysize, v);
-        target_page.elem_number++;
 
         return ret_slot;
     }
@@ -1527,11 +1556,13 @@ class htrie_map {
 
     /*---------------external cleaning interface-------------------*/
 
-    anode* shrink_node(anode* node) {
+    anode* shrink_node(anode* node, vector<page>& old_page) {
         if (node->is_trie_node()) {
             trie_node* cur_node = (trie_node*)node;
 
-            if (cur_node->get_only_hash_node_child() != nullptr) {
+            hash_node* hash_node_child = cur_node->get_only_hash_node_child();
+            if (hash_node_child != nullptr) {
+                hash_node_child->clean_useless_prefix(this, old_page);
                 return cur_node;
             }
 
@@ -1594,7 +1625,7 @@ class htrie_map {
             multi_node* target_node = new multi_node(string_keysize);
 
             for (int i = 0; i != traverse_save.size(); i++) {
-                anode* res = shrink_node(traverse_save[i].second);
+                anode* res = shrink_node(traverse_save[i].second, old_page);
                 target_node->childs_[traverse_save[i].first] = res;
             }
             return target_node;
@@ -1608,11 +1639,20 @@ class htrie_map {
     }
 
     void shrink() {
+        // move the old normal_pages to temp vector old_page
+        vector<page> old_page;
+        old_page.swap(normal_pages);
+
+        // init the normal_pages
+        cur_normal_page_id = 0;
+        normal_pages.push_back(page(Max_bytes_per_kv));
+
         cout << "Shrinking\n";
         uint64_t sta = get_time();
-        t_root = shrink_node(t_root);
+        t_root = shrink_node(t_root, old_page);
         uint64_t end = get_time();
         shrink_total_time = end - sta;
+
     }
 
     void deleteMyself() {
