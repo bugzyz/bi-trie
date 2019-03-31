@@ -26,6 +26,8 @@
 #define DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO 4
 #define DEFAULT_Burst_ratio 0.75
 
+#define ALPHABET 256
+
 #define DEFAULT_SPECIAL_Max_bytes_per_kv \
     DEFAULT_Max_bytes_per_kv* DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO
 
@@ -140,10 +142,87 @@ class htrie_map {
         }
     };
 
+    // class child_representation {
+    //     trie_node** childs;
+    //     int number;
+
+    //    public:
+    //     child_representation() : number(0) {
+    //         childs = (trie_node**)malloc(sizeof(trie_node*) * ALPHABET);
+    //         for (int i = 0; i != ALPHABET; i++) {
+    //             childs[i] = nullptr;
+    //         }
+    //     }
+
+    //     trie_node*& operator[](char c) { return childs[(int)c]; }
+
+    //     pair<char, trie_node*> find(char c) {
+    //         return pair<char, trie_node*>(c, childs[(int)c]);
+    //     }
+
+    //     size_t size() { return number; }
+    // };
+
+    class child_representation {
+        class child_node {
+           public:
+            char child_node_char;
+            trie_node* current;
+            child_node* next;
+
+            child_node(char cnc, trie_node* cur)
+                : child_node_char(cnc), current(cur), next(nullptr) {}
+
+            child_node()
+                : child_node_char(0), current(nullptr), next(nullptr) {}
+
+            bool have_next() { return next != nullptr; }
+
+            child_node* next_child() { return next; }
+
+            void add_next_child(char c) {
+                next = new child_node(c, new trie_node(nullptr));
+            }
+        };
+
+        child_node* first_child;
+        int number;
+
+       public:
+        child_representation() : number(0) { first_child = new child_node(); }
+
+        trie_node*& operator[](char c) {
+            child_node* current_child_node;
+            for (current_child_node = first_child;
+                 current_child_node->have_next();
+                 current_child_node = current_child_node->next_child()) {
+                if (current_child_node->child_node_char == c)
+                    return current_child_node->current;
+            }
+
+            current_child_node->add_next_child(c);
+            return (current_child_node->next_child())->current;
+        }
+
+        pair<char, trie_node*> find(char c) {
+            child_node* current_child_node = first_child;
+            do {
+                if (current_child_node->child_node_char == c)
+                    return pair<char, trie_node*>(c,
+                                                  current_child_node->current);
+            } while (((current_child_node = current_child_node->next_child()) !=
+                      nullptr));
+            return pair<char, trie_node*>(c, nullptr);
+        }
+
+        size_t size() { return number; }
+    };
+
     class trie_node : public anode {
        public:
         // store the suffix of hash_node or trie_node
-        std::map<CharT, trie_node*> trie_node_childs;
+        child_representation trie_node_childs;
+        // std::map<CharT, trie_node*> trie_node_childs;
         hash_node* hash_node_child;
 
         // prefix
@@ -216,15 +295,15 @@ class htrie_map {
 
         ~trie_node() {
             std::map<CharT, trie_node*> empty;
-            trie_node_childs.swap(empty);
+            // trie_node_childs.swap(empty);
             if (prefix != nullptr) free(prefix);
         }
 
         // finding target, if target doesn't exist, return nullptr
         trie_node* find_trie_node_child(CharT c) {
             auto found = trie_node_childs.find(c);
-            if (found != trie_node_childs.end()) {
-                trie_node* target = found->second;
+            if (found.second != nullptr) {
+                trie_node* target = found.second;
                 return target;
             } else {
                 return nullptr;
@@ -236,8 +315,8 @@ class htrie_map {
         trie_node* find_trie_node_child(CharT c, const CharT* key,
                                         size_t key_size) {
             auto found = trie_node_childs.find(c);
-            if (found != trie_node_childs.end()) {
-                trie_node* target = found->second;
+            if (found.second != nullptr) {
+                trie_node* target = found.second;
                 return target;
             } else {
                 trie_node* son_trie_node = new trie_node(this);
