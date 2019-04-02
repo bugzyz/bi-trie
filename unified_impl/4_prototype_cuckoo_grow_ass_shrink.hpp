@@ -2064,19 +2064,23 @@ class htrie_map {
         uint64_t end = get_time();
         shrink_total_time += end - sta;
 
+        cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
+        
         cur_normal_page_id = new_normal_page.size() - 1;
         cur_special_page_id = new_special_page.size() - 1;
         new_normal_page.swap(normal_pages);
         new_special_page.swap(special_pages);
 
-        // TODO: it seems that we dont need to deal with the char* in pages
-        // for(int i=0;i!=new_normal_page.size();i++){
-        //     free(new_normal_page[i].content);
-        // }
-        // for(int i=0;i!=new_special_page.size();i++){
-        //     free(new_special_page[i].content);
-        // }
-        cout << "clean res: " << cur_normal_page_id << " " << cur_special_page_id << endl;
+        cout << ") ==>  (" << cur_normal_page_id << " " << cur_special_page_id << ")" << endl;
+
+        // Release the char* in pages
+        for(int i=0;i!=new_normal_page.size();i++){
+            free(new_normal_page[i].content);
+        }
+        for(int i=0;i!=new_special_page.size();i++){
+            free(new_special_page[i].content);
+        }
+
         return;
     }
 
