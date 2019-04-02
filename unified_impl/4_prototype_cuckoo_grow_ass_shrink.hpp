@@ -197,10 +197,25 @@ class htrie_map {
 
     //     inline child_iterator end() { return child_iterator(0, nullptr); }
 
+    //     inline child_iterator begin() {
+    //         if (number != 0) {
+    //             for (int i = 0; i != ALPHABET; i++) {
+    //                 if (childs[i]) return child_iterator((char)i, childs[i]);
+    //             }
+    //         }
+    //         return child_iterator(0, nullptr);
+    //     }
+
     //     inline void get_childs(vector<anode*>& res) {
     //         for (int i = 0; i != ALPHABET; i++) {
     //             if (childs[i]) res.push_back(childs[i]);
     //         }
+    //     }
+
+    //     inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+    //         for (int i = 0; i != ALPHABET; i++)
+    //             if (childs[i])
+    //                 res.push_back(pair<CharT, trie_node*>((char)i, childs[i]));
     //     }
     // };
 
@@ -288,6 +303,13 @@ class htrie_map {
 
         inline size_t size() { return number; }
 
+        inline child_iterator begin() {
+            return first_child != nullptr
+                       ? child_iterator(first_child->child_node_char,
+                                        first_child->current)
+                       : child_iterator(0, nullptr);
+        }
+
         inline child_iterator end() { return child_iterator(0, nullptr); }
 
         inline void get_childs(vector<anode*>& res) {
@@ -296,6 +318,18 @@ class htrie_map {
             while (current_child_node) {
 
                 res.push_back(current_child_node->current);
+
+                current_child_node = current_child_node->next;
+            }
+        }
+
+        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+            child_node* current_child_node = first_child;
+
+            while (current_child_node) {
+                res.push_back(
+                    pair<CharT, trie_node*>(current_child_node->child_node_char,
+                                            current_child_node->current));
 
                 current_child_node = current_child_node->next;
             }
@@ -321,9 +355,19 @@ class htrie_map {
     //         return childs.end();
     //     }
 
+    //     inline typename map<char, trie_node*>::iterator begin() {
+    //         return childs.begin();
+    //     }
+
     //     void get_childs(vector<anode*> &res) {
     //         for (auto it = childs.begin(); it != childs.end(); it++) {
     //             res.push_back(it->second);
+    //         }
+    //     }
+
+    //     inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+    //         for(auto it = childs.begin();it!=childs.end();it++){
+    //             res.push_back(pair<CharT,trie_node*>(it->first, it->second));
     //         }
     //     }
     // };
@@ -1904,11 +1948,7 @@ class htrie_map {
                 cur_node->trie_node_childs.size());
             vector<pair<CharT, trie_node*>> next_layer;
 
-            for (auto it = cur_node->trie_node_childs.begin();
-                 it != cur_node->trie_node_childs.end(); it++) {
-                next_layer.push_back(
-                    pair<CharT, trie_node*>(it->first, it->second));
-            }
+            cur_node->trie_node_childs.get_childs_with_char(next_layer);
 
             bool allow_next_layer = true;
             size_t string_keysize = 0;
