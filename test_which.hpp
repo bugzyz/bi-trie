@@ -8,6 +8,11 @@
 // decide the growing cuckoo hash is rehash first or expand first
 // #define REHASH_BEFORE_EXPAND
 
+// decide which kind of child representation we are using
+// #define MAP_REP
+// #define ARRAY_REP
+#define LIST_REP
+
 // decide whether test yago dataset
 // #define TEST_YAGO
 

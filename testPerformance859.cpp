@@ -54,6 +54,8 @@ int main() {
     ff1 << testing_dataset << ":" << endl;
 
     //------------testing--------------
+    cout << "\n========unordered map result==========\n";
+
     std::string url;
     uint32_t v;
     uint64_t staUm;
@@ -66,25 +68,28 @@ int main() {
     boost::unordered_map<uint32_t, string> m2;
 
     staUm = get_time();
-    uint64_t startUsedMemUm = getLftMem();
 
+    double virt = 0.0;
+    double res = 0.0;
+    myTrie::debuging::clear_process_mem_usage();
     uint32_t count = 0;
     while (f >> url >> v) {
         m1[url] = v;
         m2[v] = url;
         count++;
     }
-    uint64_t endUsedMemUm = getLftMem();
-    endUm = get_time();
-    f.close();
-    cout << "unordered_map use time: usec: \t\t\t" << endUm - staUm
-         << std::endl;
-    ff1 << "unordered_map_time: " << endUm - staUm << " "
-        << "mem used: " << endUsedMemUm - startUsedMemUm << "\n";
+    myTrie::debuging::process_mem_usage("unordered map", virt, res);
 
-    double virt = 0.0;
-    double res = 0.0;
+    endUm = get_time();
+
+    f.close();
+    cout << "unordered_map use time: usec: " << endUm - staUm << std::endl;
+    ff1 << "unordered_map_time: " << endUm - staUm << " "
+        << "mem used: " << res << "\n";
+
     for (auto it = configs.begin(); it != configs.end(); it++) {
+        cout << "\n========htrie_map result==========\n";
+
         // ass is associativity
         size_t ass = it->first;
         size_t bn = it->second;
@@ -95,77 +100,110 @@ int main() {
         myTrie::debuging::clear_process_mem_usage();
 
         staTm = get_time();
-        uint64_t startUsedMemTm = getLftMem();
         while (f1 >> url >> v) {
             hm.insertKV(url, v);
         }
-        endTm = get_time();
-        uint64_t endUsedMemTm = getLftMem();
-        cout << "trie-map_time: " << endTm - staTm << " "
-             << "mem used: " << endUsedMemTm - startUsedMemTm << "\n";
-
-        cout << "==================\n";
-
-        cout << "finish trie_map constructing\n";
-        cout << "constructing time: " << endTm - staTm << endl;
-
-        myTrie::debuging::process_mem_usage(virt, res);
-
-        myTrie::debuging::clear_num();
-
-        hm.shrink();
-        cout << "-shrinking cost time: " << shrink_total_time << endl;
-        cout << "-expand cost time: " << expand_cost_time << endl;
-        cout << "-rehash cost time: " << rehash_cost_time << endl;
-
-        myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
-        myTrie::debuging::print_tree_construct_v2k<char, uint32_t>(hm.v2k);
-        double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
-
         f1.close();
 
+        // cleaning
+        hm.clean_prefix(true);
+
+        // shrinking
+        // hm.shrink();
+
+        endTm = get_time();
+
+        myTrie::debuging::process_mem_usage("htrie_map",virt, res);
+
+
+        /*-----------------insert performance calculating-----------------*/
+        cout << "==================\n";
+        cout << "constructing time: " << endTm - staTm << endl;
+
+        // time consuming printing
+        cout << "-shrinking cost time: " << shrink_total_time << endl;
+        cout << "-cleaning cost time: " << clean_prefix_total_time << endl;
+        cout << "-expand cost time: " << expand_cost_time << endl;
+        cout << "-rehash cost time: " << rehash_cost_time << endl;
+        cout << "==================\n\n";
+
+        // scan trie and print memory used
+        myTrie::debuging::clear_num();
+        myTrie::debuging::scan_tree<char, uint32_t>(hm);
+        double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
+
+        /*-----------------access performance calculating-----------------*/
         int64_t hm_k_total_time = 0;
         int64_t um_k_total_time = 0;
 
         double max_percent_k = 0.0;
         double min_percent_k = 0.0;
 
+        // load key and value into independent vectors
+        vector<string> string_vec;
+        vector<uint32_t> id_vec;
+
+        for(auto it = m1.begin();it!=m1.end();it++){
+            string_vec.push_back(it->first);
+            id_vec.push_back(it->second);
+        }
+
+        std::string url0;
+        std::string url1;
+        std::string url2;
+        std::string url3;
+        std::string url4;
+        std::string url5;
+        std::string url6;
+        std::string url7;
+        std::string url8;
+        std::string url9;
+
         // checking:
-        for (auto it = m1.begin(); it != m1.end(); it++) {
-            std::string url1 = it->first;
-            it++;
-            std::string url2 = it->first;
-            it++;
-            std::string url3 = it->first;
-            it++;
-            std::string url4 = it->first;
-            it++;
-            std::string url5 = it->first;
-            it++;
-            if (it == m1.end()) {
-                break;
-            }
+        for (int i = 0; i < string_vec.size(); i = i + 10) {
+            url0 = string_vec[i++];
+            url1 = string_vec[i++];
+            url2 = string_vec[i++];
+            url3 = string_vec[i++];
+            url4 = string_vec[i++];
+            url5 = string_vec[i++];
+            url6 = string_vec[i++];
+            url7 = string_vec[i++];
+            url8 = string_vec[i++];
+            url9 = string_vec[i++];
 
             uint32_t gotfromhm;
             int64_t hm_get_start = get_time();
+            gotfromhm = hm.searchByKey(url0);
             gotfromhm = hm.searchByKey(url1);
             gotfromhm = hm.searchByKey(url2);
             gotfromhm = hm.searchByKey(url3);
             gotfromhm = hm.searchByKey(url4);
             gotfromhm = hm.searchByKey(url5);
+            gotfromhm = hm.searchByKey(url6);
+            gotfromhm = hm.searchByKey(url7);
+            gotfromhm = hm.searchByKey(url8);
+            gotfromhm = hm.searchByKey(url9);
             int64_t hm_get_end = get_time();
 
             uint32_t gotfromum;
             int64_t um_get_start = get_time();
+            gotfromum = m1[url0];
             gotfromum = m1[url1];
             gotfromum = m1[url2];
             gotfromum = m1[url3];
             gotfromum = m1[url4];
             gotfromum = m1[url5];
+            gotfromum = m1[url6];
+            gotfromum = m1[url7];
+            gotfromum = m1[url8];
+            gotfromum = m1[url9];
             int64_t um_get_end = get_time();
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
+
+            // cout << hm_used_time << " " << um_used_time << endl;
 
             if (um_used_time == 0) {
                 um_used_time = 1;
@@ -175,7 +213,7 @@ int main() {
             um_k_total_time += um_used_time;
 
             double cur_percent_k =
-                (double)hm_used_time / (double)um_used_time - 1.0;
+                (double)hm_used_time / (double)um_used_time;
 
             if (max_percent_k < cur_percent_k) {
                 max_percent_k = cur_percent_k;
@@ -185,7 +223,7 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << hm_k_total_time / count << endl;
+             <<  (double)hm_k_total_time /  (double)count << endl;
 
         // checking:
         int64_t hm_v_total_time = 0;
@@ -193,39 +231,63 @@ int main() {
 
         double max_percent_v = 0.0;
         double min_percent_v = 0.0;
-        for (auto it = m2.begin(); it != m2.end(); it++) {
-            uint32_t v1 = it->first;
-            it++;
-            uint32_t v2 = it->first;
-            it++;
-            uint32_t v3 = it->first;
-            it++;
-            uint32_t v4 = it->first;
-            it++;
-            uint32_t v5 = it->first;
-            it++;
-            if (it == m2.end()) {
-                break;
-            }
 
+        uint32_t v0;
+        uint32_t v1;
+        uint32_t v2;
+        uint32_t v3;
+        uint32_t v4;
+        uint32_t v5;
+        uint32_t v6;
+        uint32_t v7;
+        uint32_t v8;
+        uint32_t v9;
+
+        for (int i = 0; i < id_vec.size(); i = i + 10) {
+            v0 = id_vec[i++];
+            v1 = id_vec[i++];
+            v2 = id_vec[i++];
+            v3 = id_vec[i++];
+            v4 = id_vec[i++];
+            v5 = id_vec[i++];
+            v6 = id_vec[i++];
+            v7 = id_vec[i++];
+            v8 = id_vec[i++];
+            v9 = id_vec[i++];
+
+            std::string gotfromhm;
             int64_t hm_get_start = get_time();
-            std::string gotfromhm = hm.searchByValue(v1);
+            gotfromhm = hm.searchByValue(v0);
+            gotfromhm = hm.searchByValue(v1);
             gotfromhm = hm.searchByValue(v2);
             gotfromhm = hm.searchByValue(v3);
             gotfromhm = hm.searchByValue(v4);
             gotfromhm = hm.searchByValue(v5);
+            gotfromhm = hm.searchByValue(v6);
+            gotfromhm = hm.searchByValue(v7);
+            gotfromhm = hm.searchByValue(v8);
+            gotfromhm = hm.searchByValue(v9);
             int64_t hm_get_end = get_time();
 
+            std::string gotfromum;
             int64_t um_get_start = get_time();
-            std::string gotfromum = m2[v1];
-            gotfromum = m2[v2];
-            gotfromum = m2[v3];
-            gotfromum = m2[v4];
-            gotfromum = m2[v5];
+            gotfromhm = m2[v0];
+            gotfromhm = m2[v1];
+            gotfromhm = m2[v2];
+            gotfromhm = m2[v3];
+            gotfromhm = m2[v4];
+            gotfromhm = m2[v5];
+            gotfromhm = m2[v6];
+            gotfromhm = m2[v7];
+            gotfromhm = m2[v8];
+            gotfromhm = m2[v9];
             int64_t um_get_end = get_time();
+
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
+
+            // cout << hm_used_time << " " << um_used_time << endl;
 
             if (um_used_time == 0) {
                 um_used_time = 1;
@@ -235,7 +297,7 @@ int main() {
             um_v_total_time += um_used_time;
 
             double cur_percent_v =
-                (double)hm_used_time / (double)um_used_time - 1.0;
+                (double)hm_used_time / (double)um_used_time;
 
             if (max_percent_v < cur_percent_v) {
                 max_percent_v = cur_percent_v;
@@ -245,7 +307,7 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << hm_v_total_time / count << endl;
+             << (double)hm_v_total_time /  (double)count << endl;
 
 #ifdef TEST_HAT
         cout << "unified_impl/1_tessil_hat_impl.hpp" << endl;
@@ -297,12 +359,18 @@ int main() {
             << (double)hm_k_total_time / (double)count << ","
             << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << ","
             << max_percent_k * 100.0 << "," << min_percent_k * 100.0;
+        cout << "key_search compared to unorderedmap: "
+             << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << "%"
+             << endl;
 
         // search by value
         ff1 << "," << hm_v_total_time << ","
             << (double)hm_v_total_time / (double)count << ","
             << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << ","
             << max_percent_v * 100.0 << "," << min_percent_v * 100.0 << ",";
+        cout << "value_search compared to unorderedmap: "
+             << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << "%"
+             << endl;
 
         // rehash counter and parent number
         ff1 << (double)rehash_total_num / (double)count << ","
@@ -334,10 +402,10 @@ int main() {
             << (double)myTrie::debuging::byte_used_in_page /
                    (double)myTrie::debuging::byte_pages_have * 100;
         ff1 << "," << myTrie::debuging::byte_pages_have / 1000 / 1000;
-        ff1 << ","
-            << (double)myTrie::debuging::total_page_number /
-                   (double)myTrie::debuging::h_n
-            << endl;
+        // ff1 << ","
+        //     << (double)myTrie::debuging::total_page_number /
+        //            (double)myTrie::debuging::h_n
+        //     << endl;
 
         ff1.flush();
 

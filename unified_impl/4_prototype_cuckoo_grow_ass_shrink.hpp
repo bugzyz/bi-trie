@@ -70,6 +70,7 @@ uint64_t rehash_cost_time = 0;
 uint64_t rehash_total_num = 0;
 
 uint64_t shrink_total_time = 0;
+uint64_t clean_prefix_total_time = 0;
 
 // configuration
 // static size_t Associativity;
@@ -153,72 +154,80 @@ class htrie_map {
         }
     };
 
+#ifdef ARRAY_REP
     /*-----------------array child_representation-----------------*/
-    // class child_representation {
-    //     trie_node** childs;
-    //     int number;
+    class child_representation {
+        trie_node** childs;
+        int number;
 
-    //    public:
-    //     class child_iterator {
-    //        public:
-    //         char first;
-    //         trie_node* second;
+       public:
+        class child_iterator {
+           public:
+            char first;
+            trie_node* second;
 
-    //         child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
+            child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
 
-    //         inline child_iterator* operator->() { return this; }
+            inline child_iterator* operator->() { return this; }
 
-    //         inline bool operator==(child_iterator& right) {
-    //             return second == right.second;
-    //         }
+            inline bool operator==(child_iterator& right) {
+                return second == right.second;
+            }
 
-    //         inline bool operator!=(const child_iterator& right) {
-    //             return second != right.second;
-    //         }
-    //     };
+            inline bool operator!=(const child_iterator& right) {
+                return second != right.second;
+            }
+        };
 
-    //     child_representation() : number(0) {
-    //         childs = (trie_node**)malloc(sizeof(trie_node*) * ALPHABET);
-    //         for (int i = 0; i != ALPHABET; i++) {
-    //             childs[i] = nullptr;
-    //         }
-    //     }
+        child_representation() : number(0) {
+            childs = (trie_node**)malloc(sizeof(trie_node*) * ALPHABET);
+            for (int i = 0; i != ALPHABET; i++) {
+                childs[i] = nullptr;
+            }
+        }
 
-    //     inline trie_node*& operator[](char c) {
-    //         number++;
-    //         return childs[(int)c];
-    //     }
+        inline trie_node*& operator[](char c) {
+            number++;
+            return childs[(int)c];
+        }
 
-    //     inline child_iterator find(char c) {
-    //         return child_iterator(c, childs[(int)c]);
-    //     }
+        inline child_iterator find(char c) {
+            return child_iterator(c, childs[(int)c]);
+        }
 
-    //     inline size_t size() { return number; }
+        inline size_t size() { return number; }
 
-    //     inline child_iterator end() { return child_iterator(0, nullptr); }
+        inline child_iterator end() { return child_iterator(0, nullptr); }
 
-    //     inline child_iterator begin() {
-    //         if (number != 0) {
-    //             for (int i = 0; i != ALPHABET; i++) {
-    //                 if (childs[i]) return child_iterator((char)i, childs[i]);
-    //             }
-    //         }
-    //         return child_iterator(0, nullptr);
-    //     }
+        inline child_iterator begin() {
+            if (number != 0) {
+                for (int i = 0; i != ALPHABET; i++) {
+                    if (childs[i]) return child_iterator((char)i, childs[i]);
+                }
+            }
+            return child_iterator(0, nullptr);
+        }
 
-    //     inline void get_childs(vector<anode*>& res) {
-    //         for (int i = 0; i != ALPHABET; i++) {
-    //             if (childs[i]) res.push_back(childs[i]);
-    //         }
-    //     }
+        inline void get_childs(vector<anode*>& res) {
+            for (int i = 0; i != ALPHABET; i++) {
+                if (childs[i]) res.push_back(childs[i]);
+            }
+        }
 
-    //     inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
-    //         for (int i = 0; i != ALPHABET; i++)
-    //             if (childs[i])
-    //                 res.push_back(pair<CharT, trie_node*>((char)i, childs[i]));
-    //     }
-    // };
+        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+            for (int i = 0; i != ALPHABET; i++)
+                if (childs[i])
+                    res.push_back(pair<CharT, trie_node*>((char)i, childs[i]));
+        }
 
+        size_t get_childs_representation_mem() {
+            return sizeof(child_representation) + ALPHABET * sizeof(trie_node*);
+        }
+    };
+#endif
+
+
+#ifdef LIST_REP
     /*-----------------list child_representation-----------------*/
     class child_representation {
         class child_node {
@@ -334,43 +343,50 @@ class htrie_map {
                 current_child_node = current_child_node->next;
             }
         }
+
+        size_t get_childs_representation_mem() {
+            return sizeof(child_representation) + number * sizeof(child_node);
+        }
     };
+#endif
 
+#ifdef MAP_REP
     /*-----------------map child_representation-----------------*/
-    // class child_representation {
+    class child_representation {
 
-    //    public:
-    //     map<char, trie_node*> childs;
-    //     child_representation() {}
+       public:
+        map<char, trie_node*> childs;
+        child_representation() {}
 
-    //     inline trie_node*& operator[](char c) { return childs[(int)c]; }
+        inline trie_node*& operator[](char c) { return childs[(int)c]; }
 
-    //     inline typename map<char, trie_node*>::iterator find(char c) {
-    //         return childs.find(c);
-    //     }
+        inline typename map<char, trie_node*>::iterator find(char c) {
+            return childs.find(c);
+        }
 
-    //     inline size_t size() { return childs.size(); }
+        inline size_t size() { return childs.size(); }
 
-    //     inline typename map<char, trie_node*>::iterator end() {
-    //         return childs.end();
-    //     }
+        inline typename map<char, trie_node*>::iterator end() {
+            return childs.end();
+        }
 
-    //     inline typename map<char, trie_node*>::iterator begin() {
-    //         return childs.begin();
-    //     }
+        inline typename map<char, trie_node*>::iterator begin() {
+            return childs.begin();
+        }
 
-    //     void get_childs(vector<anode*> &res) {
-    //         for (auto it = childs.begin(); it != childs.end(); it++) {
-    //             res.push_back(it->second);
-    //         }
-    //     }
+        void get_childs(vector<anode*> &res) {
+            for (auto it = childs.begin(); it != childs.end(); it++) {
+                res.push_back(it->second);
+            }
+        }
 
-    //     inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
-    //         for(auto it = childs.begin();it!=childs.end();it++){
-    //             res.push_back(pair<CharT,trie_node*>(it->first, it->second));
-    //         }
-    //     }
-    // };
+        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+            for(auto it = childs.begin();it!=childs.end();it++){
+                res.push_back(pair<CharT,trie_node*>(it->first, it->second));
+            }
+        }
+    };
+#endif
 
     class trie_node : public anode {
        public:
@@ -1482,6 +1498,16 @@ class htrie_map {
 
 #endif
 
+#ifdef MAP_REP
+        cout << "MAP REPRESENTATION\n";
+#endif
+#ifdef ARRAY_REP
+        cout << "ARRAY REPRESENTATION\n";
+#endif
+#ifdef LIST_REP
+        cout << "LIST REPRESENTATION\n";
+#endif
+
         Associativity = customized_associativity;
         Bucket_num = customized_bucket_count;
         Max_bytes_per_kv = customized_byte_per_kv;
@@ -2062,7 +2088,7 @@ class htrie_map {
         traverse_node_for_useless_prefix_cleaning(t_root, new_normal_page,
                                                   new_special_page);
         uint64_t end = get_time();
-        shrink_total_time += end - sta;
+        clean_prefix_total_time += end - sta;
 
         cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
         

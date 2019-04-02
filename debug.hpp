@@ -56,7 +56,7 @@ void clear_process_mem_usage() {
     last_time_resident_set = now_resident_set;
 }
 
-void process_mem_usage(double& vm_usage, double& resident_set) {
+void process_mem_usage(std::string part_name, double& vm_usage, double& resident_set) {
     using std::ifstream;
     using std::ios_base;
     using std::string;
@@ -91,7 +91,7 @@ void process_mem_usage(double& vm_usage, double& resident_set) {
                         1024;  // in case x86-64 is configured to use 2MB pages
     vm_usage = (vsize - last_time_vm_usage) / 1024.0;
     resident_set = rss * page_size_kb - last_time_resident_set;
-    std::cout << "cur proc vm_usage: " << vm_usage << " res: " << resident_set
+    std::cout << part_name << " : vm_usage: " << vm_usage << " res: " << resident_set
               << std::endl;
 }
 }  // namespace debuging
@@ -110,7 +110,7 @@ uint64_t trie_node_mem;
 uint64_t multi_node_mem;
 uint64_t v2k_mem;
 
-uint64_t child_first_char_mem;
+uint64_t child_representation_mem;
 
 size_t hashnode_max_load = Max_slot_num / 2;
 size_t hashnode_min_load = Max_slot_num / 2;
@@ -123,24 +123,22 @@ size_t myCount = 0;
 
 size_t byte_used_in_page = 0;
 size_t byte_pages_have = 0;
-size_t total_page_number = 0;
+size_t page_metadata_mem = 0;
+size_t total_normal_page_number = 0;
+size_t total_special_page_number = 0;
 
 size_t prefix_extra_mem = 0;
 
 size_t hashnode_keymetas_mem = 0;
 
+/*
+traverse for
+    Memory: trie_node_mem, hash_node_mem, bucket_mem, hashnode_keymetas_mem, prefix_extra_mem
+    Number: hashnode_total_slot_num, hashnode_total_element, total_pass_trie_node_num
+    t_n, h_n
+ */
 template <typename CharT, typename T>
-void print_tree_construct_v2k(
-    map<T, class myTrie::htrie_map<CharT, T>::SearchPoint>& v2k) {
-    size_t counter_sz = v2k.size();
-    size_t entry_sz =
-        sizeof(T) + sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint);
-
-    v2k_mem = counter_sz * entry_sz;
-}
-
-template <typename CharT, typename T>
-void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
+void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
                           size_t depth = 0) {
     using my = myTrie::htrie_map<CharT, T>;
     if (root == nullptr) {
@@ -153,8 +151,9 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
         class my::hash_node* cur_hash_node = (class my::hash_node*)root;
         hash_node_mem += sizeof(cur_hash_node);
 
-// bucket mem cost
+/*---------------------- bucket mem cost ----------------------*/
 #ifndef TEST_HAT
+
 #ifdef TEST_GROW_CUCKOOHASH_BUC
         uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
                               (cur_hash_node->cur_bucket) * Associativity;
@@ -162,7 +161,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 
 #endif
 #ifdef TEST_GROW_CUCKOOHASH_ASS
-        uint32_t bucket_mem = sizeof(class my::hash_node::slot) *
+        uint32_t bucket_mem = sizeof(class my::slot) *
                               (cur_hash_node->cur_associativity) * Bucket_num;
         hashnode_total_slot_num +=
             (cur_hash_node->cur_associativity) * Bucket_num;
@@ -176,26 +175,6 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
 #endif
         // add the bucket mem to hash_node_mem
         hash_node_mem += bucket_mem;
-
-        // page mem cost
-        size_t pages_cost = Max_bytes_per_kv * cur_hash_node->pages.size();
-
-        size_t byte_used_in_page_in_node = 0;
-        size_t byte_pages_have_in_node = 0;
-
-        for (int i = 0; i != cur_hash_node->pages.size(); i++) {
-            size_t page_used = (cur_hash_node->pages)[i].second;
-            size_t page_have = Max_bytes_per_kv;
-            if (page_used > Max_bytes_per_kv) {
-                page_have = page_used;
-            }
-            byte_pages_have += page_have;
-            byte_used_in_page += page_used;
-
-            total_page_number++;
-        }
-
-        hash_node_mem += pages_cost;
 #else
         // add the bucket mem to hash_node_mem
         std::vector<class my::hash_node::array_bucket>& buckets =
@@ -242,23 +221,28 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             trie_node_mem += cur_trie_node->prefix_len;
         }
 
-        std::map<CharT, class myTrie::htrie_map<CharT, T>::trie_node*> childs =
-            cur_trie_node->trie_node_childs;
+        vector<pair<CharT, class myTrie::htrie_map<CharT, T>::trie_node*>>
+            childs;
+
+        cur_trie_node->trie_node_childs.get_childs_with_char(childs);
 
         prefix_extra_mem +=
             sizeof(CharT*) + sizeof(uint16_t) + cur_trie_node->prefix_len;
 
         if (childs.size() == 0) {
-            print_tree_construct<CharT, T>(cur_trie_node->get_hash_node_child(),
+            traverse_trie<CharT, T>(cur_trie_node->get_hash_node_child(),
                                            depth + 1);
         } else {
-            size_t entry_size =
-                sizeof(CharT) +
-                sizeof(class myTrie::htrie_map<CharT, T>::trie_node*);
+            
             for (auto it = childs.begin(); it != childs.end(); it++) {
-                print_tree_construct<CharT, T>(it->second, depth + 1);
+                traverse_trie<CharT, T>(it->second, depth + 1);
             }
         }
+
+        size_t cur_child_representation_mem =
+            cur_trie_node->trie_node_childs.get_childs_representation_mem();
+        child_representation_mem += cur_child_representation_mem;
+        trie_node_mem += cur_child_representation_mem;
 
     } else {
         if (root->is_multi_node()) {
@@ -270,7 +254,7 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
             std::map<string, class myTrie::htrie_map<CharT, T>::anode*> childs =
                 cur_multi_node->childs_;
             for (auto it = childs.begin(); it != childs.end(); it++) {
-                print_tree_construct<CharT, T>(it->second, depth + 1);
+                traverse_trie<CharT, T>(it->second, depth + 1);
             }
             return;
         }
@@ -280,6 +264,43 @@ void print_tree_construct(class myTrie::htrie_map<CharT, T>::anode* root,
     return;
 }
 
+
+template <typename CharT, typename T>
+void scan_tree(class myTrie::htrie_map<CharT, T> &hm){
+    // traverse trie to get memory,number information
+    traverse_trie<CharT, T>(hm.t_root);
+
+    // scan normal
+    for (int i = 0; i != hm.normal_pages.size(); i++) {
+        size_t page_used = hm.normal_pages[i].cur_pos;
+        size_t page_have = Max_bytes_per_kv;
+        
+        byte_pages_have += page_have;
+        byte_used_in_page += page_used;
+
+        total_normal_page_number++;
+        page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
+    }
+
+    // scan special
+    for (int i = 0; i != hm.special_pages.size(); i++) {
+        size_t page_used = hm.special_pages[i].cur_pos;
+        size_t page_have = DEFAULT_SPECIAL_Max_bytes_per_kv;
+        
+        byte_pages_have += page_have;
+        byte_used_in_page += page_used;
+
+        total_special_page_number++;
+    }
+
+    // value to searchPoint scanning
+    size_t counter_sz = hm.v2k.size();
+    size_t entry_sz =
+        sizeof(T) + sizeof(class myTrie::htrie_map<CharT, T>::SearchPoint);
+    v2k_mem = counter_sz * entry_sz;
+
+}
+
 void clear_num() {
     t_n = 0;
     h_n = 0;
@@ -287,7 +308,8 @@ void clear_num() {
     trie_node_mem = 0;
     multi_node_mem = 0;
     v2k_mem = 0;
-    child_first_char_mem = 0;
+
+    child_representation_mem = 0;
 
     hashnode_total_element = 0;
 
@@ -299,7 +321,9 @@ void clear_num() {
 
     byte_used_in_page = 0;
     byte_pages_have = 0;
-    total_page_number = 0;
+    page_metadata_mem = 0;
+    total_normal_page_number = 0;
+    total_special_page_number = 0;
 
     prefix_extra_mem = 0;
     hashnode_keymetas_mem = 0;
@@ -308,6 +332,7 @@ void clear_num() {
 
 template <typename CharT, typename T>
 double print_res() {
+    cout << "---------debug result printing-------------" << endl;
 #ifdef TEST_HAT
     cout << "unified_impl/1_tessil_hat_impl.hpp" << endl;
 #endif
@@ -329,40 +354,37 @@ double print_res() {
     cout << "trie_node_mem: " << trie_node_mem
          << " hash_node_mem: " << hash_node_mem
          << " multi_node_mem: " << multi_node_mem
-         << " child_first_char_mem: " << child_first_char_mem
-         << " v2k_mem: " << v2k_mem << std::endl;
-    cout << "page load:"
+         << " v2k_mem: " << v2k_mem 
+         << " byte_pages_have: " << byte_pages_have << std::endl;
+    cout << "page load: "
          << (double)byte_used_in_page / (double)byte_pages_have * 100 << "%"
-         << endl;
-    cout << "average page number:" << (double)total_page_number / (double)h_n
          << endl;
 
     using my = typename myTrie::htrie_map<CharT, T>;
 
     cout << "total: ,"
-         << (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
-             child_first_char_mem) /
-                1024 / 1024
+         << (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem) / 1024 /
+                1024
          << ", mb" << std::endl;
     double ret_v;
-    ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem +
-             child_first_char_mem) /
-            1024 / 1024;
+    ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem) / 1024 /
+            1024;
     cout << "prefix_extra_mem: " << prefix_extra_mem << endl;
 
-    cout << "-----for breakdown-----" << endl;
+    cout << "\n-----BREAKDOWN-----" << endl;
     cout << "byte_pages_have: " << byte_pages_have << endl;
     cout << "hashnode_keymetas_mem: " << hashnode_keymetas_mem << endl;
+    cout << "child_representation_mem: " << child_representation_mem << endl;
     return ret_v;
 }
 }  // namespace debuging
 }  // namespace myTrie
 
-#include <sys/sysinfo.h>
-uint64_t getLftMem() {
-    struct sysinfo inf;
-    sysinfo(&inf);
+// #include <sys/sysinfo.h>
+// uint64_t getLftMem() {
+//     struct sysinfo inf;
+//     sysinfo(&inf);
 
-    return inf.mem_unit *
-           (inf.totalram + inf.totalswap - inf.freeram - inf.freeswap);
-}
+//     return inf.mem_unit *
+//            (inf.totalram + inf.totalswap - inf.freeram - inf.freeswap);
+// }
