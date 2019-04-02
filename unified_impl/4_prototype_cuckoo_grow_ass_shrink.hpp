@@ -31,15 +31,26 @@
 #define DEFAULT_SPECIAL_Max_bytes_per_kv \
     DEFAULT_Max_bytes_per_kv* DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO
 
+// #define NBITS_SPECIAL 1
+// #define NBITS_LEN 7   // 128 length
+// #define NBITS_POS 12  // 4096(1 align) pos
+// #define NBITS_PID 12  // 4096 page
+
+// #define NBITS_SPECIAL_S 1
+// #define NBITS_LEN_S 13  // 8192 length
+// #define NBITS_POS_S 9   // 512(32 align) pos
+// #define NBITS_PID_S 9   // 512 page
+
 #define NBITS_SPECIAL 1
 #define NBITS_LEN 7   // 128 length
-#define NBITS_POS 12  // 4096(1 align) pos
-#define NBITS_PID 12  // 4096 page
+#define NBITS_POS 28  // 268435456(1 align) pos
+#define NBITS_PID 28  // 268435456 page
 
 #define NBITS_SPECIAL_S 1
 #define NBITS_LEN_S 13  // 8192 length
-#define NBITS_POS_S 9   // 512(32 align) pos
-#define NBITS_PID_S 9   // 512 page
+#define NBITS_POS_S 25   // 33554432(32 align) pos
+#define NBITS_PID_S 25   // 33554432 page
+
 
 #define DEFAULT_SPECIAL_ALIGNMENT \
     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
@@ -142,11 +153,30 @@ class htrie_map {
         }
     };
 
+    /*-----------------array child_representation-----------------*/
     // class child_representation {
     //     trie_node** childs;
     //     int number;
 
     //    public:
+    //     class child_iterator {
+    //        public:
+    //         char first;
+    //         trie_node* second;
+
+    //         child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
+
+    //         inline child_iterator* operator->() { return this; }
+
+    //         inline bool operator==(child_iterator& right) {
+    //             return second == right.second;
+    //         }
+
+    //         inline bool operator!=(const child_iterator& right) {
+    //             return second != right.second;
+    //         }
+    //     };
+
     //     child_representation() : number(0) {
     //         childs = (trie_node**)malloc(sizeof(trie_node*) * ALPHABET);
     //         for (int i = 0; i != ALPHABET; i++) {
@@ -154,15 +184,27 @@ class htrie_map {
     //         }
     //     }
 
-    //     trie_node*& operator[](char c) { return childs[(int)c]; }
-
-    //     pair<char, trie_node*> find(char c) {
-    //         return pair<char, trie_node*>(c, childs[(int)c]);
+    //     inline trie_node*& operator[](char c) {
+    //         number++;
+    //         return childs[(int)c];
     //     }
 
-    //     size_t size() { return number; }
+    //     inline child_iterator find(char c) {
+    //         return child_iterator(c, childs[(int)c]);
+    //     }
+
+    //     inline size_t size() { return number; }
+
+    //     inline child_iterator end() { return child_iterator(0, nullptr); }
+
+    //     inline void get_childs(vector<anode*>& res) {
+    //         for (int i = 0; i != ALPHABET; i++) {
+    //             if (childs[i]) res.push_back(childs[i]);
+    //         }
+    //     }
     // };
 
+    /*-----------------list child_representation-----------------*/
     class child_representation {
         class child_node {
            public:
@@ -176,12 +218,30 @@ class htrie_map {
             child_node()
                 : child_node_char(0), current(nullptr), next(nullptr) {}
 
-            bool have_next() { return next != nullptr; }
+            inline bool have_next() { return next != nullptr; }
 
-            child_node* next_child() { return next; }
+            inline child_node* next_child() { return next; }
 
-            void add_next_child(char c) {
+            inline void add_next_child(char c) {
                 next = new child_node(c, new trie_node(nullptr));
+            }
+        };
+
+        class child_iterator {
+           public:
+            char first;
+            trie_node* second;
+
+            child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
+
+            inline child_iterator* operator->() { return this; }
+
+            inline bool operator==(child_iterator& right) {
+                return second == right.second;
+            }
+
+            inline bool operator!=(const child_iterator& right) {
+                return second != right.second;
             }
         };
 
@@ -189,34 +249,84 @@ class htrie_map {
         int number;
 
        public:
-        child_representation() : number(0) { first_child = new child_node(); }
+        child_representation() : number(0), first_child(nullptr) {}
 
-        trie_node*& operator[](char c) {
-            child_node* current_child_node;
-            for (current_child_node = first_child;
-                 current_child_node->have_next();
-                 current_child_node = current_child_node->next_child()) {
+        inline trie_node*& operator[](char c) {
+            //find the ok node
+            child_node* current_child_node = first_child;
+            child_node* last_child_node = nullptr;
+
+            while (current_child_node) {
                 if (current_child_node->child_node_char == c)
                     return current_child_node->current;
+
+                last_child_node = current_child_node;
+                current_child_node = current_child_node->next;
             }
 
-            current_child_node->add_next_child(c);
-            return (current_child_node->next_child())->current;
+            if (first_child == nullptr) {
+                first_child = new child_node(c, nullptr);
+
+                number++;
+                return first_child->current;
+            }
+
+            last_child_node->add_next_child(c);
+            number++;
+            return (last_child_node->next_child())->current;
         }
 
-        pair<char, trie_node*> find(char c) {
+        inline child_iterator find(char c) {
             child_node* current_child_node = first_child;
             do {
                 if (current_child_node->child_node_char == c)
-                    return pair<char, trie_node*>(c,
-                                                  current_child_node->current);
+                    return child_iterator(c, current_child_node->current);
             } while (((current_child_node = current_child_node->next_child()) !=
                       nullptr));
-            return pair<char, trie_node*>(c, nullptr);
+            return child_iterator(c, nullptr);
         }
 
-        size_t size() { return number; }
+        inline size_t size() { return number; }
+
+        inline child_iterator end() { return child_iterator(0, nullptr); }
+
+        inline void get_childs(vector<anode*>& res) {
+            child_node* current_child_node = first_child;
+
+            while (current_child_node) {
+
+                res.push_back(current_child_node->current);
+
+                current_child_node = current_child_node->next;
+            }
+        }
     };
+
+    /*-----------------map child_representation-----------------*/
+    // class child_representation {
+
+    //    public:
+    //     map<char, trie_node*> childs;
+    //     child_representation() {}
+
+    //     inline trie_node*& operator[](char c) { return childs[(int)c]; }
+
+    //     inline typename map<char, trie_node*>::iterator find(char c) {
+    //         return childs.find(c);
+    //     }
+
+    //     inline size_t size() { return childs.size(); }
+
+    //     inline typename map<char, trie_node*>::iterator end() {
+    //         return childs.end();
+    //     }
+
+    //     void get_childs(vector<anode*> &res) {
+    //         for (auto it = childs.begin(); it != childs.end(); it++) {
+    //             res.push_back(it->second);
+    //         }
+    //     }
+    // };
 
     class trie_node : public anode {
        public:
@@ -254,6 +364,16 @@ class htrie_map {
             have_value = true;
             value = v;
             hm->set_v2k(v, this, -1);
+        }
+
+        /*-------*/
+        void get_childs_vector(vector<anode*> &res) {
+            //get all trie_node childs
+            trie_node_childs.get_childs(res);
+            
+            //if no trie_node childs, it must have a hash_node child
+            if (res.size()==0)
+                res.push_back(hash_node_child);
         }
 
         /*-------------------prefix relative-------------------*/
@@ -302,8 +422,8 @@ class htrie_map {
         // finding target, if target doesn't exist, return nullptr
         trie_node* find_trie_node_child(CharT c) {
             auto found = trie_node_childs.find(c);
-            if (found.second != nullptr) {
-                trie_node* target = found.second;
+            if (found != trie_node_childs.end()) {
+                trie_node* target = found->second;
                 return target;
             } else {
                 return nullptr;
@@ -315,8 +435,8 @@ class htrie_map {
         trie_node* find_trie_node_child(CharT c, const CharT* key,
                                         size_t key_size) {
             auto found = trie_node_childs.find(c);
-            if (found.second != nullptr) {
-                trie_node* target = found.second;
+            if (found != trie_node_childs.end()) {
+                trie_node* target = found->second;
                 return target;
             } else {
                 trie_node* son_trie_node = new trie_node(this);
@@ -1016,17 +1136,26 @@ class htrie_map {
         }
 
         /*----------------searching in hash_node----------------*/
-        char* clean_useless_prefix(htrie_map<CharT, T>* hm,
-                                   vector<page>& old_page) {
+        void move_suffix_to_new_page(htrie_map<CharT, T>* hm,
+                                  vector<page>& new_normal_page,
+                                  vector<page>& new_special_page) {
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
                     slot* s = get_slot(i, j);
 
                     if (s->isEmpty()) break;
 
-                    s->set_slot(hm->write_kv_to_page(
-                        hm->get_tail_pointer(s, old_page), s->get_length(),
-                        hm->get_tail_v(s, old_page)));
+                    if (s->isSpecial())
+                        s->set_slot(hm->write_kv_to_page(
+                            hm->get_tail_pointer(s), s->get_length(),
+                            hm->get_tail_v(s), new_special_page));
+                    else
+                        s->set_slot(hm->write_kv_to_page(
+                            hm->get_tail_pointer(s), s->get_length(),
+                            hm->get_tail_v(s), new_normal_page));
+
+                    // update first slot
+                    first_slot.set_slot(s);
                 }
             }
         }
@@ -1334,26 +1463,26 @@ class htrie_map {
 
     class slot {
        public:
-        uint32_t encode;
+        uint64_t encode;
 
         slot() : encode(0) {}
 
         // encode slot as | special | length | position | page_id |
-        uint32_t encode_slot(bool spe, size_t len, size_t po, size_t pd) {
+        uint64_t encode_slot(bool spe, uint64_t len, uint64_t po, uint64_t pd) {
             encode = pd;
             if (spe) {
                 assert(len < 1 << NBITS_LEN_S && po < 1 << NBITS_POS_S &&
                        pd < 1 << NBITS_PID_S);
                 encode += ((po << NBITS_PID_S) / (DEFAULT_SPECIAL_ALIGNMENT));
                 encode += len << (NBITS_PID_S + NBITS_POS_S);
-                encode += spe << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
+                encode += ((uint64_t)1) << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
             } else {
                 assert(len < 1 << NBITS_LEN && po < 1 << NBITS_POS &&
                        pd < 1 << NBITS_PID);
                 // encode into a 64bit data
                 encode += po << NBITS_PID;
                 encode += len << (NBITS_PID + NBITS_POS);
-                encode += spe << (NBITS_PID + NBITS_LEN + NBITS_POS);
+                encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
             }
 
             return encode;
@@ -1533,6 +1662,70 @@ class htrie_map {
         return ret_slot;
     }
 
+    // TODO:REMOVE!!!
+    /*------------for clean_prefix()------------------*/
+    inline slot write_kv_to_page(const CharT* key, size_t keysize, T v,
+                                 vector<page>& specific_page) {
+        return keysize < (1 << NBITS_LEN)
+                   ? write_kv_to_normal_page(key, keysize, v, specific_page)
+                   : write_kv_to_special_page(key, keysize, v, specific_page);
+    }
+
+    // return: page_id, pos
+    slot write_kv_to_special_page(const CharT* key, size_t keysize, T v,
+                                 vector<page>& specific_page) {
+        // allocate space
+        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+
+        size_t cur_page_id = specific_page.size() - 1;
+
+        if (specific_page[cur_page_id].cur_pos + need_size > Max_bytes_per_kv) {
+            page new_page = page(Max_bytes_per_kv * 4);
+            cur_page_id++;
+            specific_page.push_back(new_page);
+        }
+
+        // get page being written
+        page& target_page = specific_page[cur_page_id];
+
+        // record position before updating and status modify
+        slot ret_slot =
+            make_slot(true, keysize, target_page.cur_pos, cur_page_id);
+
+        // write content
+        target_page.append_impl(key, keysize, v, DEFAULT_SPECIAL_ALIGNMENT);
+
+        return ret_slot;
+    }
+
+    // return: page_id, pos
+    slot write_kv_to_normal_page(const CharT* key, size_t keysize, T v,
+                                 vector<page>& specific_page) {
+        // allocate space
+        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+
+        size_t cur_page_id = specific_page.size() - 1;
+
+        if (specific_page[cur_page_id].cur_pos + need_size >
+            Max_bytes_per_kv) {
+            page new_page = page(Max_bytes_per_kv);
+            cur_page_id++;
+            specific_page.push_back(new_page);
+        }
+
+        // get page being written
+        page& target_page = specific_page[cur_page_id];
+
+        // record position before updating and status modify
+        slot ret_slot =
+            slot(false, keysize, target_page.cur_pos, specific_page.size() - 1);
+
+        // write content
+        target_page.append_impl(key, keysize, v);
+
+        return ret_slot;
+    }
+
     class iterator {
        public:
         bool found;
@@ -1568,7 +1761,9 @@ class htrie_map {
     };
 
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
-                                              T v, bool findMode) {
+                                              T v, bool findMode, bool clean_on = true) {
+        if (clean_on && !findMode) clean_prefix();
+
         // update longest_string_size
         longest_string_size =
             longest_string_size > key_size ? longest_string_size : key_size;
@@ -1646,7 +1841,7 @@ class htrie_map {
 
                             delete hnode_burst_needed;
                             return access_kv_in_htrie_map(key, key_size, v,
-                                                          false);
+                                                          false, false);
                         }
                         return res;
                     }
@@ -1694,14 +1889,14 @@ class htrie_map {
     }
 
     /*---------------external cleaning interface-------------------*/
-
-    anode* shrink_node(anode* node, vector<page>& old_page) {
+    /*--------------------global shrink node functions--------------------*/
+    // TODO: FIX ME!
+    anode* shrink_node(anode* node) {
         if (node->is_trie_node()) {
             trie_node* cur_node = (trie_node*)node;
 
             hash_node* hash_node_child = cur_node->get_only_hash_node_child();
             if (hash_node_child != nullptr) {
-                hash_node_child->clean_useless_prefix(this, old_page);
                 return cur_node;
             }
 
@@ -1764,7 +1959,7 @@ class htrie_map {
             multi_node* target_node = new multi_node(string_keysize);
 
             for (int i = 0; i != traverse_save.size(); i++) {
-                anode* res = shrink_node(traverse_save[i].second, old_page);
+                anode* res = shrink_node(traverse_save[i].second);
                 target_node->childs_[traverse_save[i].first] = res;
             }
             return target_node;
@@ -1778,19 +1973,71 @@ class htrie_map {
     }
 
     void shrink() {
-        // move the old normal_pages to temp vector old_page
-        vector<page> old_page;
-        old_page.swap(normal_pages);
-
-        // init the normal_pages
-        cur_normal_page_id = 0;
-        normal_pages.push_back(page(Max_bytes_per_kv));
-
         cout << "Shrinking\n";
         uint64_t sta = get_time();
-        t_root = shrink_node(t_root, old_page);
+        t_root = shrink_node(t_root);
         uint64_t end = get_time();
         shrink_total_time = end - sta;
+    }
+
+    /*--------------------global clean prefix functions--------------------*/
+    void traverse_node_for_useless_prefix_cleaning(
+        anode* node, vector<page>& new_normal_page,
+        vector<page>& new_special_page) {
+        if (node->is_trie_node()) {
+            vector<anode*> child_nodes;
+            ((trie_node*)node)->get_childs_vector(child_nodes);
+            for (int i = 0; i != child_nodes.size(); i++) {
+                traverse_node_for_useless_prefix_cleaning(
+                    child_nodes[i], new_normal_page, new_special_page);
+            }
+        } else if (node->is_hash_node()) {
+            ((hash_node*)(node))
+                ->move_suffix_to_new_page(this, new_normal_page,
+                                          new_special_page);
+        } else {
+            cout << "program are in a unexpected branch\n";
+            assert(false);
+            exit(0);
+        }
+    }
+
+    void clean_prefix(bool force_clean = false) {
+        if (!force_clean)
+            if ((!(cur_normal_page_id == ((1 << NBITS_PID) - 1) ||
+                   cur_special_page_id == ((1 << NBITS_PID_S) - 1))) ||
+                force_clean)
+                return;
+
+        // move the old pages to temp vector old_page
+        vector<page> new_normal_page;
+        vector<page> new_special_page;
+
+        // init the old pages
+        new_normal_page.push_back(page(Max_bytes_per_kv));
+        new_special_page.push_back(page(DEFAULT_SPECIAL_Max_bytes_per_kv));
+
+        cout << "cleaning\n";
+        uint64_t sta = get_time();
+        traverse_node_for_useless_prefix_cleaning(t_root, new_normal_page,
+                                                  new_special_page);
+        uint64_t end = get_time();
+        shrink_total_time += end - sta;
+
+        cur_normal_page_id = new_normal_page.size() - 1;
+        cur_special_page_id = new_special_page.size() - 1;
+        new_normal_page.swap(normal_pages);
+        new_special_page.swap(special_pages);
+
+        // TODO: it seems that we dont need to deal with the char* in pages
+        // for(int i=0;i!=new_normal_page.size();i++){
+        //     free(new_normal_page[i].content);
+        // }
+        // for(int i=0;i!=new_special_page.size();i++){
+        //     free(new_special_page[i].content);
+        // }
+        cout << "clean res: " << cur_normal_page_id << " " << cur_special_page_id << endl;
+        return;
     }
 
     void deleteMyself() {
