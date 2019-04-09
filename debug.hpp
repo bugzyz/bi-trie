@@ -224,7 +224,7 @@ void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
         vector<pair<CharT, class myTrie::htrie_map<CharT, T>::trie_node*>>
             childs;
 
-        cur_trie_node->trie_node_childs.get_childs_with_char(childs);
+         cur_trie_node->trie_node_childs.get_childs_with_char(childs);
 
         prefix_extra_mem +=
             sizeof(CharT*) + sizeof(uint16_t) + cur_trie_node->prefix_len;
@@ -239,10 +239,10 @@ void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
             }
         }
 
-        size_t cur_child_representation_mem =
-            cur_trie_node->trie_node_childs.get_childs_representation_mem();
-        child_representation_mem += cur_child_representation_mem;
-        trie_node_mem += cur_child_representation_mem;
+         size_t cur_child_representation_mem =
+             cur_trie_node->trie_node_childs.get_childs_representation_mem();
+         child_representation_mem += cur_child_representation_mem;
+         trie_node_mem += cur_child_representation_mem;
 
     } else {
         if (root->is_multi_node()) {
@@ -291,6 +291,7 @@ void scan_tree(class myTrie::htrie_map<CharT, T> &hm){
         byte_used_in_page += page_used;
 
         total_special_page_number++;
+        page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
     }
 
     // value to searchPoint scanning
@@ -370,11 +371,17 @@ double print_res() {
     ret_v = (hash_node_mem + trie_node_mem + multi_node_mem + v2k_mem) / 1024 /
             1024;
     cout << "prefix_extra_mem: " << prefix_extra_mem << endl;
+    cout << "Kmetas avg load: "
+         << (double)hashnode_total_element / (double)hashnode_total_slot_num *
+                100
+         << "%" << endl;
 
     cout << "\n-----BREAKDOWN-----" << endl;
     cout << "byte_pages_have: " << byte_pages_have << endl;
     cout << "hashnode_keymetas_mem: " << hashnode_keymetas_mem << endl;
     cout << "child_representation_mem: " << child_representation_mem << endl;
+    cout << "page_metadata_mem: " << page_metadata_mem << endl;
+    
     return ret_v;
 }
 }  // namespace debuging
