@@ -437,6 +437,7 @@ class htrie_map {
             have_value = true;
             value = v;
             hm->set_v2k(v, this, -1);
+            return pair<bool,T>(true, v);
         }
 
         /*-------*/
