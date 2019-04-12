@@ -52,8 +52,9 @@
 #define NBITS_PID_S 25   // 33554432 page
 
 
-#define DEFAULT_SPECIAL_ALIGNMENT \
-    DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
+// #define DEFAULT_SPECIAL_ALIGNMENT \
+//     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
+#define DEFAULT_SPECIAL_ALIGNMENT 32
 
 static uint32_t longest_string_size;
 
@@ -347,6 +348,18 @@ class htrie_map {
         size_t get_childs_representation_mem() {
             return sizeof(child_representation) + number * sizeof(child_node);
         }
+
+        ~child_representation(){
+            child_node* current_child_node = first_child;
+            child_node* temp_child_node = nullptr;
+
+            while (current_child_node) {
+                temp_child_node = current_child_node;
+                current_child_node = current_child_node->next;
+                free(temp_child_node);
+                cout << "freeing child_representation!" << endl;
+            }
+        }
     };
 #endif
 
@@ -447,9 +460,10 @@ class htrie_map {
         }
 
         void set_prefix(const CharT* key, size_t key_size) {
-            char* cur_prefix = (char*)malloc(key_size);
             if (key_size != 0) {
+                char* cur_prefix = (char*)malloc(key_size);
                 memcpy(cur_prefix, key, key_size);
+                free(prefix);
                 prefix = cur_prefix;
                 prefix_len = key_size;
             } else {
@@ -461,9 +475,10 @@ class htrie_map {
 
         void set_prefix(std::string& p) {
             uint16_t len = p.size();
-            char* cur_prefix = (char*)malloc(p.size());
             if (len != 0) {
+                char* cur_prefix = (char*)malloc(p.size());
                 memcpy(cur_prefix, p.data(), len);
+                free(prefix);
                 prefix = cur_prefix;
                 prefix_len = len;
             } else {
@@ -473,10 +488,13 @@ class htrie_map {
             }
         }
 
-        ~trie_node() {
-            std::map<CharT, trie_node*> empty;
-            // trie_node_childs.swap(empty);
+        void clean_prefix(){
             if (prefix != nullptr) free(prefix);
+        }
+
+        ~trie_node() {
+            if (prefix != nullptr) free(prefix);
+            delete trie_node_childs;
         }
 
         // finding target, if target doesn't exist, return nullptr
@@ -553,6 +571,11 @@ class htrie_map {
             cout << str;
             T v = hm->get_tail_v(s);
             cout << "=" << v << "\n";
+        }
+
+        static void print_slot(slot* s) {
+            cout << s->get_special() << "," << s->get_length() << ","
+                 << s->get_pos() << "," << s->get_page_id() << "," << endl;
         }
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
@@ -934,6 +957,8 @@ class htrie_map {
         void burst(trie_node* p, htrie_map* hm, std::string prefix) {
             burst_total_counter++;
 
+            trie_node* parent_wait_to_be_clean_prefix = p;
+
             // calculate the capacity of hashnode we need
             const char* first_key_p = get_first_key_pointer(hm);
 
@@ -1050,10 +1075,17 @@ class htrie_map {
                     iterator target_it = hnode->search_kv_in_hashnode(
                         hm, key + common_prefix_len + 1, length_left);
 
-                    std::pair<bool, T> res = target_it.insert_hashnode(
-                        slot(s->isSpecial(), length_left, pos_move,
-                             s->get_page_id()),
-                        hm, v);
+                    std::pair<bool, T> res;
+                    // rewrite special slot/ non-rewrite normal slot
+                    if (s->isSpecial()) {
+                        res = target_it.insert_hashnode(
+                            key + common_prefix_len + 1, length_left, hm, v);
+                    } else {
+                        res = target_it.insert_hashnode(
+                            slot(false, length_left, pos_move,
+                                 s->get_page_id()),
+                            hm, v);
+                    }
 
                     // if insert failed, it need burst again
                     if (res.first == false) {
@@ -1085,7 +1117,11 @@ class htrie_map {
                 burst_hnode->burst_by_elements(temp_pair.second,
                                                burst_hnode->anode::parent, hm,
                                                burst_again_prefix);
+
+                delete burst_hnode;
             }
+            if (parent_wait_to_be_clean_prefix != nullptr)
+                parent_wait_to_be_clean_prefix->clean_prefix();
             return;
         }
 
@@ -1541,11 +1577,13 @@ class htrie_map {
         uint64_t encode_slot(bool spe, uint64_t len, uint64_t po, uint64_t pd) {
             encode = pd;
             if (spe) {
-                assert(len < 1 << NBITS_LEN_S && po < 1 << NBITS_POS_S &&
+                assert(len < 1 << NBITS_LEN_S &&
+                       (po / (DEFAULT_SPECIAL_ALIGNMENT)) < 1 << NBITS_POS_S &&
                        pd < 1 << NBITS_PID_S);
-                encode += ((po << NBITS_PID_S) / (DEFAULT_SPECIAL_ALIGNMENT));
+                encode += ((po / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
                 encode += len << (NBITS_PID_S + NBITS_POS_S);
-                encode += ((uint64_t)1) << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
+                encode += ((uint64_t)1)
+                          << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
             } else {
                 assert(len < 1 << NBITS_LEN && po < 1 << NBITS_POS &&
                        pd < 1 << NBITS_PID);
@@ -2092,20 +2130,22 @@ class htrie_map {
 
         cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
         
+        //TODO: FIXME: the clean function will increase the memory cost?!?!?!
+        // Release the char* in pages
+        for(int i=0;i!=normal_pages.size();i++){
+            free(normal_pages[i].content);
+        }
+
+        for(int i=0;i!=special_pages.size();i++){
+            free(special_pages[i].content);
+        }
+        
         cur_normal_page_id = new_normal_page.size() - 1;
         cur_special_page_id = new_special_page.size() - 1;
-        new_normal_page.swap(normal_pages);
-        new_special_page.swap(special_pages);
+        normal_pages.swap(new_normal_page);
+        special_pages.swap(new_special_page);
 
         cout << ") ==>  (" << cur_normal_page_id << " " << cur_special_page_id << ")" << endl;
-
-        // Release the char* in pages
-        for(int i=0;i!=new_normal_page.size();i++){
-            free(new_normal_page[i].content);
-        }
-        for(int i=0;i!=new_special_page.size();i++){
-            free(new_special_page[i].content);
-        }
 
         return;
     }
