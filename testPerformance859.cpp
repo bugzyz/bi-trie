@@ -34,10 +34,13 @@ int main() {
     // analyse by bucket_num
     bucket_nums.push_back(59);
 
+    // elem_per_buck.push_back(2);
+    // bucket_nums.push_back(3);
+
 #ifdef TEST_YAGO
     string testing_dataset = "dataset/id_yago/cut_str_normal";
 #else
-    string testing_dataset = "dataset/str_normal";
+    string testing_dataset = "dataset/str_normal01";
 #endif
 
     cout << "testing file: " << testing_dataset << endl;
@@ -101,19 +104,23 @@ int main() {
 
         staTm = get_time();
         while (f1 >> url >> v) {
+            static int ind = 0;
             hm.insertKV(url, v);
+            if ((++ind % 100000) == 0) cout << ind << endl;
         }
         f1.close();
 
+        myTrie::debuging::process_mem_usage("htrie_map no cleaning",virt, res);
+        myTrie::debuging::clear_process_mem_usage();
         // cleaning
-        hm.clean_prefix(true);
+         hm.clean_prefix(true);
 
         // shrinking
         // hm.shrink();
 
         endTm = get_time();
 
-        myTrie::debuging::process_mem_usage("htrie_map",virt, res);
+        myTrie::debuging::process_mem_usage("clean finish",virt, res);
 
 
         /*-----------------insert performance calculating-----------------*/
