@@ -134,13 +134,126 @@ class htrie_map {
         }
     };
 
+    /*-----------------double array
+     * string_child_representation-----------------*/
+    class string_child_representation {
+    public:
+      class child_node {
+      public:
+        int hash_val;
+        string child_string;
+
+        child_node() : hash_val(0) {}
+
+        child_node(int hash_val, string cs)
+            : hash_val(hash_val), child_string(cs) {}
+      };
+
+      class child_iterator {
+      public:
+        string first;
+        anode *second;
+
+        child_iterator(string f, anode *tn) : first(f), second(tn) {}
+
+        inline child_iterator *operator->() { return this; }
+
+        inline bool operator==(child_iterator &right) {
+          return second == right.second;
+        }
+
+        inline bool operator==(const child_iterator &right) {
+          return second == right.second;
+        }
+
+        inline bool operator!=(const child_iterator &right) {
+          return second != right.second;
+        }
+      };
+
+    //   child_node *hash_vals;
+    //   anode **child_family;
+    int number;
+    int cur_number;
+
+    vector<child_node> hash_vals;
+    vector<anode*> child_family;
+
+    public:
+      string_child_representation(size_t child_number)
+          : number(child_number), cur_number(0),hash_vals(child_number), child_family(child_number){
+        // hash_vals = (child_node *)malloc(sizeof(child_node) * child_number);
+        // child_family = (anode **)malloc(sizeof(anode *) * child_number);
+
+        // string empty_string = "none";
+        // for(int i=0;i!=child_number;i++){
+        //     hash_vals[i] = child_node(0, empty_string);
+        //     child_family[i] = nullptr;
+        // }
+      }
+
+      inline anode *&operator[](string cs) {
+        // find the ok node
+        int hv = myTrie::hashRelative::hash(cs.data(), cs.size(), 1);
+        hash_vals[cur_number].child_string = cs;
+        hash_vals[cur_number].hash_val = hv;
+
+        return child_family[cur_number++];
+
+        // number++;
+        // return child_family[i]->current;
+      }
+
+      inline child_iterator find(string cs) {
+          if (number == 1 && cs == hash_vals[0].child_string)
+              return child_iterator(cs, child_family[0]);
+          int target_hash = myTrie::hashRelative::hash(cs.data(), cs.size(), 1);
+          int low = 0;
+          int high = hash_vals.size() - 1;
+
+          int target_index = -1;
+          while (low <= high) {
+              int mid = low + (high - low) / 2;
+              if (hash_vals[mid].hash_val == target_hash) {
+                  target_index = mid;
+                  break;
+              } else if (hash_vals[mid].hash_val > target_hash)
+                  high = mid - 1;
+              else
+                  low = mid + 1;
+          }
+
+          for (int i = target_index; target_index != hash_vals.size() &&
+                                     hash_vals[i].hash_val == target_hash;
+               i++) {
+              if (hash_vals[i].child_string == cs) {
+                  return child_iterator(cs, child_family[i]);
+              }
+          }
+          return child_iterator(cs, nullptr);
+
+          // ordered find
+          //   for (int i = 0; i != hash_vals.size(); i++) {
+          //       if (cs == hash_vals[i].child_string) {
+          //           return child_iterator(cs, child_family[i]);
+          //       }
+          //   }
+
+          //   return child_iterator(cs, nullptr);
+      }
+
+      inline size_t size() { return hash_vals.size(); }
+
+      inline child_iterator end() { return child_iterator("", nullptr); }
+    };
+
     class multi_node : public anode {
        public:
-        std::map<string, anode*> childs_;
+        string_child_representation childs_;
         size_t string_keysize_;
 
-        multi_node(size_t _string_keysize_)
-            : string_keysize_(_string_keysize_) {
+        multi_node(size_t _string_keysize_, size_t child_number)
+            : string_keysize_(_string_keysize_),childs_(string_child_representation(child_number)) {
             anode::_node_type = node_type::MULTI_NODE;
             anode::parent = nullptr;
         }
@@ -152,6 +265,10 @@ class htrie_map {
             } else {
                 return it->second;
             }
+        }
+
+        void add_child(string child_string, anode* n){
+            childs_[child_string] = n;
         }
     };
 
@@ -226,7 +343,6 @@ class htrie_map {
         }
     };
 #endif
-
 
 #ifdef LIST_REP
     /*-----------------list child_representation-----------------*/
@@ -349,7 +465,7 @@ class htrie_map {
             return sizeof(child_representation) + number * sizeof(child_node);
         }
 
-        ~child_representation(){
+        void delete_child_representation(){
             child_node* current_child_node = first_child;
             child_node* temp_child_node = nullptr;
 
@@ -357,7 +473,7 @@ class htrie_map {
                 temp_child_node = current_child_node;
                 current_child_node = current_child_node->next;
                 free(temp_child_node);
-                cout << "freeing child_representation!" << endl;
+                // cout << "freeing child_representation!" << endl;
             }
         }
     };
@@ -494,8 +610,9 @@ class htrie_map {
         }
 
         ~trie_node() {
-            if (prefix != nullptr) free(prefix);
-            delete trie_node_childs;
+            // if (prefix != nullptr) free(prefix);
+            // delete trie_node_childs;
+            trie_node_childs.delete_child_representation();
         }
 
         // finding target, if target doesn't exist, return nullptr
@@ -1997,9 +2114,20 @@ class htrie_map {
         return access_kv_in_htrie_map(key.data(), key.size(), v, false);
     }
 
+    static inline bool sort_by_hash_val(const pair<string, anode*>& t1,
+                                 const pair<string, anode*>& t2) {
+        int hash_val1 =
+            myTrie::hashRelative::hash(t1.first.data(), t1.first.size(), 1);
+        int hash_val2 =
+            myTrie::hashRelative::hash(t2.first.data(), t2.first.size(), 1);
+
+        return hash_val1 < hash_val2;
+        // return hash_val1 >= hash_val2;
+    }
+
     /*---------------external cleaning interface-------------------*/
     /*--------------------global shrink node functions--------------------*/
-    // TODO: FIX ME!
+    // TODO: FIX ME! the branch of deciding the type of node is poor
     anode* shrink_node(anode* node) {
         if (node->is_trie_node()) {
             trie_node* cur_node = (trie_node*)node;
@@ -2061,11 +2189,17 @@ class htrie_map {
             } while (allow_next_layer);
 
             // construct the target multi_node
-            multi_node* target_node = new multi_node(string_keysize);
+            multi_node* target_node = new multi_node(string_keysize, traverse_save.size());
+
+            sort(traverse_save.begin(),traverse_save.end(), sort_by_hash_val);
 
             for (int i = 0; i != traverse_save.size(); i++) {
                 anode* res = shrink_node(traverse_save[i].second);
-                target_node->childs_[traverse_save[i].first] = res;
+
+                // add new child multi_node target_node
+                target_node->add_child(traverse_save[i].first, res);
+
+                // target_node->childs_[traverse_save[i].first] = res;
             }
             return target_node;
         } else if (node->is_hash_node()) {

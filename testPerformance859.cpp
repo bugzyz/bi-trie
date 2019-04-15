@@ -40,7 +40,7 @@ int main() {
 #ifdef TEST_YAGO
     string testing_dataset = "dataset/id_yago/cut_str_normal";
 #else
-    string testing_dataset = "dataset/str_normal01";
+    string testing_dataset = "dataset/str_normal";
 #endif
 
     cout << "testing file: " << testing_dataset << endl;
@@ -116,7 +116,7 @@ int main() {
          hm.clean_prefix(true);
 
         // shrinking
-        // hm.shrink();
+        hm.shrink(); 
 
         endTm = get_time();
 
