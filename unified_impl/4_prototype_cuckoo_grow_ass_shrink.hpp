@@ -137,114 +137,107 @@ class htrie_map {
     /*-----------------double array
      * string_child_representation-----------------*/
     class string_child_representation {
-    public:
-      class child_node {
-      public:
-        int hash_val;
-        string child_string;
+        class child_node {
+           public:
+            int hash_val;
+            string child_string;
+            anode* child;
 
-        child_node() : hash_val(0) {}
+            child_node() : hash_val(0), child_string(""), child(nullptr) {}
 
-        child_node(int hash_val, string cs)
-            : hash_val(hash_val), child_string(cs) {}
-      };
+            child_node(int hash_val, string cs, anode* n)
+                : hash_val(hash_val), child_string(cs), child(n) {}
 
-      class child_iterator {
-      public:
-        string first;
-        anode *second;
+            void operator=(const child_node& cn) {
+                hash_val = cn.hash_val;
+                child_string = cn.child_string;
+                child = cn.child;
+            }
+        };
 
-        child_iterator(string f, anode *tn) : first(f), second(tn) {}
+       public:
+        class child_iterator {
+           public:
+            string first;
+            anode* second;
 
-        inline child_iterator *operator->() { return this; }
+            child_iterator(string f, anode* tn) : first(f), second(tn) {}
 
-        inline bool operator==(child_iterator &right) {
-          return second == right.second;
+            inline child_iterator* operator->() { return this; }
+
+            inline bool operator==(child_iterator& right) {
+                return second == right.second;
+            }
+
+            inline bool operator==(const child_iterator& right) {
+                return second == right.second;
+            }
+
+            inline bool operator!=(const child_iterator& right) {
+                return second != right.second;
+            }
+        };
+
+       private:
+        child_node* child_family;
+        int size_;
+
+       public:
+        string_child_representation(size_t child_number)
+            : size_(child_number) {
+            child_family = new child_node[child_number];
         }
 
-        inline bool operator==(const child_iterator &right) {
-          return second == right.second;
+        inline void add_child(string child_string, size_t child_index,
+                              anode* n) {
+            child_family[child_index].child_string = child_string;
+            child_family[child_index].child = n;
+            child_family[child_index].hash_val = myTrie::hashRelative::hash(
+                child_string.data(), child_string.size());
         }
 
-        inline bool operator!=(const child_iterator &right) {
-          return second != right.second;
+        inline child_iterator find(string cs) {
+            // binary search
+            if (size_ == 1 && cs == child_family[0].child_string)
+                return child_iterator(cs, child_family[0].child);
+            int target_hash = myTrie::hashRelative::hash(cs.data(), cs.size());
+            int low = 0;
+            int high = size_ - 1;
+
+            int target_index = -1;
+            while (low <= high) {
+                int mid = low + (high - low) / 2;
+                if (child_family[mid].hash_val == target_hash) {
+                    target_index = mid;
+                    break;
+                } else if (child_family[mid].hash_val > target_hash)
+                    high = mid - 1;
+                else
+                    low = mid + 1;
+            }
+
+            for (int i = target_index; target_index != size_ &&
+                                       child_family[i].hash_val == target_hash;
+                 i++) {
+                if (child_family[i].child_string == cs) {
+                    return child_iterator(cs, child_family[i].child);
+                }
+            }
+            return child_iterator(cs, nullptr);
+
+            // // ordered find
+            // for (int i = 0; i != size_; i++) {
+            //     if (cs == child_family[i].child_string) {
+            //         return child_iterator(cs, child_family[i].child);
+            //     }
+            // }
+
+            // return child_iterator(cs, nullptr);
         }
-      };
 
-    //   child_node *hash_vals;
-    //   anode **child_family;
-    int number;
-    int cur_number;
+        inline size_t size() { return size_; }
 
-    vector<child_node> hash_vals;
-    vector<anode*> child_family;
-
-    public:
-      string_child_representation(size_t child_number)
-          : number(child_number), cur_number(0),hash_vals(child_number), child_family(child_number){
-        // hash_vals = (child_node *)malloc(sizeof(child_node) * child_number);
-        // child_family = (anode **)malloc(sizeof(anode *) * child_number);
-
-        // string empty_string = "none";
-        // for(int i=0;i!=child_number;i++){
-        //     hash_vals[i] = child_node(0, empty_string);
-        //     child_family[i] = nullptr;
-        // }
-      }
-
-      inline anode *&operator[](string cs) {
-        // find the ok node
-        int hv = myTrie::hashRelative::hash(cs.data(), cs.size(), 1);
-        hash_vals[cur_number].child_string = cs;
-        hash_vals[cur_number].hash_val = hv;
-
-        return child_family[cur_number++];
-
-        // number++;
-        // return child_family[i]->current;
-      }
-
-      inline child_iterator find(string cs) {
-          if (number == 1 && cs == hash_vals[0].child_string)
-              return child_iterator(cs, child_family[0]);
-          int target_hash = myTrie::hashRelative::hash(cs.data(), cs.size(), 1);
-          int low = 0;
-          int high = hash_vals.size() - 1;
-
-          int target_index = -1;
-          while (low <= high) {
-              int mid = low + (high - low) / 2;
-              if (hash_vals[mid].hash_val == target_hash) {
-                  target_index = mid;
-                  break;
-              } else if (hash_vals[mid].hash_val > target_hash)
-                  high = mid - 1;
-              else
-                  low = mid + 1;
-          }
-
-          for (int i = target_index; target_index != hash_vals.size() &&
-                                     hash_vals[i].hash_val == target_hash;
-               i++) {
-              if (hash_vals[i].child_string == cs) {
-                  return child_iterator(cs, child_family[i]);
-              }
-          }
-          return child_iterator(cs, nullptr);
-
-          // ordered find
-          //   for (int i = 0; i != hash_vals.size(); i++) {
-          //       if (cs == hash_vals[i].child_string) {
-          //           return child_iterator(cs, child_family[i]);
-          //       }
-          //   }
-
-          //   return child_iterator(cs, nullptr);
-      }
-
-      inline size_t size() { return hash_vals.size(); }
-
-      inline child_iterator end() { return child_iterator("", nullptr); }
+        inline child_iterator end() { return child_iterator("", nullptr); }
     };
 
     class multi_node : public anode {
@@ -267,8 +260,8 @@ class htrie_map {
             }
         }
 
-        void add_child(string child_string, anode* n){
-            childs_[child_string] = n;
+        void add_child(string child_string, size_t child_index, anode* n){
+            childs_.add_child(child_string, child_index, n);
         }
     };
 
@@ -2117,9 +2110,9 @@ class htrie_map {
     static inline bool sort_by_hash_val(const pair<string, anode*>& t1,
                                  const pair<string, anode*>& t2) {
         int hash_val1 =
-            myTrie::hashRelative::hash(t1.first.data(), t1.first.size(), 1);
+            myTrie::hashRelative::hash(t1.first.data(), t1.first.size());
         int hash_val2 =
-            myTrie::hashRelative::hash(t2.first.data(), t2.first.size(), 1);
+            myTrie::hashRelative::hash(t2.first.data(), t2.first.size());
 
         return hash_val1 < hash_val2;
         // return hash_val1 >= hash_val2;
@@ -2197,9 +2190,7 @@ class htrie_map {
                 anode* res = shrink_node(traverse_save[i].second);
 
                 // add new child multi_node target_node
-                target_node->add_child(traverse_save[i].first, res);
-
-                // target_node->childs_[traverse_save[i].first] = res;
+                target_node->add_child(traverse_save[i].first, i, res);
             }
             return target_node;
         } else if (node->is_hash_node()) {
