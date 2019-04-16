@@ -31,30 +31,31 @@
 #define DEFAULT_SPECIAL_Max_bytes_per_kv \
     DEFAULT_Max_bytes_per_kv* DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO
 
-// #define NBITS_SPECIAL 1
-// #define NBITS_LEN 7   // 128 length
-// #define NBITS_POS 12  // 4096(1 align) pos
-// #define NBITS_PID 12  // 4096 page
-
-// #define NBITS_SPECIAL_S 1
-// #define NBITS_LEN_S 13  // 8192 length
-// #define NBITS_POS_S 9   // 512(32 align) pos
-// #define NBITS_PID_S 9   // 512 page
-
 #define NBITS_SPECIAL 1
 #define NBITS_LEN 7   // 128 length
-#define NBITS_POS 28  // 268435456(1 align) pos
-#define NBITS_PID 28  // 268435456 page
+#define NBITS_POS 10  // 1024(4 align) pos
+#define NBITS_PID 14  // 16384 page
 
 #define NBITS_SPECIAL_S 1
 #define NBITS_LEN_S 13  // 8192 length
-#define NBITS_POS_S 25   // 33554432(32 align) pos
-#define NBITS_PID_S 25   // 33554432 page
+#define NBITS_POS_S 9   // 512(32 align) pos
+#define NBITS_PID_S 9   // 512 page
+
+// #define NBITS_SPECIAL 1
+// #define NBITS_LEN 7   // 128 length
+// #define NBITS_POS 28  // 268435456(1 align) pos
+// #define NBITS_PID 28  // 268435456 page
+
+// #define NBITS_SPECIAL_S 1
+// #define NBITS_LEN_S 13  // 8192 length
+// #define NBITS_POS_S 25   // 33554432(32 align) pos
+// #define NBITS_PID_S 25   // 33554432 page
 
 
 // #define DEFAULT_SPECIAL_ALIGNMENT \
 //     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
 #define DEFAULT_SPECIAL_ALIGNMENT 32
+#define DEFAULT_NORMAL_ALIGNMENT 4
 
 static uint32_t longest_string_size;
 
@@ -677,7 +678,7 @@ class htrie_map {
             slot* s = key_metas + i * cur_associativity + j;
             cout << i * cur_associativity + j << ":" << s->get_special() << ","
                  << s->get_length() << "," << s->get_pos() << ","
-                 << s->get_page_id() << "," << endl;
+                 << s->get_page_id() << "," ;
             string str = string(hm->get_tail_pointer(s), s->get_length());
             cout << str;
             T v = hm->get_tail_v(s);
@@ -1186,17 +1187,8 @@ class htrie_map {
                     iterator target_it = hnode->search_kv_in_hashnode(
                         hm, key + common_prefix_len + 1, length_left);
 
-                    std::pair<bool, T> res;
-                    // rewrite special slot/ non-rewrite normal slot
-                    if (s->isSpecial()) {
-                        res = target_it.insert_hashnode(
-                            key + common_prefix_len + 1, length_left, hm, v);
-                    } else {
-                        res = target_it.insert_hashnode(
-                            slot(false, length_left, pos_move,
-                                 s->get_page_id()),
-                            hm, v);
-                    }
+                    std::pair<bool, T> res = target_it.insert_hashnode(
+                        key + common_prefix_len + 1, length_left, hm, v);
 
                     // if insert failed, it need burst again
                     if (res.first == false) {
@@ -1680,7 +1672,7 @@ class htrie_map {
 
     class slot {
        public:
-        uint64_t encode;
+        uint32_t encode;
 
         slot() : encode(0) {}
 
@@ -1689,17 +1681,18 @@ class htrie_map {
             encode = pd;
             if (spe) {
                 assert(len < 1 << NBITS_LEN_S &&
-                       (po / (DEFAULT_SPECIAL_ALIGNMENT)) < 1 << NBITS_POS_S &&
+                       (po / DEFAULT_SPECIAL_ALIGNMENT) < 1 << NBITS_POS_S &&
                        pd < 1 << NBITS_PID_S);
                 encode += ((po / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
                 encode += len << (NBITS_PID_S + NBITS_POS_S);
                 encode += ((uint64_t)1)
                           << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
             } else {
-                assert(len < 1 << NBITS_LEN && po < 1 << NBITS_POS &&
+                assert(len < 1 << NBITS_LEN &&
+                       (po / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
                        pd < 1 << NBITS_PID);
                 // encode into a 64bit data
-                encode += po << NBITS_PID;
+                encode += (po / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
                 encode += len << (NBITS_PID + NBITS_POS);
                 encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
             }
@@ -1739,7 +1732,8 @@ class htrie_map {
             return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
                        ? ((encode >> NBITS_PID_S) % (1 << NBITS_POS_S) *
                           DEFAULT_SPECIAL_ALIGNMENT)
-                       : ((encode >> NBITS_PID) % (1 << NBITS_POS));
+                       : ((encode >> NBITS_PID) % (1 << NBITS_POS) *
+                          DEFAULT_NORMAL_ALIGNMENT);
         }
 
         size_t get_page_id() {
@@ -1876,7 +1870,7 @@ class htrie_map {
             slot(false, keysize, target_page.cur_pos, cur_normal_page_id);
 
         // write content
-        target_page.append_impl(key, keysize, v);
+        target_page.append_impl(key, keysize, v, DEFAULT_NORMAL_ALIGNMENT);
 
         return ret_slot;
     }
@@ -1940,7 +1934,7 @@ class htrie_map {
             slot(false, keysize, target_page.cur_pos, specific_page.size() - 1);
 
         // write content
-        target_page.append_impl(key, keysize, v);
+        target_page.append_impl(key, keysize, v, DEFAULT_NORMAL_ALIGNMENT);
 
         return ret_slot;
     }
