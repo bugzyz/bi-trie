@@ -41,6 +41,11 @@
 #define NBITS_POS_S 9   // 512(32 align) pos
 #define NBITS_PID_S 9   // 512 page
 
+#define MAX_NORMAL_PAGE (1 << NBITS_PID)
+#define MAX_SPECIAL_PAGE (1 << NBITS_PID_S)
+
+#define MAX_NORMAL_LEN (1 << NBITS_LEN)
+
 // #define NBITS_SPECIAL 1
 // #define NBITS_LEN 7   // 128 length
 // #define NBITS_POS 28  // 268435456(1 align) pos
@@ -111,6 +116,8 @@ class htrie_map {
     class iterator;
     class page;
     class slot;
+
+    class page_group;
 
     class anode {
        public:
@@ -623,7 +630,8 @@ class htrie_map {
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
         trie_node* find_trie_node_child(CharT c, const CharT* key,
-                                        size_t key_size) {
+                                        size_t key_size,
+                                        htrie_map<CharT, T>* hm) {
             auto found = trie_node_childs.find(c);
             if (found != trie_node_childs.end()) {
                 trie_node* target = found->second;
@@ -631,8 +639,8 @@ class htrie_map {
             } else {
                 trie_node* son_trie_node = new trie_node(this);
                 this->add_trie_node_child(son_trie_node, c);
-                son_trie_node->set_hash_node_child(
-                    new hash_node(son_trie_node, string(key, key_size) + c));
+                son_trie_node->set_hash_node_child(new hash_node(
+                    son_trie_node, string(key, key_size) + c, hm));
                 return son_trie_node;
             }
         }
@@ -672,6 +680,11 @@ class htrie_map {
 
         slot first_slot;
 
+        // normal page_group id
+        uint8_t normal_pgid;
+        // special page_group id
+        uint8_t special_pgid;
+
        public:
         // debug function
         void print_slot(int i, int j, htrie_map<CharT, T>* hm) {
@@ -700,20 +713,23 @@ class htrie_map {
         }
 
        public:
-        explicit hash_node(trie_node* p, string prefix,
+        explicit hash_node(trie_node* p, string prefix, htrie_map<CharT, T>* hm,
                            size_t need_associativity = 1)
             : cur_associativity(need_associativity > Associativity
                                     ? Associativity
                                     : need_associativity),
               elem_num(0),
               common_prefix_len(INT_MAX),
-              first_slot(0, 0, 0, 0) {
+              first_slot(0, 0, 0, 0),
+              normal_pgid(hm->get_normal_group_id()),
+              special_pgid(hm->get_special_group_id()) {
             anode::_node_type = node_type::HASH_NODE;
             anode::parent = p;
             if (p != nullptr) anode::parent->set_prefix(prefix);
 
             key_metas =
                 (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
+            // key_metas = new slot[cur_associativity * Bucket_num * sizeof(slot)];
 
             // init key space
             for (int i = 0; i != cur_associativity * Bucket_num; i++) {
@@ -742,7 +758,8 @@ class htrie_map {
                 for (size_t j = 0; j != cur_associativity; j++) {
                     slot& cur_slot = key_metas[i * cur_associativity + j];
                     if (cur_slot.isEmpty()) break;
-                    hm->get_tail_str_v(elements, &cur_slot);
+                    hm->get_tail_str_v(get_page_group_id(&cur_slot), elements,
+                                       &cur_slot);
                 }
             }
         }
@@ -785,7 +802,8 @@ class htrie_map {
                         // adding the new position to the searchPoint update
                         // list
                         if (!cur_slot->isEmpty()) {
-                            T v = hm->get_tail_v(cur_slot);
+                            T v = hm->get_tail_v(get_page_group_id(cur_slot),
+                                                 cur_slot);
                             updating_search_points[v] =
                                 i * need_associativity + j;
                         }
@@ -824,11 +842,13 @@ class htrie_map {
         inline size_t get_another_bucketid(htrie_map<CharT, T>* hm, slot* s,
                                            size_t current_bucketid) {
             size_t bucketid1 =
-                myTrie::hashRelative::hash(hm->get_tail_pointer(s),
+                myTrie::hashRelative::hash(
+                    hm->get_tail_pointer(get_page_group_id(s), s),
                                            s->get_length(), 1) %
                 Bucket_num;
             size_t bucketid2 =
-                myTrie::hashRelative::hash(hm->get_tail_pointer(s),
+                myTrie::hashRelative::hash(
+                    hm->get_tail_pointer(get_page_group_id(s), s),
                                            s->get_length(), 2) %
                 Bucket_num;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
@@ -947,7 +967,8 @@ class htrie_map {
                 */
                 dst_slot->set_slot(src_slot);
                 if (!dst_slot->isEmpty())
-                    searchPoint_wait_2_be_update[hm->get_tail_v(dst_slot)] =
+                    searchPoint_wait_2_be_update[hm->get_tail_v(
+                        get_page_group_id(dst_slot), dst_slot)] =
                         get_index(dst_slot);
 
                 // if the destination bucket isn't full, just fill the empty
@@ -977,7 +998,8 @@ class htrie_map {
                     */
                     dst_slot->set_slot(temp_special, temp_length, temp_pos,
                                        temp_page_id);
-                    searchPoint_wait_2_be_update[hm->get_tail_v(dst_slot)] =
+                    searchPoint_wait_2_be_update[hm->get_tail_v(
+                        get_page_group_id(dst_slot), dst_slot)] =
                         get_index(dst_slot);
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
@@ -1032,7 +1054,8 @@ class htrie_map {
         /*------------------ 3. bursting function------------------*/
 
         inline const char* get_first_key_pointer(htrie_map* hm) {
-            return hm->get_tail_pointer(&first_slot);
+            return hm->get_tail_pointer(get_page_group_id(&first_slot),
+                                        &first_slot);
         }
 
         int cal_common_prefix_len(const char* s1, int cur_longest_prefix_len,
@@ -1080,7 +1103,7 @@ class htrie_map {
                     slot* s = get_slot(i, j);
                     if (s->isEmpty()) break;
 
-                    char* key = hm->get_tail_pointer(s);
+                    char* key = hm->get_tail_pointer(get_page_group_id(s), s);
 
                     // update the common_prefix_len
                     int cur_com_prefix_len = cal_common_prefix_len(
@@ -1097,7 +1120,7 @@ class htrie_map {
                     slot* s = get_slot(i, j);
                     if (s->isEmpty()) break;
 
-                    char* key = hm->get_tail_pointer(s);
+                    char* key = hm->get_tail_pointer(get_page_group_id(s), s);
                     element_num_of_1st_char[key[common_prefix_len]]++;
                 }
             }
@@ -1142,7 +1165,7 @@ class htrie_map {
                     round_up_2_next_power_2(expected_associativity);
 
                 hash_node* hnode = new hash_node(
-                    cur_trie_node, prefix + it->first, expected_associativity);
+                    cur_trie_node, prefix + it->first, hm, expected_associativity);
                 cur_trie_node->set_hash_node_child(hnode);
 
                 hnode_set[it->first] = hnode;
@@ -1157,13 +1180,13 @@ class htrie_map {
                     slot* s = get_slot(i, j);
                     if (s->isEmpty()) break;
 
-                    char* key = hm->get_tail_pointer(s);
+                    char* key = hm->get_tail_pointer(get_page_group_id(s), s);
 
                     size_t pos_move = s->get_pos() + 1 + common_prefix_len;
                     size_t length_left =
                         s->get_length() - common_prefix_len - 1;
 
-                    T v = hm->get_tail_v(s);
+                    T v = hm->get_tail_v(get_page_group_id(s), s);
                     hash_node* hnode = hnode_set[key[common_prefix_len]];
 
                     if (hnode == nullptr) {
@@ -1301,7 +1324,7 @@ class htrie_map {
                     round_up_2_next_power_2(expected_associativity);
 
                 hash_node* hnode = new hash_node(
-                    cur_trie_node, prefix + it->first, expected_associativity);
+                    cur_trie_node, prefix + it->first, hm, expected_associativity);
                 cur_trie_node->set_hash_node_child(hnode);
 
                 bool stop_insert_and_burst = false;
@@ -1363,11 +1386,13 @@ class htrie_map {
 
         std::pair<bool, T> find_kv_in_pages(htrie_map<CharT, T>* hm, slot* s,
                                             const CharT* key,
-                                            size_t keysize) const {
-            if (myTrie::hashRelative::keyEqual(hm->get_tail_pointer(s),
+                                            size_t keysize) {
+            if (myTrie::hashRelative::keyEqual(
+                    hm->get_tail_pointer(get_page_group_id(s), s),
                                                s->get_length(), key, keysize)) {
                 return std::pair<bool, T>(
-                    true, *((T*)(hm->get_tail_pointer(s) + s->get_length())));
+                    true, *((T*)(hm->get_tail_pointer(get_page_group_id(s), s) +
+                                 s->get_length())));
             }
             return std::pair<bool, T>(false, T());
         }
@@ -1435,85 +1460,25 @@ class htrie_map {
             return res1.second;
         }
 
-        /*----------------inserting in hash_node----------------*/
-        std::pair<bool, T> insert_slot_in_hashnode(slot s, htrie_map* hm, T v,
-                                                   size_t bucketid, int slotid,
-                                                   std::string prefix) {
-            // if slotid==-1, it denotes that the bucket(bucketid) is full ,
-            // so we rehash the key_metas
-            if (slotid == -1) {
-#ifdef REHASH_BEFORE_EXPAND
-                if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                    bool expand_success =
-                        expand_key_metas_space(cur_associativity << 1, hm);
-                    if (!expand_success) {
-                        return std::pair<bool, T>(false, T());
-                    } else {
-                        // if expand success, we get new elem a empty slot
-                        // in bucketid
-                        for (int i = 0; i != cur_associativity; i++) {
-                            slot* empty_slot =
-                                key_metas + bucketid * cur_associativity + i;
-                            if (empty_slot->isEmpty()) {
-                                slotid = i;
-                                break;
-                            }
-                        }
-                    }
-                }
-#else
-                bool expand_success =
-                    expand_key_metas_space(cur_associativity << 1, hm);
-                if (expand_success) {
-                    // if expand success, we get new elem a empty slot in
-                    // bucketid
-                    for (int i = 0; i != cur_associativity; i++) {
-                        slot* empty_slot = get_slot(bucketid, i);
-                        if (empty_slot->isEmpty()) {
-                            slotid = i;
-                            break;
-                        }
-                    }
-                } else {
-                    if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                        return std::pair<bool, T>(false, T());
-                    }
-                }
-#endif
-            }
+        inline bool belong_to_special_group(size_t keysize) {
+            return !(keysize < MAX_NORMAL_LEN);
+        }
 
-            // now the slotid cannot be -1 and slotid is lower than
-            // Associativity
-            assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity);
+        inline size_t get_page_group_id(size_t keysize) {
+            return belong_to_special_group(keysize) ? special_pgid
+                                                    : normal_pgid;
+        }
 
-            slot* target_slot = get_slot(bucketid, slotid);
-
-            // return a slot with position that element been written
-            target_slot->set_slot(s);
-
-            // set v2k
-            hm->set_v2k(v, this, get_index(target_slot));
-
-            if (first_slot.isEmpty()) {
-                first_slot.set_slot(target_slot);
-            }
-
-            elem_num++;
-
-            if (need_burst()) {
-                burst(this->anode::parent, hm, prefix);
-
-                delete this;
-            }
-
-            return std::pair<bool, T>(true, v);
+        inline size_t get_page_group_id(slot* sl) {
+            return belong_to_special_group(sl->get_length()) ? special_pgid
+                                                             : normal_pgid;
         }
 
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, size_t bucketid,
                                                  int slotid,
-                                                 std::string prefix) {
+                                                   std::string prefix) {
             // if slotid==-1, it denotes that the bucket(bucketid) is full ,
             // so we rehash the key_metas
             if (slotid == -1) {
@@ -1554,7 +1519,7 @@ class htrie_map {
                             break;
                         }
                     }
-                }
+                    }
 #endif
             }
 
@@ -1566,7 +1531,9 @@ class htrie_map {
 
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
-            target_slot->set_slot(hm->write_kv_to_page(key, keysize, v));
+            target_slot->set_slot(hm->write_kv(belong_to_special_group(keysize),
+                                               get_page_group_id(keysize), key,
+                                               keysize, v));
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
 
@@ -1581,6 +1548,197 @@ class htrie_map {
             return std::pair<bool, T>(true, v);
         }
     };
+
+    class page_manager {
+        class page_group {
+            class page {
+               public:
+                unsigned int cur_pos;
+                char* content;
+
+                page(size_t size_per_page) : cur_pos(0) {
+                    content = (char*)malloc(size_per_page);
+                }
+
+                void append_impl(const CharT* key, size_t keysize, T& value,
+                                 unsigned int alignment = 1) {
+                    // append the string
+                    std::memcpy(content + cur_pos, key,
+                                keysize * sizeof(CharT));
+
+                    // append the value
+                    std::memcpy(content + cur_pos + keysize * sizeof(CharT),
+                                &value, sizeof(T));
+
+                    cur_pos += calc_align(keysize * sizeof(CharT) + sizeof(T),
+                                          alignment);
+                }
+
+                // ~page() {
+                //     free(content);
+                // }
+            };
+
+            page* pages;
+            int cur_page_id;
+            bool is_special;
+
+           public:
+            page_group() : pages(nullptr), cur_page_id(0), is_special(false) {}
+
+            void init_pg(int page_number, bool spe) {
+                is_special = spe;
+                cur_page_id = 0;
+                pages = (page*)malloc(
+                    sizeof(page) * (spe ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE));
+                pages[0] = page((spe ? DEFAULT_SPECIAL_Max_bytes_per_kv
+                                     : DEFAULT_Max_bytes_per_kv));
+            }
+
+            // get function
+            inline char* get_tail_pointer_in_page(slot* s) {
+                return pages[s->get_page_id()].content + s->get_pos();
+                            }
+
+            inline T get_tail_v_in_page(slot* s) {
+                T v;
+                std::memcpy(&v, get_tail_pointer_in_page(s) + s->get_length(),
+                            sizeof(T));
+                return v;
+                        }
+
+            // set function
+            slot write_kv_to_page(const CharT* key, size_t keysize, T v) {
+                // allocate space
+                size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+
+                if (pages[cur_page_id].cur_pos + need_size >
+                    (is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
+                                : Max_bytes_per_kv)) {
+                    cur_page_id++;
+                    pages[cur_page_id] =
+                        page((is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
+                                         : Max_bytes_per_kv));
+                    }
+
+                // get page being written
+                page& target_page = pages[cur_page_id];
+
+                // record position before updating and status modify
+                slot ret_slot =
+                    slot(is_special, keysize, target_page.cur_pos, cur_page_id);
+
+                // write content
+                target_page.append_impl(key, keysize, v,
+                                        is_special ? DEFAULT_SPECIAL_ALIGNMENT
+                                                   : DEFAULT_NORMAL_ALIGNMENT);
+
+                return ret_slot;
+                }
+
+            page_group(const page_group& orig){
+                cout << "calling copy func\n";
+                pages = orig.pages;
+                cur_page_id = orig.cur_page_id;
+                is_special = orig.is_special;
+                    }
+
+            ~page_group(){
+                cout << "page_group deconstructor" << endl;
+                int pages_size =
+                    is_special ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE;
+                for(int i=0; i!=pages_size;i++){
+                    free(pages[i].content);
+                        }
+                free(pages);
+                    }
+        };
+
+        page_group* normal_pg;
+        page_group* special_pg;
+
+        int n_size;
+        int s_size;
+
+        enum class init_type : unsigned char {
+            IN_NORMAL_GROUP,
+            IN_SPECIAL_GROUP,
+        };
+
+        void init_a_new_page_group(init_type type) {
+            if (type == init_type::IN_SPECIAL_GROUP) {
+                s_size++;
+                special_pg[s_size - 1].init_pg(MAX_SPECIAL_PAGE, true);
+                cout << "special page group increase!" << endl;
+                return;
+            } else if (type == init_type::IN_NORMAL_GROUP) {
+                n_size++;
+                normal_pg[n_size - 1].init_pg(MAX_NORMAL_PAGE, false);
+                cout << "normal page group increase!" << endl;
+                return;
+            }else{
+                cout << "undefined type!" << endl;
+                assert(false);
+                exit(0);
+                return;
+                }
+            }
+
+
+       public:
+        page_manager()
+            : normal_pg(new page_group[16]),
+              special_pg(new page_group[16]),
+              n_size(0),
+              s_size(0) {
+            init_a_new_page_group(init_type::IN_NORMAL_GROUP);
+            init_a_new_page_group(init_type::IN_SPECIAL_GROUP);
+        }
+
+        inline slot write_kv(bool special, size_t page_group_id, const CharT* key,
+                      size_t keysize, T v) {
+            return special ? special_pg[page_group_id].write_kv_to_page(
+                                 key, keysize, v)
+                           : normal_pg[page_group_id].write_kv_to_page(
+                                 key, keysize, v);
+        }
+
+        inline size_t get_normal_group_id() { return n_size - 1; }
+        inline size_t get_special_group_id() { return s_size - 1; }
+
+        // inline size_t get_normal_group_id() { return normal_pg.size() - 1; }
+        // inline size_t get_special_group_id() { return special_pg.size() - 1; }
+
+
+        inline char* get_tail_pointer_in_pm(size_t page_group_id,
+                                            slot* s) {
+            return s->isSpecial()
+                       ? special_pg[page_group_id].get_tail_pointer_in_page(s)
+                       : normal_pg[page_group_id].get_tail_pointer_in_page(s);
+            }
+
+        inline T get_tail_v_in_pm(size_t page_group_id, slot* s) {
+            return s->isSpecial()
+                       ? special_pg[page_group_id].get_tail_v_in_page(s)
+                       : normal_pg[page_group_id].get_tail_v_in_page(s);
+        }
+    };
+
+    inline size_t get_normal_group_id() { return pm.get_normal_group_id(); }
+    inline size_t get_special_group_id() { return pm.get_special_group_id(); }
+
+    inline char* get_tail_pointer(size_t page_group_id, slot* s) {
+        return pm.get_tail_pointer_in_pm(page_group_id, s);
+    }
+
+    inline T get_tail_v(size_t page_group_id, slot* s) {
+        return pm.get_tail_v_in_pm(page_group_id, s);
+    }
+
+    inline slot write_kv(bool is_special, size_t page_group_id, const CharT* key,
+                         size_t keysize, T v) {
+        return pm.write_kv(is_special, page_group_id, key, keysize, v);
+    }
 
     class SearchPoint {
        public:
@@ -1607,9 +1765,12 @@ class htrie_map {
 
             // get tail
             if (index != -1) {
-                slot* sl = ((hash_node*)node)->get_slot(index);
+                hash_node* hnode = (hash_node*)node;
+                slot* sl = hnode->get_slot(index);
 
-                memcpy(buf + len, hm->get_tail_pointer(sl), sl->get_length());
+                memcpy(buf + len,
+                       hm->get_tail_pointer(hnode->get_page_group_id(sl), sl),
+                       sl->get_length());
                 len += sl->get_length();
             }
             string res = string(buf, len);
@@ -1621,11 +1782,13 @@ class htrie_map {
    public:
     anode* t_root;
     std::map<T, SearchPoint> v2k;
+    page_manager pm;
+
     htrie_map(size_t customized_associativity = DEFAULT_Associativity,
               size_t customized_bucket_count = DEFAULT_Bucket_num,
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
-        : t_root(nullptr), cur_normal_page_id(0), cur_special_page_id(0) {
+        : t_root(nullptr) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
 
@@ -1655,11 +1818,7 @@ class htrie_map {
         Max_slot_num = Associativity * Bucket_num;
         Max_loop = Max_slot_num * 0.5;
 
-        t_root = new hash_node(nullptr, string(), Associativity);
-
-        // init the normal_pages and special_pages by a empty page
-        normal_pages.push_back(page(Max_bytes_per_kv));
-        special_pages.push_back(page(DEFAULT_SPECIAL_Max_bytes_per_kv));
+        t_root = new hash_node(nullptr, string(), this, Associativity);
     }
 
     void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
@@ -1747,197 +1906,108 @@ class htrie_map {
         return ((n + align - 1) & (~(align - 1)));
     }
 
-    class page {
-       public:
-        unsigned int cur_pos;
-        char* content;
+    // inline char* get_tail_pointer(slot* s) const {
+    //     if (s->isSpecial()) {
+    //         return special_pages[s->get_page_id()].content + s->get_pos();
+    //     }
+    //     return normal_pages[s->get_page_id()].content + s->get_pos();
+    // }
 
-        page(size_t size_per_page) : cur_pos(0) {
-            content = (char*)malloc(size_per_page);
-        }
+    // inline char* get_tail_pointer(slot* s, vector<page>& specific_page) const {
+    //     if (s->isSpecial()) {
+    //         return special_pages[s->get_page_id()].content + s->get_pos();
+    //     }
+    //     return specific_page[s->get_page_id()].content + s->get_pos();
+    // }
 
-        void append_impl(const CharT* key, size_t keysize, T& value,
-                         unsigned int alignment = 1) {
-            // append the string
-            std::memcpy(content + cur_pos, key, keysize * sizeof(CharT));
-
-            // append the value
-            std::memcpy(content + cur_pos + keysize * sizeof(CharT), &value,
-                        sizeof(T));
-
-            cur_pos +=
-                calc_align(keysize * sizeof(CharT) + sizeof(T), alignment);
-        }
-
-        ~page() {
-            // free(content);
-        }
-    };
-
-    int cur_normal_page_id;
-    vector<page> normal_pages;
-
-    int cur_special_page_id;
-    vector<page> special_pages;
-
-    inline char* get_tail_pointer(slot* s) const {
-        if (s->isSpecial()) {
-            return special_pages[s->get_page_id()].content + s->get_pos();
-        }
-        return normal_pages[s->get_page_id()].content + s->get_pos();
-    }
-
-    inline char* get_tail_pointer(slot* s, vector<page>& specific_page) const {
-        if (s->isSpecial()) {
-            return special_pages[s->get_page_id()].content + s->get_pos();
-        }
-        return specific_page[s->get_page_id()].content + s->get_pos();
-    }
-
-    void get_tail_str_v(std::map<std::string, T>& elements, slot* s) {
-        char* tail_pointer = get_tail_pointer(s);
+    void get_tail_str_v(size_t page_group_id,
+                        std::map<std::string, T>& elements, slot* s) {
+        char* tail_pointer = get_tail_pointer(page_group_id, s);
         std::string res(tail_pointer, s->get_length());
         std::memcpy(&elements[res], tail_pointer + s->get_length(), sizeof(T));
     }
 
-    T get_tail_v(slot* s) {
-        T v;
-        std::memcpy(&v, get_tail_pointer(s) + s->get_length(), sizeof(T));
-        return v;
-    }
+    // T get_tail_v(slot* s) {
+    //     T v;
+    //     std::memcpy(&v, get_tail_pointer(s) + s->get_length(), sizeof(T));
+    //     return v;
+    // }
 
-    T get_tail_v(slot* s, vector<page>& specific_page) {
-        T v;
-        std::memcpy(&v, get_tail_pointer(s, specific_page) + s->get_length(),
-                    sizeof(T));
-        return v;
-    }
+    // T get_tail_v(slot* s, vector<page>& specific_page) {
+    //     T v;
+    //     std::memcpy(&v, get_tail_pointer(s, specific_page) + s->get_length(),
+    //                 sizeof(T));
+    //     return v;
+    // }
 
     slot make_slot(bool is_special, size_t keysize, size_t pos,
                    size_t page_id) {
         return slot(is_special, keysize, pos, page_id);
     }
 
-    // return: page_id, pos
-    inline slot write_kv_to_page(const CharT* key, size_t keysize, T v) {
-        return keysize < (1 << NBITS_LEN)
-                   ? write_kv_to_normal_page(key, keysize, v)
-                   : write_kv_to_special_page(key, keysize, v);
-    }
-
-    // return: page_id, pos
-    slot write_kv_to_special_page(const CharT* key, size_t keysize, T v) {
-        // allocate space
-        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
-
-        if (special_pages[cur_special_page_id].cur_pos + need_size >
-            Max_bytes_per_kv) {
-            page new_page = page(Max_bytes_per_kv * 4);
-            cur_special_page_id++;
-            special_pages.push_back(new_page);
-        }
-
-        // get page being written
-        page& target_page = special_pages[cur_special_page_id];
-
-        // record position before updating and status modify
-        slot ret_slot =
-            make_slot(true, keysize, target_page.cur_pos, cur_special_page_id);
-
-        // write content
-        target_page.append_impl(key, keysize, v, DEFAULT_SPECIAL_ALIGNMENT);
-
-        return ret_slot;
-    }
-
-    // return: page_id, pos
-    slot write_kv_to_normal_page(const CharT* key, size_t keysize, T v) {
-        // allocate space
-        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
-
-        if (normal_pages[cur_normal_page_id].cur_pos + need_size >
-            Max_bytes_per_kv) {
-            page new_page = page(Max_bytes_per_kv);
-            cur_normal_page_id++;
-            normal_pages.push_back(new_page);
-        }
-
-        // get page being written
-        page& target_page = normal_pages[cur_normal_page_id];
-
-        // record position before updating and status modify
-        slot ret_slot =
-            slot(false, keysize, target_page.cur_pos, cur_normal_page_id);
-
-        // write content
-        target_page.append_impl(key, keysize, v, DEFAULT_NORMAL_ALIGNMENT);
-
-        return ret_slot;
-    }
-
     // TODO:REMOVE!!!
-    /*------------for clean_prefix()------------------*/
-    inline slot write_kv_to_page(const CharT* key, size_t keysize, T v,
-                                 vector<page>& specific_page) {
-        return keysize < (1 << NBITS_LEN)
-                   ? write_kv_to_normal_page(key, keysize, v, specific_page)
-                   : write_kv_to_special_page(key, keysize, v, specific_page);
-    }
+    // /*------------for clean_prefix()------------------*/
+    // inline slot write_kv_to_page(const CharT* key, size_t keysize, T v,
+    //                              vector<page>& specific_page) {
+    //     return keysize < (1 << NBITS_LEN)
+    //                ? write_kv_to_normal_page(key, keysize, v, specific_page)
+    //                : write_kv_to_special_page(key, keysize, v, specific_page);
+    // }
 
-    // return: page_id, pos
-    slot write_kv_to_special_page(const CharT* key, size_t keysize, T v,
-                                 vector<page>& specific_page) {
-        // allocate space
-        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+    // // return: page_id, pos
+    // slot write_kv_to_special_page(const CharT* key, size_t keysize, T v,
+    //                              vector<page>& specific_page) {
+    //     // allocate space
+    //     size_t need_size = keysize * sizeof(CharT) + sizeof(T);
 
-        size_t cur_page_id = specific_page.size() - 1;
+    //     size_t cur_page_id = specific_page.size() - 1;
 
-        if (specific_page[cur_page_id].cur_pos + need_size > Max_bytes_per_kv) {
-            page new_page = page(Max_bytes_per_kv * 4);
-            cur_page_id++;
-            specific_page.push_back(new_page);
-        }
+    //     if (specific_page[cur_page_id].cur_pos + need_size > Max_bytes_per_kv) {
+    //         page new_page = page(Max_bytes_per_kv * 4);
+    //         cur_page_id++;
+    //         specific_page.push_back(new_page);
+    //     }
 
-        // get page being written
-        page& target_page = specific_page[cur_page_id];
+    //     // get page being written
+    //     page& target_page = specific_page[cur_page_id];
 
-        // record position before updating and status modify
-        slot ret_slot =
-            make_slot(true, keysize, target_page.cur_pos, cur_page_id);
+    //     // record position before updating and status modify
+    //     slot ret_slot =
+    //         make_slot(true, keysize, target_page.cur_pos, cur_page_id);
 
-        // write content
-        target_page.append_impl(key, keysize, v, DEFAULT_SPECIAL_ALIGNMENT);
+    //     // write content
+    //     target_page.append_impl(key, keysize, v, DEFAULT_SPECIAL_ALIGNMENT);
 
-        return ret_slot;
-    }
+    //     return ret_slot;
+    // }
 
-    // return: page_id, pos
-    slot write_kv_to_normal_page(const CharT* key, size_t keysize, T v,
-                                 vector<page>& specific_page) {
-        // allocate space
-        size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+    // // return: page_id, pos
+    // slot write_kv_to_normal_page(const CharT* key, size_t keysize, T v,
+    //                              vector<page>& specific_page) {
+    //     // allocate space
+    //     size_t need_size = keysize * sizeof(CharT) + sizeof(T);
 
-        size_t cur_page_id = specific_page.size() - 1;
+    //     size_t cur_page_id = specific_page.size() - 1;
 
-        if (specific_page[cur_page_id].cur_pos + need_size >
-            Max_bytes_per_kv) {
-            page new_page = page(Max_bytes_per_kv);
-            cur_page_id++;
-            specific_page.push_back(new_page);
-        }
+    //     if (specific_page[cur_page_id].cur_pos + need_size >
+    //         Max_bytes_per_kv) {
+    //         page new_page = page(Max_bytes_per_kv);
+    //         cur_page_id++;
+    //         specific_page.push_back(new_page);
+    //     }
 
-        // get page being written
-        page& target_page = specific_page[cur_page_id];
+    //     // get page being written
+    //     page& target_page = specific_page[cur_page_id];
 
-        // record position before updating and status modify
-        slot ret_slot =
-            slot(false, keysize, target_page.cur_pos, specific_page.size() - 1);
+    //     // record position before updating and status modify
+    //     slot ret_slot =
+    //         slot(false, keysize, target_page.cur_pos, specific_page.size() - 1);
 
-        // write content
-        target_page.append_impl(key, keysize, v, DEFAULT_NORMAL_ALIGNMENT);
+    //     // write content
+    //     target_page.append_impl(key, keysize, v, DEFAULT_NORMAL_ALIGNMENT);
 
-        return ret_slot;
-    }
+    //     return ret_slot;
+    // }
 
     class iterator {
        public:
@@ -1958,14 +2028,6 @@ class htrie_map {
                     ((hash_node*)target_node)->get_prefix());
         }
 
-        std::pair<bool, T> insert_hashnode(slot s, htrie_map<CharT, T>* hm,
-                                           T v) {
-            return ((hash_node*)target_node)
-                ->insert_slot_in_hashnode(
-                    s, hm, v, bucketid, slotid,
-                    ((hash_node*)target_node)->get_prefix());
-        }
-
         std::pair<bool, T> insert_trienode(const CharT* key, size_t key_size,
                                            htrie_map<CharT, T>* hm, T v) {
             return ((trie_node*)target_node)
@@ -1975,7 +2037,7 @@ class htrie_map {
 
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
                                               T v, bool findMode, bool clean_on = true) {
-        if (clean_on && !findMode) clean_prefix();
+        // if (clean_on && !findMode) clean_prefix();
 
         // update longest_string_size
         longest_string_size =
@@ -2013,7 +2075,7 @@ class htrie_map {
                         // trie_node with a hash_node son
                         current_node =
                             ((trie_node*)current_node)
-                                ->find_trie_node_child(key[pos], key, pos);
+                                ->find_trie_node_child(key[pos], key, pos, this);
                     } else {
                         // return the hitted trie_node* or nullptr if not
                         // found
@@ -2226,49 +2288,49 @@ class htrie_map {
         }
     }
 
-    void clean_prefix(bool force_clean = false) {
-        if (!force_clean)
-            if ((!(cur_normal_page_id == ((1 << NBITS_PID) - 1) ||
-                   cur_special_page_id == ((1 << NBITS_PID_S) - 1))) ||
-                force_clean)
-                return;
+    // void clean_prefix(bool force_clean = false) {
+    //     if (!force_clean)
+    //         if ((!(cur_normal_page_id == ((1 << NBITS_PID) - 1) ||
+    //                cur_special_page_id == ((1 << NBITS_PID_S) - 1))) ||
+    //             force_clean)
+    //             return;
 
-        // move the old pages to temp vector old_page
-        vector<page> new_normal_page;
-        vector<page> new_special_page;
+    //     // move the old pages to temp vector old_page
+    //     vector<page> new_normal_page;
+    //     vector<page> new_special_page;
 
-        // init the old pages
-        new_normal_page.push_back(page(Max_bytes_per_kv));
-        new_special_page.push_back(page(DEFAULT_SPECIAL_Max_bytes_per_kv));
+    //     // init the old pages
+    //     new_normal_page.push_back(page(Max_bytes_per_kv));
+    //     new_special_page.push_back(page(DEFAULT_SPECIAL_Max_bytes_per_kv));
 
-        cout << "cleaning\n";
-        uint64_t sta = get_time();
-        traverse_node_for_useless_prefix_cleaning(t_root, new_normal_page,
-                                                  new_special_page);
-        uint64_t end = get_time();
-        clean_prefix_total_time += end - sta;
+    //     cout << "cleaning\n";
+    //     uint64_t sta = get_time();
+    //     traverse_node_for_useless_prefix_cleaning(t_root, new_normal_page,
+    //                                               new_special_page);
+    //     uint64_t end = get_time();
+    //     clean_prefix_total_time += end - sta;
 
-        cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
+    //     cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
         
-        //TODO: FIXME: the clean function will increase the memory cost?!?!?!
-        // Release the char* in pages
-        for(int i=0;i!=normal_pages.size();i++){
-            free(normal_pages[i].content);
-        }
+    //     //TODO: FIXME: the clean function will increase the memory cost?!?!?!
+    //     // Release the char* in pages
+    //     for(int i=0;i!=normal_pages.size();i++){
+    //         free(normal_pages[i].content);
+    //     }
 
-        for(int i=0;i!=special_pages.size();i++){
-            free(special_pages[i].content);
-        }
+    //     for(int i=0;i!=special_pages.size();i++){
+    //         free(special_pages[i].content);
+    //     }
         
-        cur_normal_page_id = new_normal_page.size() - 1;
-        cur_special_page_id = new_special_page.size() - 1;
-        normal_pages.swap(new_normal_page);
-        special_pages.swap(new_special_page);
+    //     cur_normal_page_id = new_normal_page.size() - 1;
+    //     cur_special_page_id = new_special_page.size() - 1;
+    //     normal_pages.swap(new_normal_page);
+    //     special_pages.swap(new_special_page);
 
-        cout << ") ==>  (" << cur_normal_page_id << " " << cur_special_page_id << ")" << endl;
+    //     cout << ") ==>  (" << cur_normal_page_id << " " << cur_special_page_id << ")" << endl;
 
-        return;
-    }
+    //     return;
+    // }
 
     void deleteMyself() {
         map<T, SearchPoint> empty;
