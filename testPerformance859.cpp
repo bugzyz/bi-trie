@@ -1,3 +1,8 @@
+/*
+
+abc1"Section_626\u002e869\u002d_Insurance_Field_Representatives_And_Operations_\u002d_License\u002c_adjusters\u002e_\u002e_\u003d\u003d_Duties_\u003d\u003d_The_public_adjuster\u0027s_main_responsibilities_are_to\u003a_\u002aEvaluate_existing_insurance_policies_in_order_to_determine_what_coverage_may_be_applicable_to_a_claim_\u002aResearch\u002c_detail\u002c_and_substantiate_damage_to_buildings_and_contents_and_any_additional_expenses_\u002aEvaluate_business_interruption_losses_and_extra_expense_claims_for_businesses_\u002aDetermine_values_for_settling_covered_damages_\u002aPrepare\u002c_document_and_support_the_claim_on_behalf_of_the_insured_\u002aNegotiate_a_settlement_with_the_insurance_company_on_behalf_of_an_insured_\u002aRe\u002dopen_a_claim_and_negotiate_for_more_money_if_a_discrepancy_is_found_after_the_claim_has_been_settled_Typically_a_policyholder_hires_a_public_adjuster_to_document_and_expedite_their_claims\u002c_obtain_a_more_satisfactory_claim_recovery\u002c_more_quickly\u002c_and_completely_restore_their_residence_or_business_operations\u002c_and_insulate_themselves_from_the_stress_of_engaging_in_an_adversarial_role_with_a_large_corporation\u002e_However\u002c_the_cost_of_hiring_outside_experts\u002c_no_matter_how_well\u002dearned\u002c_can_be_an_added_burden_when_they_are_borne_entirely_by_the_policyholder\u002e_The_added_burden_can_be_alleviated_by_the_work_of_a_public_adjuster\u002e_However\u002c_policy_holders_who_are_not_properly_indemnified_by_their_insurance_carriers_may_be_left_with_little_choice_but_to_hire_professional_assistance_to_recover_the_claim_payment_to_which_they_are_entitled\u002e_Public_adjusters_must_be_able_to_recognize_claims_that_may_be_insubstantial_and_disputable_and_explain_such_problems_to_the_client\u002e_The_everyday_meanings_of_terms_like"	423293
+abc1"Section_626\u002e869\u002d_Insurance_Field_Representatives_And_Operations_\u002d_License\u002c_adjusters\u002e_\u002e_\u003d\u003d_Duties_\u003d\u003d_The_public_adjuster\u0027s_main_responsibilities_are_to\u003a_\u002aEvaluate_existing_insurance_policies_in_order_to_determine_what_coverage_may_be_applicable_to_a_claim_\u002aResearch\u002c_detail\u002c_and_substantiate_damage_to_buildings_and_contents_and_any_additional_expenses_\u002aEvaluate_business_interruption_losses_and_extra_expense_claims_for_businesses_\u002aDetermine_values_for_settling_covered_damages_\u002aPrepare\u002c_document_and_support_the_claim_on_behalf_of_the_insured_\u002aNegotiate_a_settlement_with_the_insurance_company_on_behalf_of_an_insured_\u002aRe\u002dopen_a_claim_and_negotiate_for_more_money_if_a_discrepancy_is_found_after_the_claim_has_been_settled_Typically_a_poliasyholder_hires_a_public_adjuster_to_document_and_expedite_their_claims\u002c_obtain_a_more_satisfactory_claim_recovery\u002c_more_quickly\u002c_and_completely_restore_their_residence_or_business_operations\u002c_and_insulate_themselves_from_the_stress_of_engaging_in_an_adversarial_role_with_a_large_corporation\u002e_However\u002c_the_cost_of_hiring_outside_experts\u002c_no_matter_how_well\u002dearned\u002c_can_be_an_added_burden_when_they_are_borne_entirely_by_the_policyholder\u002e_The_added_burden_can_be_alleviated_by_the_work_of_a_public_adjuster\u002e_However\u002c_policy_holders_who_are_not_properly_indemnified_by_their_insurance_carriers_may_be_left_with_little_choice_but_to_hire_professional_assistance_to_recover_the_claim_payment_to_which_they_are_entitled\u002e_Public_adjusters_must_be_able_to_recognize_claims_that_may_be_insubstantial_and_disputable_and_explain_such_problems_to_the_client\u002e_The_everyday_meanings_of_terms_like"	423294
+*/
 bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
@@ -82,7 +87,7 @@ int main() {
         count++;
     }
     myTrie::debuging::process_mem_usage("unordered map", virt, res);
-
+    
     endUm = get_time();
 
     f.close();
@@ -113,7 +118,7 @@ int main() {
         myTrie::debuging::process_mem_usage("htrie_map no cleaning",virt, res);
         myTrie::debuging::clear_process_mem_usage();
         // cleaning
-         hm.clean_prefix(true);
+        //  hm.clean_prefix(true);
 
         // shrinking
         hm.shrink(); 
@@ -178,6 +183,9 @@ int main() {
             url7 = string_vec[i++];
             url8 = string_vec[i++];
             url9 = string_vec[i++];
+
+            if(!(i < string_vec.size()))
+                break;
 
             uint32_t gotfromhm;
             int64_t hm_get_start = get_time();
@@ -261,6 +269,9 @@ int main() {
             v7 = id_vec[i++];
             v8 = id_vec[i++];
             v9 = id_vec[i++];
+
+            if(!(i < id_vec.size()))
+                break;
 
             std::string gotfromhm;
             int64_t hm_get_start = get_time();
