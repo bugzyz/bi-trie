@@ -46,6 +46,8 @@
 
 #define MAX_NORMAL_LEN (1 << NBITS_LEN)
 
+#define is_belong_to_special_group(keysize) (!(keysize < MAX_NORMAL_LEN))
+
 // #define NBITS_SPECIAL 1
 // #define NBITS_LEN 7   // 128 length
 // #define NBITS_POS 28  // 268435456(1 align) pos
@@ -1460,18 +1462,14 @@ class htrie_map {
             return res1.second;
         }
 
-        inline bool belong_to_special_group(size_t keysize) {
-            return !(keysize < MAX_NORMAL_LEN);
-        }
-
         inline size_t get_page_group_id(size_t keysize) {
-            return belong_to_special_group(keysize) ? special_pgid
-                                                    : normal_pgid;
+            return is_belong_to_special_group(keysize) ? special_pgid
+                                                       : normal_pgid;
         }
 
         inline size_t get_page_group_id(slot* sl) {
-            return belong_to_special_group(sl->get_length()) ? special_pgid
-                                                             : normal_pgid;
+            return is_belong_to_special_group(sl->get_length()) ? special_pgid
+                                                                : normal_pgid;
         }
 
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
@@ -1529,11 +1527,22 @@ class htrie_map {
 
             slot* target_slot = get_slot(bucketid, slotid);
 
+            // Ask page_manager that whether there is a place for new element
+            /*
+             * if page_manager pm don't have enough memory, pm will take charge
+             * of the page group allocation, and update all hash_nodes'
+             * normal_pgid, special_pgid. And so the hm->write_kv() can write
+             * the content to a updated page group*/
+            /*
+             * if page_manager pm have enough memory, the hm->write_kv() will
+             * write the content to original page group
+             */
+            (hm->pm).try_insert(get_page_group_id(keysize), keysize);
+
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
-            target_slot->set_slot(hm->write_kv(belong_to_special_group(keysize),
-                                               get_page_group_id(keysize), key,
-                                               keysize, v));
+            target_slot->set_slot(
+                hm->write_kv(get_page_group_id(keysize), key, keysize, v));
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
 
@@ -1694,12 +1703,13 @@ class htrie_map {
             init_a_new_page_group(init_type::IN_SPECIAL_GROUP);
         }
 
-        inline slot write_kv(bool special, size_t page_group_id, const CharT* key,
-                      size_t keysize, T v) {
-            return special ? special_pg[page_group_id].write_kv_to_page(
-                                 key, keysize, v)
-                           : normal_pg[page_group_id].write_kv_to_page(
-                                 key, keysize, v);
+        inline slot write_kv(size_t page_group_id, const CharT* key,
+                             size_t keysize, T v) {
+            return is_belong_to_special_group(keysize)
+                       ? special_pg[page_group_id].write_kv_to_page(key,
+                                                                    keysize, v)
+                       : normal_pg[page_group_id].write_kv_to_page(key, keysize,
+                                                                   v);
         }
 
         inline size_t get_normal_group_id() { return n_size - 1; }
@@ -1717,6 +1727,8 @@ class htrie_map {
                        ? special_pg[page_group_id].get_tail_v_in_page(s)
                        : normal_pg[page_group_id].get_tail_v_in_page(s);
         }
+
+        void try_insert(size_t page_group_id, size_t try_insert_keysize) {}
     };
 
     inline size_t get_normal_group_id() { return pm.get_normal_group_id(); }
@@ -1730,9 +1742,9 @@ class htrie_map {
         return pm.get_tail_v_in_pm(page_group_id, s);
     }
 
-    inline slot write_kv(bool is_special, size_t page_group_id, const CharT* key,
-                         size_t keysize, T v) {
-        return pm.write_kv(is_special, page_group_id, key, keysize, v);
+    inline slot write_kv(size_t page_group_id, const CharT* key, size_t keysize,
+                         T v) {
+        return pm.write_kv(page_group_id, key, keysize, v);
     }
 
     class SearchPoint {
