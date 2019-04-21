@@ -794,6 +794,8 @@ class htrie_map {
                         old_pm->get_tail_pointer_in_pm(resize_pgid, s),
                         s->get_length(),
                         old_pm->get_tail_v_in_pm(resize_pgid, s)));
+
+                    first_slot.set_slot(s);
                 }
             }
         }
@@ -1612,6 +1614,10 @@ class htrie_map {
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
 
+            if (first_slot.isEmpty()) {
+                first_slot.set_slot(target_slot);
+            }
+            
             elem_num++;
 
             if (need_burst()) {
