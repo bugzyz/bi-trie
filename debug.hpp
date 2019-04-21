@@ -246,16 +246,16 @@ void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
 
     } else {
         if (root->is_multi_node()) {
-            m_n++;
+            // m_n++;
 
-            class myTrie::htrie_map<CharT, T>::multi_node* cur_multi_node =
-                (class myTrie::htrie_map<CharT, T>::multi_node*)root;
-            multi_node_mem += sizeof(cur_multi_node);
-            std::map<string, class myTrie::htrie_map<CharT, T>::anode*> childs =
-                cur_multi_node->childs_;
-            for (auto it = childs.begin(); it != childs.end(); it++) {
-                traverse_trie<CharT, T>(it->second, depth + 1);
-            }
+            // class myTrie::htrie_map<CharT, T>::multi_node* cur_multi_node =
+            //     (class myTrie::htrie_map<CharT, T>::multi_node*)root;
+            // multi_node_mem += sizeof(cur_multi_node);
+            // std::map<string, class myTrie::htrie_map<CharT, T>::anode*> childs =
+            //     cur_multi_node->childs_;
+            // for (auto it = childs.begin(); it != childs.end(); it++) {
+            //     traverse_trie<CharT, T>(it->second, depth + 1);
+            // }
             return;
         }
         std::cout << "node is not trie nor hash node\n";
@@ -270,29 +270,29 @@ void scan_tree(class myTrie::htrie_map<CharT, T> &hm){
     // traverse trie to get memory,number information
     traverse_trie<CharT, T>(hm.t_root);
 
-    // scan normal
-    for (int i = 0; i != hm.normal_pages.size(); i++) {
-        size_t page_used = hm.normal_pages[i].cur_pos;
-        size_t page_have = Max_bytes_per_kv;
+    // // scan normal
+    // for (int i = 0; i != hm.normal_pages.size(); i++) {
+    //     size_t page_used = hm.normal_pages[i].cur_pos;
+    //     size_t page_have = Max_bytes_per_kv;
         
-        byte_pages_have += page_have;
-        byte_used_in_page += page_used;
+    //     byte_pages_have += page_have;
+    //     byte_used_in_page += page_used;
 
-        total_normal_page_number++;
-        page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
-    }
+    //     total_normal_page_number++;
+    //     page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
+    // }
 
-    // scan special
-    for (int i = 0; i != hm.special_pages.size(); i++) {
-        size_t page_used = hm.special_pages[i].cur_pos;
-        size_t page_have = DEFAULT_SPECIAL_Max_bytes_per_kv;
+    // // scan special
+    // for (int i = 0; i != hm.special_pages.size(); i++) {
+    //     size_t page_used = hm.special_pages[i].cur_pos;
+    //     size_t page_have = DEFAULT_SPECIAL_Max_bytes_per_kv;
         
-        byte_pages_have += page_have;
-        byte_used_in_page += page_used;
+    //     byte_pages_have += page_have;
+    //     byte_used_in_page += page_used;
 
-        total_special_page_number++;
-        page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
-    }
+    //     total_special_page_number++;
+    //     page_metadata_mem += sizeof(class myTrie::htrie_map<CharT, T>::page);
+    // }
 
     // value to searchPoint scanning
     size_t counter_sz = hm.v2k.size();
