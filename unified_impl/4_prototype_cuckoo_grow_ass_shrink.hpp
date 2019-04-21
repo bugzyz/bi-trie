@@ -1673,7 +1673,9 @@ class htrie_map {
                 unsigned int cur_pos;
                 char* content;
 
-                page(size_t size_per_page) : cur_pos(0) {
+                page() : cur_pos(0), content(nullptr) {}
+
+                void init_page(size_t size_per_page) {
                     content = (char*)malloc(size_per_page);
                 }
 
@@ -1691,9 +1693,13 @@ class htrie_map {
                                           alignment);
                 }
 
-                // ~page() {
-                //     free(content);
-                // }
+                ~page() {
+                    if (content != nullptr) {
+                        free(content);
+                        // static int counting = 0;
+                        // cout << "page dec " << counting++ << endl;
+                    }
+                }
             };
 
             page* pages;
@@ -1701,15 +1707,14 @@ class htrie_map {
             bool is_special;
 
            public:
-            page_group() : pages(nullptr), cur_page_id(0), is_special(false) {}
+            page_group() : pages(nullptr), cur_page_id(-1), is_special(false) {}
 
             void init_pg(int page_number, bool spe) {
                 is_special = spe;
                 cur_page_id = 0;
-                pages = (page*)malloc(
-                    sizeof(page) * (spe ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE));
-                pages[0] = page((spe ? DEFAULT_SPECIAL_Max_bytes_per_kv
-                                     : DEFAULT_Max_bytes_per_kv));
+                pages = new page[spe ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE]();
+                pages[0].init_page(spe ? DEFAULT_SPECIAL_Max_bytes_per_kv
+                                       : DEFAULT_Max_bytes_per_kv);
             }
 
             // get function
@@ -1733,9 +1738,9 @@ class htrie_map {
                     (is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
                                 : Max_bytes_per_kv)) {
                     cur_page_id++;
-                    pages[cur_page_id] =
-                        page((is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
-                                         : Max_bytes_per_kv));
+                    pages[cur_page_id].init_page(
+                        is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
+                                   : DEFAULT_Max_bytes_per_kv);
                 }
 
                 // get page being written
@@ -1782,13 +1787,10 @@ class htrie_map {
             }
 
             ~page_group() {
-                cout << "page_group deconstructor" << endl;
+                // cout << (void*)this << "page_group deconstructor" << endl;
                 int pages_size =
                     is_special ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE;
-                for (int i = 0; i != pages_size; i++) {
-                    free(pages[i].content);
-                }
-                free(pages);
+                delete []pages;
             }
         };
 
@@ -1829,6 +1831,12 @@ class htrie_map {
 
             for (int i = 0; i != special_page_group_number; i++)
                 init_a_new_page_group(group_type::SPECIAL_GROUP, i);
+        }
+
+        ~page_manager(){
+            delete []normal_pg;
+            delete []special_pg;
+            // cout << "page manager deconstruction" << endl;
         }
 
         inline slot write_kv(size_t page_group_id, const CharT* key,
@@ -2001,6 +2009,7 @@ class htrie_map {
                  << (end - sta) / 1000 / (double)1000 << " s" << endl;
 
             // TODO: implement the deconstructor function of a page_manager!!!
+            delete pm;
             return;
         }
     };
