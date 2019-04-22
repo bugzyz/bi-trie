@@ -439,15 +439,15 @@ class htrie_map {
             }
         };
 
-        child_node* first_child;
-        int number;
+        child_node* first_child_;
+        int size_;
 
        public:
-        child_representation() : number(0), first_child(nullptr) {}
+        child_representation() : size_(0), first_child_(nullptr) {}
 
         inline trie_node*& operator[](char c) {
             //find the ok node
-            child_node* current_child_node = first_child;
+            child_node* current_child_node = first_child_;
             child_node* last_child_node = nullptr;
 
             while (current_child_node) {
@@ -458,20 +458,21 @@ class htrie_map {
                 current_child_node = current_child_node->next;
             }
 
-            if (first_child == nullptr) {
-                first_child = new child_node(c, nullptr);
+            // find no target node, add one
+            if (first_child_ == nullptr) {
+                first_child_ = new child_node(c, nullptr);
 
-                number++;
-                return first_child->current;
+                size_++;
+                return first_child_->current;
             }
 
             last_child_node->add_next_child(c);
-            number++;
-            return (last_child_node->next_child())->current;
+            size_++;
+            return last_child_node->next_child()->current;
         }
 
         inline child_iterator find(char c) {
-            child_node* current_child_node = first_child;
+            child_node* current_child_node = first_child_;
             do {
                 if (current_child_node->child_node_char == c)
                     return child_iterator(c, current_child_node->current);
@@ -480,30 +481,32 @@ class htrie_map {
             return child_iterator(c, nullptr);
         }
 
-        inline size_t size() { return number; }
+        inline size_t size() { return size_; }
 
+        /* iterator function */
         inline child_iterator begin() {
-            return first_child != nullptr
-                       ? child_iterator(first_child->child_node_char,
-                                        first_child->current)
+            return first_child_ != nullptr
+                       ? child_iterator(first_child_->child_node_char,
+                                        first_child_->current)
                        : child_iterator(0, nullptr);
         }
 
         inline child_iterator end() { return child_iterator(0, nullptr); }
 
+        /* for traverse_for_pgm_resize() */
         inline void get_childs(vector<anode*>& res) {
-            child_node* current_child_node = first_child;
+            child_node* current_child_node = first_child_;
 
             while (current_child_node) {
-
                 res.push_back(current_child_node->current);
-
                 current_child_node = current_child_node->next;
             }
         }
-
+        
+        // TODO
+        /* for shrink node */
         inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
-            child_node* current_child_node = first_child;
+            child_node* current_child_node = first_child_;
 
             while (current_child_node) {
                 res.push_back(
@@ -514,20 +517,21 @@ class htrie_map {
             }
         }
 
-        size_t get_childs_representation_mem() {
-            return sizeof(child_representation) + number * sizeof(child_node);
-        }
-
-        void delete_child_representation(){
-            child_node* current_child_node = first_child;
-            child_node* temp_child_node = nullptr;
+        ~child_representation() {
+            // release the list
+            child_node* current_child_node = first_child_;
+            child_node* previous_current_child_node = nullptr;
 
             while (current_child_node) {
-                temp_child_node = current_child_node;
+                previous_current_child_node = current_child_node;
                 current_child_node = current_child_node->next;
-                free(temp_child_node);
-                // cout << "freeing child_representation!" << endl;
+                delete (previous_current_child_node);
             }
+        }
+
+        /* helper function: memory evaluation */
+        size_t get_childs_representation_mem() {
+            return sizeof(child_representation) + size_ * sizeof(child_node);
         }
     };
 #endif
@@ -669,11 +673,7 @@ class htrie_map {
             if (prefix != nullptr) free(prefix);
         }
 
-        ~trie_node() {
-            // if (prefix != nullptr) free(prefix);
-            // delete trie_node_childs;
-            trie_node_childs.delete_child_representation();
-        }
+        ~trie_node() {}
 
         // finding target, if target doesn't exist, return nullptr
         trie_node* find_trie_node_child(CharT c) {
