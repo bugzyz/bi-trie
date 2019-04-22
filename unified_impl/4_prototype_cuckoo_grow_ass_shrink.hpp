@@ -22,8 +22,14 @@
 
 //for min(x,y)
 #include <algorithm>
+
 #include <boost/unordered_map.hpp>
 
+/* 
+ * DEFAULT_Associativity * DEFAULT_Bucket_num should be set to be greater
+ * than 26 for 26 alaphbet and ", @ .etc.(the test in lubm40 shows that it
+ * has 50 char species)
+ */
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
 #define DEFAULT_Max_bytes_per_kv 4096
@@ -49,17 +55,6 @@
 #define MAX_SPECIAL_PAGE (1 << NBITS_PID_S)
 
 #define MAX_NORMAL_LEN (1 << NBITS_LEN)
-
-// #define NBITS_SPECIAL 1
-// #define NBITS_LEN 7   // 128 length
-// #define NBITS_POS 28  // 268435456(1 align) pos
-// #define NBITS_PID 28  // 268435456 page
-
-// #define NBITS_SPECIAL_S 1
-// #define NBITS_LEN_S 13  // 8192 length
-// #define NBITS_POS_S 25   // 33554432(32 align) pos
-// #define NBITS_PID_S 25   // 33554432 page
-
 
 // #define DEFAULT_SPECIAL_ALIGNMENT \
 //     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
@@ -105,32 +100,39 @@ namespace myTrie {
 template <class CharT, class T, class KeySizeT = std::uint16_t>
 class htrie_map {
    public:
+    public:
     
+    /* trie node type */
     class trie_node;
     class hash_node;
-    class MultiTrieNode;
+
+    /* iterator that contains */
     class iterator;
-    class page;
+
     class slot;
-
-    class page_group;
+    /* page management */
     class page_manager;
+    class page_group;
+    class page;
 
+    /* group type divided by the keysize */
     enum class group_type : unsigned char {
         NORMAL_GROUP,
         SPECIAL_GROUP,
     };
 
-    static group_type get_group_type(size_t keysize) {
+    /* helper function */
+    static inline group_type get_group_type(size_t keysize) {
         return keysize < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                         : group_type::SPECIAL_GROUP;
     }
 
-    static group_type get_group_type(slot* s) {
+    static inline group_type get_group_type(slot* s) {
         return s->get_length() < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                                 : group_type::SPECIAL_GROUP;
     }
 
+    /* helper class for hash_node get its page_groups */
     class page_group_package {
         typename page_manager::page_group* n_group;
         typename page_manager::page_group* s_group;
@@ -162,15 +164,8 @@ class htrie_map {
         }
     };
 
-    // DEFAULT_Associativity * DEFAULT_Bucket_num should be set to be greater
-    // than 26 for 26 alaphbet and ", @ .etc.(the test in lubm40 shows that it
-    // has 50 char species)
-    enum class node_type : unsigned char {
-        HASH_NODE,
-        TRIE_NODE,
-        MULTI_NODE,
-    };
-
+    /* node type definition */
+    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE, MULTI_NODE };
     class anode {
        public:
         node_type _node_type;
@@ -180,13 +175,13 @@ class htrie_map {
         bool is_trie_node() { return _node_type == node_type::TRIE_NODE; }
         bool is_multi_node() { return _node_type == node_type::MULTI_NODE; }
 
+        // virtual function for page_manager resize
         virtual void traverse_for_pgm_resize(page_manager* old_pm,
                                              page_manager* new_pm,
                                              group_type resize_type) = 0;
     };
 
-    /*-----------------double array
-     * string_child_representation-----------------*/
+    /*-------------double array string_child_representation-------------*/
     class string_child_representation {
         class child_node {
            public:
@@ -2383,13 +2378,14 @@ class htrie_map {
         return hash_val1 < hash_val2;
     }
 
+
+    /*---------------external cleaning interface-------------------*/
     void clean_useless() {
         // zero at last means that we don't need to expand the page_manager
         pm.clean_useless_in_pm(group_type ::NORMAL_GROUP, this, 0);
         pm.clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
     }
 
-    /*---------------external cleaning interface-------------------*/
     /*--------------------global shrink node functions--------------------*/
     // TODO: FIX ME! the branch of deciding the type of node is poor
     anode* shrink_node(anode* node) {
@@ -2480,72 +2476,6 @@ class htrie_map {
         uint64_t end = get_time();
         shrink_total_time = end - sta;
     }
-
-    /*--------------------global clean prefix functions--------------------*/
-    void traverse_node_for_useless_prefix_cleaning(
-        anode* node, vector<page>& new_normal_page,
-        vector<page>& new_special_page) {
-        if (node->is_trie_node()) {
-            vector<anode*> child_nodes;
-            ((trie_node*)node)->get_childs_vector(child_nodes);
-            for (int i = 0; i != child_nodes.size(); i++) {
-                traverse_node_for_useless_prefix_cleaning(
-                    child_nodes[i], new_normal_page, new_special_page);
-            }
-        } else if (node->is_hash_node()) {
-            ((hash_node*)(node))
-                ->move_suffix_to_new_page(this, new_normal_page,
-                                          new_special_page);
-        } else {
-            cout << "program are in a unexpected branch\n";
-            assert(false);
-            exit(0);
-        }
-    }
-
-    // void clean_prefix(bool force_clean = false) {
-    //     if (!force_clean)
-    //         if ((!(cur_normal_page_id == ((1 << NBITS_PID) - 1) ||
-    //                cur_special_page_id == ((1 << NBITS_PID_S) - 1))) ||
-    //             force_clean)
-    //             return;
-
-    //     // move the old pages to temp vector old_page
-    //     vector<page> new_normal_page;
-    //     vector<page> new_special_page;
-
-    //     // init the old pages
-    //     new_normal_page.push_back(page(Max_bytes_per_kv));
-    //     new_special_page.push_back(page(DEFAULT_SPECIAL_Max_bytes_per_kv));
-
-    //     cout << "cleaning\n";
-    //     uint64_t sta = get_time();
-    //     traverse_node_for_useless_prefix_cleaning(t_root, new_normal_page,
-    //                                               new_special_page);
-    //     uint64_t end = get_time();
-    //     clean_prefix_total_time += end - sta;
-
-    //     cout << "clean res: (" << cur_normal_page_id << " " << cur_special_page_id;
-        
-    //     //TODO: FIXME: the clean function will increase the memory cost?!?!?!
-    //     // Release the char* in pages
-    //     for(int i=0;i!=normal_pages.size();i++){
-    //         free(normal_pages[i].content);
-    //     }
-
-    //     for(int i=0;i!=special_pages.size();i++){
-    //         free(special_pages[i].content);
-    //     }
-        
-    //     cur_normal_page_id = new_normal_page.size() - 1;
-    //     cur_special_page_id = new_special_page.size() - 1;
-    //     normal_pages.swap(new_normal_page);
-    //     special_pages.swap(new_special_page);
-
-    //     cout << ") ==>  (" << cur_normal_page_id << " " << cur_special_page_id << ")" << endl;
-
-    //     return;
-    // }
 };  // namespace myTrie
 
 }  // namespace myTrie
