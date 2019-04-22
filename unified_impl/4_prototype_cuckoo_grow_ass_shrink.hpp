@@ -22,6 +22,7 @@
 
 //for min(x,y)
 #include <algorithm>
+#include <boost/unordered_map.hpp>
 
 #define DEFAULT_Associativity 8
 #define DEFAULT_Bucket_num 10
@@ -36,8 +37,8 @@
 
 #define NBITS_SPECIAL 1
 #define NBITS_LEN 7   // 128 length
-#define NBITS_POS 10  // 1024(4 align) pos
-#define NBITS_PID 14  // 16384 page
+#define NBITS_POS 12  // 4096(1 align) pos
+#define NBITS_PID 12  // 4096 page
 
 #define NBITS_SPECIAL_S 1
 #define NBITS_LEN_S 13  // 8192 length
@@ -63,7 +64,7 @@
 // #define DEFAULT_SPECIAL_ALIGNMENT \
 //     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
 #define DEFAULT_SPECIAL_ALIGNMENT 32
-#define DEFAULT_NORMAL_ALIGNMENT 4
+#define DEFAULT_NORMAL_ALIGNMENT 1
 
 static uint32_t longest_string_size;
 
@@ -1804,12 +1805,12 @@ class htrie_map {
             if (type == group_type::SPECIAL_GROUP) {
                 s_size++;
                 special_pg[page_group_index].init_pg(MAX_SPECIAL_PAGE, true);
-                cout << "special page group increase!" << endl;
+                // cout << "special page group increase!" << endl;
                 return;
             } else if (type == group_type::NORMAL_GROUP) {
                 n_size++;
                 normal_pg[page_group_index].init_pg(MAX_NORMAL_PAGE, false);
-                cout << "normal page group increase!" << endl;
+                // cout << "normal page group increase!" << endl;
                 return;
             } else {
                 cout << "undefined type!" << endl;
@@ -1822,8 +1823,8 @@ class htrie_map {
        public:
         page_manager(size_t normal_page_group_number = 1,
                      size_t special_page_group_number = 1)
-            : normal_pg(new page_group[16]),
-              special_pg(new page_group[16]),
+            : normal_pg(new page_group[128]),
+              special_pg(new page_group[128]),
               n_size(0),
               s_size(0) {
             for (int i = 0; i != normal_page_group_number; i++)
@@ -1928,7 +1929,7 @@ class htrie_map {
             // special_pg[i].swap(pm.special_pg[i]);
             page_group* temp_special_pg = special_pg;
             special_pg = pm.special_pg;
-            pm.set_special_pg(special_pg);
+            pm.set_special_pg(temp_special_pg);
 
             // swap the s_size
             int temp_s_size = s_size;
@@ -1972,24 +1973,17 @@ class htrie_map {
             
         }
 
-        void try_insert(group_type resize_type, size_t page_group_id,
-                        size_t try_insert_keysize, htrie_map<CharT, T>* hm) {
+        void clean_useless_in_pm(group_type resize_type,
+                                 htrie_map<CharT, T>* hm,
+                                 size_t expand_ratio = 1) {
             uint64_t sta = get_time();
 
-            // get target page_group
-            page_group& target = (resize_type == group_type::SPECIAL_GROUP
-                                      ? special_pg[page_group_id]
-                                      : normal_pg[page_group_id]);
-
-            // try insert, if success just return
-            if (target.try_insert(try_insert_keysize)) return;
-
             page_manager* pm;
-            cout << "resizing!!!\n";
+            // cout << "resizing!!!\n";
             if (resize_type == group_type::SPECIAL_GROUP) {
-                pm = new page_manager(0, s_size << 1);
+                pm = new page_manager(0, s_size << expand_ratio);
             } else {
-                pm = new page_manager(n_size << 1, 0);
+                pm = new page_manager(n_size << expand_ratio, 0);
             }
 
             // try insert, if failed, we reallocate the page groups,
@@ -2005,11 +1999,26 @@ class htrie_map {
             swap(*pm, resize_type);
 
             uint64_t end = get_time();
-            cout << "resizeing cost: "
-                 << (end - sta) / 1000 / (double)1000 << " s" << endl;
+            // cout << "resizeing cost: " << (end - sta) / 1000 / (double)1000
+            //      << " s" << endl;
 
-            // TODO: implement the deconstructor function of a page_manager!!!
             delete pm;
+            return;
+        }
+
+        void try_insert(group_type resize_type, size_t page_group_id,
+                        size_t try_insert_keysize, htrie_map<CharT, T>* hm) {
+
+            // get target page_group
+            page_group& target = (resize_type == group_type::SPECIAL_GROUP
+                                      ? special_pg[page_group_id]
+                                      : normal_pg[page_group_id]);
+
+            // try insert, if success just return
+            if (target.try_insert(try_insert_keysize)) return;
+
+            // traverse the trie and clean the useless content
+            clean_useless_in_pm(resize_type, hm);
             return;
         }
     };
@@ -2072,6 +2081,7 @@ class htrie_map {
    public:
     anode* t_root;
     std::map<T, SearchPoint> v2k;
+    // boost::unordered_map<T, SearchPoint> v2k;
     page_manager pm;
 
     htrie_map(size_t customized_associativity = DEFAULT_Associativity,
@@ -2371,7 +2381,12 @@ class htrie_map {
             myTrie::hashRelative::hash(t2.first.data(), t2.first.size());
 
         return hash_val1 < hash_val2;
-        // return hash_val1 >= hash_val2;
+    }
+
+    void clean_useless() {
+        // zero at last means that we don't need to expand the page_manager
+        pm.clean_useless_in_pm(group_type ::NORMAL_GROUP, this, 0);
+        pm.clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
     }
 
     /*---------------external cleaning interface-------------------*/
