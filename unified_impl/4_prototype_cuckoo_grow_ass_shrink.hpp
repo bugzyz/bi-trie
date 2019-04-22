@@ -192,25 +192,8 @@ class htrie_map {
 
     /*-------------string_child_representation-------------*/
     class string_child_representation {
-        class child_node {
-           public:
-            int hash_val;
-            string child_string;
-            anode* child;
-
-            child_node() : hash_val(0), child_string(""), child(nullptr) {}
-
-            child_node(int hash_val, string cs, anode* n)
-                : hash_val(hash_val), child_string(cs), child(n) {}
-
-            void operator=(const child_node& cn) {
-                hash_val = cn.hash_val;
-                child_string = cn.child_string;
-                child = cn.child;
-            }
-        };
-
        public:
+        // adaptor iterator to adapt the map implementation
         class child_iterator {
            public:
             string first;
@@ -219,10 +202,6 @@ class htrie_map {
             child_iterator(string f, anode* tn) : first(f), second(tn) {}
 
             inline child_iterator* operator->() { return this; }
-
-            inline bool operator==(child_iterator& right) {
-                return second == right.second;
-            }
 
             inline bool operator==(const child_iterator& right) {
                 return second == right.second;
@@ -234,59 +213,82 @@ class htrie_map {
         };
 
        private:
+        struct child_node {
+            int hash_val_;
+            string child_string_;
+            anode* child_;
+
+           public:
+            child_node() : hash_val_(0), child_string_(""), child_(nullptr) {}
+
+            inline void set_child_node(int hash_val, string child_string,
+                                       anode* child) {
+                hash_val_ = hash_val;
+                child_string_ = child_string;
+                child_ = child;
+            }
+
+            inline int get_hash_val() { return hash_val_; }
+            inline string& get_child_string() { return child_string_; }
+            inline anode* get_child() { return child_; }
+        };
+
         child_node* child_family_;
         int size_;
 
        public:
         string_child_representation(size_t child_number) : size_(child_number) {
-            child_family_ = new child_node[child_number];
+            child_family_ = new child_node[child_number]();
         }
 
         inline void add_child(string child_string, size_t child_index,
                               anode* n) {
-            child_family_[child_index].child_string = child_string;
-            child_family_[child_index].child = n;
-            child_family_[child_index].hash_val = myTrie::hashRelative::hash(
-                child_string.data(), child_string.size());
+            child_family_[child_index].set_child_node(
+                myTrie::hashRelative::hash(child_string.data(),
+                                           child_string.size()),
+                child_string, n);
         }
 
-        inline child_iterator find(string cs) {
+        // TODO: increase the number of childs to take advantage of binary
+        // search
+        // FIXME: consider the same hash value situation: | 5 | 5 | 5 | 5 | 5 |
+        // 5 | 5 |
+        inline child_iterator find(string target_string) {
+            // if only have one child, just compare its string
+            if (size_ == 1 &&
+                target_string == child_family_[0].get_child_string())
+                return child_iterator(target_string,
+                                      child_family_[0].get_child());
+
             // binary search
-            if (size_ == 1 && cs == child_family_[0].child_string)
-                return child_iterator(cs, child_family_[0].child);
-            int target_hash = myTrie::hashRelative::hash(cs.data(), cs.size());
+            int target_hash_val = myTrie::hashRelative::hash(
+                target_string.data(), target_string.size());
+            int target_index = -1;
+
             int low = 0;
             int high = size_ - 1;
-
-            int target_index = -1;
             while (low <= high) {
                 int mid = low + (high - low) / 2;
-                if (child_family_[mid].hash_val == target_hash) {
+                if (child_family_[mid].get_hash_val() == target_hash_val) {
                     target_index = mid;
                     break;
-                } else if (child_family_[mid].hash_val > target_hash)
+                } else if (child_family_[mid].get_hash_val() > target_hash_val)
                     high = mid - 1;
                 else
                     low = mid + 1;
             }
 
-            for (int i = target_index; target_index != size_ &&
-                                       child_family_[i].hash_val == target_hash;
+            // check the same hash value situation
+            for (int i = target_index;
+                 target_index != size_ &&
+                 child_family_[i].get_hash_val() == target_hash_val;
                  i++) {
-                if (child_family_[i].child_string == cs) {
-                    return child_iterator(cs, child_family_[i].child);
+                if (child_family_[i].get_child_string() == target_string) {
+                    return child_iterator(target_string,
+                                          child_family_[i].get_child());
                 }
             }
-            return child_iterator(cs, nullptr);
-
-            // // ordered find
-            // for (int i = 0; i != size_; i++) {
-            //     if (cs == child_family_[i].child_string) {
-            //         return child_iterator(cs, child_family_[i].child);
-            //     }
-            // }
-
-            // return child_iterator(cs, nullptr);
+            return child_iterator(target_string, nullptr);
         }
 
         inline size_t size() { return size_; }
@@ -2081,8 +2083,8 @@ class htrie_map {
 
    public:
     anode* t_root;
-    std::map<T, SearchPoint> v2k;
-    // boost::unordered_map<T, SearchPoint> v2k;
+    // std::map<T, SearchPoint> v2k;
+    boost::unordered_map<T, SearchPoint> v2k;
     page_manager pm;
 
     htrie_map(size_t customized_associativity = DEFAULT_Associativity,
