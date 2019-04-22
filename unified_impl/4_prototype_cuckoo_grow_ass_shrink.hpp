@@ -166,14 +166,23 @@ class htrie_map {
 
     /* node type definition */
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE, MULTI_NODE };
+    /* node's base class */
     class anode {
-       public:
-        node_type _node_type;
-        trie_node* parent;
+       private:
+        node_type n_type_;
+        trie_node* parent_;
 
-        bool is_hash_node() { return _node_type == node_type::HASH_NODE; }
-        bool is_trie_node() { return _node_type == node_type::TRIE_NODE; }
-        bool is_multi_node() { return _node_type == node_type::MULTI_NODE; }
+       public:
+        anode(node_type n_type, trie_node* parent)
+            : n_type_(n_type), parent_(parent) {}
+        bool is_hash_node() { return n_type_ == node_type::HASH_NODE; }
+        bool is_trie_node() { return n_type_ == node_type::TRIE_NODE; }
+        bool is_multi_node() { return n_type_ == node_type::MULTI_NODE; }
+
+        void set_parent(trie_node* p) { parent_ = p; }
+        trie_node* get_parent() { return parent_; }
+
+        node_type get_node_type() { return n_type_; }
 
         // virtual function for page_manager resize
         virtual void traverse_for_pgm_resize(page_manager* old_pm,
@@ -181,7 +190,7 @@ class htrie_map {
                                              group_type resize_type) = 0;
     };
 
-    /*-------------double array string_child_representation-------------*/
+    /*-------------string_child_representation-------------*/
     class string_child_representation {
         class child_node {
            public:
@@ -225,27 +234,26 @@ class htrie_map {
         };
 
        private:
-        child_node* child_family;
+        child_node* child_family_;
         int size_;
 
        public:
-        string_child_representation(size_t child_number)
-            : size_(child_number) {
-            child_family = new child_node[child_number];
+        string_child_representation(size_t child_number) : size_(child_number) {
+            child_family_ = new child_node[child_number];
         }
 
         inline void add_child(string child_string, size_t child_index,
                               anode* n) {
-            child_family[child_index].child_string = child_string;
-            child_family[child_index].child = n;
-            child_family[child_index].hash_val = myTrie::hashRelative::hash(
+            child_family_[child_index].child_string = child_string;
+            child_family_[child_index].child = n;
+            child_family_[child_index].hash_val = myTrie::hashRelative::hash(
                 child_string.data(), child_string.size());
         }
 
         inline child_iterator find(string cs) {
             // binary search
-            if (size_ == 1 && cs == child_family[0].child_string)
-                return child_iterator(cs, child_family[0].child);
+            if (size_ == 1 && cs == child_family_[0].child_string)
+                return child_iterator(cs, child_family_[0].child);
             int target_hash = myTrie::hashRelative::hash(cs.data(), cs.size());
             int low = 0;
             int high = size_ - 1;
@@ -253,28 +261,28 @@ class htrie_map {
             int target_index = -1;
             while (low <= high) {
                 int mid = low + (high - low) / 2;
-                if (child_family[mid].hash_val == target_hash) {
+                if (child_family_[mid].hash_val == target_hash) {
                     target_index = mid;
                     break;
-                } else if (child_family[mid].hash_val > target_hash)
+                } else if (child_family_[mid].hash_val > target_hash)
                     high = mid - 1;
                 else
                     low = mid + 1;
             }
 
             for (int i = target_index; target_index != size_ &&
-                                       child_family[i].hash_val == target_hash;
+                                       child_family_[i].hash_val == target_hash;
                  i++) {
-                if (child_family[i].child_string == cs) {
-                    return child_iterator(cs, child_family[i].child);
+                if (child_family_[i].child_string == cs) {
+                    return child_iterator(cs, child_family_[i].child);
                 }
             }
             return child_iterator(cs, nullptr);
 
             // // ordered find
             // for (int i = 0; i != size_; i++) {
-            //     if (cs == child_family[i].child_string) {
-            //         return child_iterator(cs, child_family[i].child);
+            //     if (cs == child_family_[i].child_string) {
+            //         return child_iterator(cs, child_family_[i].child);
             //     }
             // }
 
@@ -291,11 +299,10 @@ class htrie_map {
         string_child_representation childs_;
         size_t string_keysize_;
 
-        multi_node(size_t _string_keysize_, size_t child_number)
-            : string_keysize_(_string_keysize_),childs_(string_child_representation(child_number)) {
-            anode::_node_type = node_type::MULTI_NODE;
-            anode::parent = nullptr;
-        }
+        multi_node(size_t string_keysize_, size_t child_number)
+            : anode(node_type::MULTI_NODE, nullptr),
+              string_keysize_(string_keysize_),
+              childs_(string_child_representation(child_number)) {}
 
         anode* find_child(const CharT* key, size_t key_size) {
             auto it = childs_.find(string(key, string_keysize_));
@@ -577,14 +584,12 @@ class htrie_map {
         T value;
 
         trie_node(trie_node* p)
-            : have_value(false),
+            : anode(node_type::TRIE_NODE, p),
+              have_value(false),
               value(T()),
               hash_node_child(nullptr),
               prefix(nullptr),
-              prefix_len(0) {
-            anode::_node_type = node_type::TRIE_NODE;
-            anode::parent = p;
-        }
+              prefix_len(0) {}
 
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
@@ -769,7 +774,8 @@ class htrie_map {
        public:
         explicit hash_node(trie_node* p, string prefix, htrie_map<CharT, T>* hm,
                            size_t need_associativity = 1)
-            : cur_associativity(need_associativity > Associativity
+            : anode(node_type::HASH_NODE, p),
+              cur_associativity(need_associativity > Associativity
                                     ? Associativity
                                     : need_associativity),
               elem_num(0),
@@ -777,13 +783,12 @@ class htrie_map {
               first_slot(0, 0, 0, 0),
               normal_pgid(hm->get_normal_group_id()),
               special_pgid(hm->get_special_group_id()) {
-            anode::_node_type = node_type::HASH_NODE;
-            anode::parent = p;
-            if (p != nullptr) anode::parent->set_prefix(prefix);
+            if (p != nullptr) this->get_parent()->set_prefix(prefix);
 
             key_metas =
                 (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
-            // key_metas = new slot[cur_associativity * Bucket_num * sizeof(slot)];
+            // key_metas = new slot[cur_associativity * Bucket_num *
+            // sizeof(slot)];
 
             // init key space
             for (int i = 0; i != cur_associativity * Bucket_num; i++) {
@@ -832,8 +837,9 @@ class htrie_map {
         ~hash_node() { free(key_metas); }
 
         string get_prefix() {
-            return anode::parent != nullptr ? anode::parent->get_prefix()
-                                            : string();
+            return this->get_parent() != nullptr
+                       ? this->get_parent()->get_prefix()
+                       : string();
         }
 
         inline slot* get_slot(size_t bucketid, size_t slotid) {
@@ -1297,7 +1303,7 @@ class htrie_map {
                     if (length_left == 0) {
                         string new_prefix = prefix + key[common_prefix_len];
 
-                        hnode->anode::parent->insert_kv_in_trienode(
+                        hnode->get_parent()->insert_kv_in_trienode(
                             new_prefix.data(), new_prefix.size(), hm, v);
                         continue;
                     }
@@ -1337,7 +1343,7 @@ class htrie_map {
                 pair<hash_node*, map<string, T>>& temp_pair = it->second;
                 hash_node* burst_hnode = temp_pair.first;
                 burst_hnode->burst_by_elements(temp_pair.second,
-                                               burst_hnode->anode::parent, hm,
+                                               burst_hnode->get_parent(), hm,
                                                burst_again_prefix);
 
                 delete burst_hnode;
@@ -1652,7 +1658,7 @@ class htrie_map {
             elem_num++;
 
             if (need_burst()) {
-                burst(this->anode::parent, hm, prefix);
+                burst(this->get_parent(), hm, prefix);
 
                 delete this;
             }
@@ -2052,7 +2058,7 @@ class htrie_map {
             }
 
             // get the parent char chain
-            trie_node* cur_node = ((hash_node*)node)->anode::parent;
+            trie_node* cur_node = ((hash_node*)node)->get_parent();
             static char* buf = (char*)malloc(longest_string_size);
 
             size_t len = cur_node == nullptr ? 0 : cur_node->get_prefix(buf);
@@ -2251,7 +2257,7 @@ class htrie_map {
         anode* current_node = t_root;
 
         for (size_t pos = 0; pos < key_size; pos++) {
-            switch (current_node->anode::_node_type) {
+            switch (current_node->get_node_type()) {
                 case node_type::MULTI_NODE: {
                     if (!findMode) {
                     } else {
@@ -2316,7 +2322,7 @@ class htrie_map {
                                 (hash_node*)current_node;
 
                             hnode_burst_needed->burst(
-                                hnode_burst_needed->anode::parent, this,
+                                hnode_burst_needed->get_parent(), this,
                                 string(key, pos));
 
                             delete hnode_burst_needed;
@@ -2442,7 +2448,7 @@ class htrie_map {
                 }
                 if (allow_next_layer) {
                     for (int i = 0; i != next_layer.size(); i++) {
-                        delete (next_layer[i].second)->anode::parent;
+                        delete (next_layer[i].second)->get_parent();
                     }
                 }
                 string_keysize++;
