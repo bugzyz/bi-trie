@@ -579,6 +579,7 @@ class htrie_map {
         // store the suffix of hash_node or trie_node
         child_representation trie_node_childs;
         // std::map<CharT, trie_node*> trie_node_childs;
+        // TODO: integrate into child_representation
         hash_node* hash_node_child;
 
         // prefix
@@ -597,6 +598,7 @@ class htrie_map {
               prefix(nullptr),
               prefix_len(0) {}
 
+        // the virtual function for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
             vector<anode*> childs;
@@ -606,6 +608,7 @@ class htrie_map {
             }
         }
 
+        // get the value that terminate in this trie_node
         iterator search_kv_in_trienode() {
             return iterator(have_value, value, this, 0, 0);
         }
@@ -613,16 +616,22 @@ class htrie_map {
         std::pair<bool, T> insert_kv_in_trienode(const CharT* key,
                                                  size_t key_size,
                                                  htrie_map<CharT, T>* hm, T v) {
+            // set prefix
             set_prefix(key, key_size);
+
+            // set the value
             have_value = true;
             value = v;
+
+            // update v2k
             hm->set_v2k(v, this, -1);
+            
             return pair<bool,T>(true, v);
         }
 
-        /*-------*/
+        /*---helper function for traverse_for_pgm_resize----*/
         void get_childs_vector(vector<anode*> &res) {
-            //get all trie_node childs
+            //get all trie_node childs from child_representation
             trie_node_childs.get_childs(res);
             
             //if no trie_node childs, it must have a hash_node child
@@ -641,42 +650,29 @@ class htrie_map {
         }
 
         void set_prefix(const CharT* key, size_t key_size) {
-            if (key_size != 0) {
-                char* cur_prefix = (char*)malloc(key_size);
-                memcpy(cur_prefix, key, key_size);
-                free(prefix);
-                prefix = cur_prefix;
-                prefix_len = key_size;
-            } else {
-                if (prefix != nullptr) free(prefix);
-                prefix = nullptr;
-                prefix_len = 0;
-            }
+            if (prefix != nullptr) return;
+
+            prefix = (char*)malloc(key_size);
+            memcpy(prefix, key, key_size);
+            prefix_len = key_size;
         }
 
-        void set_prefix(std::string& p) {
-            uint16_t len = p.size();
-            if (len != 0) {
-                char* cur_prefix = (char*)malloc(p.size());
-                memcpy(cur_prefix, p.data(), len);
-                free(prefix);
-                prefix = cur_prefix;
-                prefix_len = len;
-            } else {
-                if (prefix != nullptr) free(prefix);
-                prefix = nullptr;
-                prefix_len = 0;
-            }
+        void clean_prefix() {
+            // if prefix aren't allocated or this trie_node contains a value we
+            // return
+            if (prefix_len == 0 || have_value) return;
+
+            // otherwise, free the prefix
+            free(prefix);
+            prefix = nullptr;
+            prefix_len = 0;
+            return;
         }
 
-        void clean_prefix(){
-            if (prefix != nullptr) free(prefix);
-        }
-
-        ~trie_node() {}
+        ~trie_node() { clean_prefix(); }
 
         // finding target, if target doesn't exist, return nullptr
-        trie_node* find_trie_node_child(CharT c) {
+        trie_node* find_trie_node_child(CharT c) {  
             auto found = trie_node_childs.find(c);
             if (found != trie_node_childs.end()) {
                 trie_node* target = found->second;
@@ -785,7 +781,7 @@ class htrie_map {
               first_slot(0, 0, 0, 0),
               normal_pgid(hm->get_normal_group_id()),
               special_pgid(hm->get_special_group_id()) {
-            if (p != nullptr) this->get_parent()->set_prefix(prefix);
+            if (p != nullptr) this->get_parent()->set_prefix(prefix.data(), prefix.size());
 
             key_metas =
                 (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
@@ -2052,7 +2048,7 @@ class htrie_map {
 
         void set_index(int i) { index = i; }
 
-        std::string get_string(htrie_map<CharT, T>* hm) {
+        std::string get_string(page_manager* pm) {
             if (node == nullptr) return string();
             // if the node is trie_node, just return the prefix on node
             if (node->is_trie_node()) {
@@ -2071,7 +2067,8 @@ class htrie_map {
                 slot* sl = hnode->get_slot(index);
 
                 memcpy(buf + len,
-                       hm->get_tail_pointer(hnode->get_page_group_id(sl), sl),
+                       pm->get_tail_pointer_in_pm(hnode->get_page_group_id(sl),
+                                                  sl),
                        sl->get_length());
                 len += sl->get_length();
             }
@@ -2283,6 +2280,8 @@ class htrie_map {
                     }
                 } break;
                 case node_type::TRIE_NODE: {
+                    // FIXME: not able to process the element terminated in
+                    // current trie_node
                     if (!findMode) {
                         // return the hitted trie_node* or create a new
                         // trie_node with a hash_node son
@@ -2357,7 +2356,7 @@ class htrie_map {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
     }
 
-    std::string searchByValue(T v) { return v2k[v].get_string(this); }
+    std::string searchByValue(T v) { return v2k[v].get_string(&pm); }
 
     // find operation
     std::pair<bool, T> findByKey(std::string key) {
