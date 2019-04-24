@@ -1392,18 +1392,21 @@ class htrie_map {
 
                 for (auto itt = sub_elements.begin(); itt != sub_elements.end();
                      itt++) {
-                    const string& temp = itt->first;
+                    const string& element_string = itt->first;
 
-                    if (temp.size() == 0) {
+                    // Rarely, only insert value in current hash_node
+                    if (element_string.size() == 0) {
                         hnode->insert_value_in_node(hnode->get_prefix(),
-                                                 itt->second, hm);
+                                                    itt->second, hm);
                         continue;
                     }
 
+                    // Normally, search the target in hash_node and insert
                     iterator target_it = hnode->search_kv_in_hashnode(
-                        temp.data(), temp.size(), hm);
+                        element_string.data(), element_string.size(), hm);
                     std::pair<bool, T> res = target_it.insert_hashnode(
-                        temp.data(), temp.size(), hm, itt->second);
+                        element_string.data(), element_string.size(), hm,
+                        itt->second);
                     // If insert failed, it needs burst
                     if (res.first == false) {
                         hnode->burst_by_elements(sub_elements, parent, hm);
