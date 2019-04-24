@@ -202,8 +202,8 @@ class htrie_map {
         // for level traverse
         virtual vector<anode*> print_node_info() = 0;
 
-        iterator insert_kv_in_node(string prefix, T v,
-                                   htrie_map<CharT, T>* hm) {
+        iterator insert_value_in_node(string prefix, T v,
+                                      htrie_map<CharT, T>* hm) {
             value_ = v;
             have_value_ = true;
             hm->set_v2k(v, this, -1);
@@ -1114,9 +1114,30 @@ class htrie_map {
                 (double)need_size / (double)Bucket_num / Burst_ratio + 1);
         }
 
+        string get_common_prefix(map<string, T>& elements) {
+            // calculate the prefix len first
+            const char* ret_key_pointer = nullptr;
+            unsigned int common_prefix_len = INT_MAX;
+
+            for (auto& string_to_value : elements) {
+                const char* key = string_to_value.first.data();
+                unsigned int length = string_to_value.first.size();
+
+                if (ret_key_pointer == nullptr) ret_key_pointer = key;
+
+                // update the common_prefix_len
+                unsigned int cur_com_prefix_len = cal_common_prefix_len(
+                    ret_key_pointer, common_prefix_len, key, length);
+                if (common_prefix_len > cur_com_prefix_len) {
+                    common_prefix_len = cur_com_prefix_len;
+                }
+            }
+            return string(ret_key_pointer, common_prefix_len);
+        }
+
         string get_common_prefix(page_group_package& pgp) {
             // calculate the capacity of hashnode we need
-            const char* first_key_p = nullptr;
+            const char* ret_key_pointer = nullptr;
             unsigned int common_prefix_len = INT_MAX;
             for (int i = 0; i != Bucket_num && common_prefix_len != 0; i++) {
                 for (int j = 0; j != Associativity && common_prefix_len != 0;
@@ -1125,19 +1146,19 @@ class htrie_map {
                     if (s->isEmpty()) break;
 
                     char* key = pgp.get_tail_pointer(s);
-                    if (first_key_p == nullptr) first_key_p = key;
+                    if (ret_key_pointer == nullptr) ret_key_pointer = key;
 
                     // update the common_prefix_len
                     unsigned int cur_com_prefix_len = cal_common_prefix_len(
-                        first_key_p, common_prefix_len, key, s->get_length());
+                        ret_key_pointer, common_prefix_len, key,
+                        s->get_length());
                     if (common_prefix_len > cur_com_prefix_len) {
                         common_prefix_len = cur_com_prefix_len;
                     }
                 }
             }
-            return string(first_key_p, common_prefix_len);
+            return string(ret_key_pointer, common_prefix_len);
         }
-
 
         inline bool need_burst() const {
             return elem_num >= Max_slot_num * Burst_ratio;
@@ -1146,7 +1167,7 @@ class htrie_map {
         /*
          * burst()
          * when the hash_node's element reach the need_busrt() threshold, we
-         * burst this element into a tree with  * several small size of
+         * burst this element into a tree with several small size of
          * hash_node or trie_node linking with those hash_node
          *
          * hash_node(size:100)
@@ -1251,7 +1272,7 @@ class htrie_map {
 
                     // Rarely, only insert value in current hash_node
                     if (length_left == 0) {
-                        hnode->insert_kv_in_node(hnode->get_prefix(), v, hm);
+                        hnode->insert_value_in_node(hnode->get_prefix(), v, hm);
                         continue;
                     }
 
@@ -1300,88 +1321,81 @@ class htrie_map {
             return;
         }
 
-        // optional burst function, time-consuming, but work fine
-        // To turn this(a hashnode) to n trie_node_childs of trie_node linking
-        // their hashnode
-        void burst_by_elements(std::map<std::string, T>& elements,
-                               trie_node* parent, htrie_map* hm) {
-            // calculate the prefix len first
-            auto it = elements.begin();
-            string first_string = it->first;
-            const char* first_key_p = first_string.data();
-            int common_prefix_len = first_string.size();
-
-            // replace the bursting hash_node record in parent
-            // child_representation
-            // if the parent is null it means that this hash_node is the first hash_node in trie
+        // Optional burst function, time-consuming(string re-store in map), but
+        // work fine
+        /*
+         * burst_by_elements()
+         * Create a sub burst trie with elements linking with the parent
+         * 
+         * elements(size:100)
+         *
+         *       burst()↓
+         *
+         * trie_node(size:0)
+         * childs: |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
+         *                              |
+         *                      hash_node(size:49)
+         */
+        void burst_by_elements(map<string, T>& elements, trie_node* parent,
+                               htrie_map* hm) {
+            // Deal with the relationship between this hash_node and its parent
             if (parent == nullptr) {
-                // bursting in a root hashnode
-                // the t_root is update to a empty trie_node
+                // When burst() in a root hashnode
+                // the trie root is updated to a empty trie_node
                 parent = new trie_node(nullptr);
                 hm->setRoot(parent);
             } else {
-                //replace the original hash_node child record in parent by trie_node child
+                //Replace the original hash_node child record in parent by a leading trie_node
                 trie_node* cur_trie_node = new trie_node(parent);
                 parent->childs_[anode::get_prefix().back()] = cur_trie_node;
                 parent = cur_trie_node;
             }
 
-            // those hash_node that without inserting all elements will have a
-            // wrong common_prefix_len, so here we recalculate the
-            // common_prefix_len
-            for (it++; it != elements.end(); it++) {
-                const string& cur_string = it->first;
-                int cur_common_prefix =
-                    cal_common_prefix_len(first_key_p, common_prefix_len,
-                                          cur_string.data(), cur_string.size());
-                if (common_prefix_len > cur_common_prefix) {
-                    common_prefix_len = cur_common_prefix;
-                }
-            }
+            // Get the common_prefix to eliminate the redundant burst
+            string common_prefix = get_common_prefix(elements);
+            const char* common_prefix_key = common_prefix.data();
+            unsigned int common_prefix_keysize = common_prefix.size();
 
-            // create the chain with several single trie_node
-            // the number of node is common_prefix_len
-            for (int i = 0; i != common_prefix_len; i++) {
+            // Create the common prefix trie chain with several single trie_node
+            // The number of node is common_prefix_keysize
+            for (int i = 0; i != common_prefix_keysize; i++) {
                 trie_node* cur_trie_node = new trie_node(parent);
-                parent->add_child(cur_trie_node, first_key_p[i]);
+                parent->add_child(cur_trie_node, common_prefix_key[i]);
                 parent = cur_trie_node;
-                }
-
-            // update prefix to (prior prefix + common chain prefix)
-            string prefix = anode::get_prefix() + string(first_key_p, common_prefix_len);
-
-            // after now, the subsequent key are different at first
-            // char
-            std::map<CharT, std::map<std::string, T>> preprocElements;
-            for (auto it = elements.begin(); it != elements.end(); it++) {
-                const string& cur_string = it->first;
-                preprocElements[cur_string[common_prefix_len]]
-                               [cur_string.substr(common_prefix_len + 1)] =
-                                   it->second;
             }
 
-            // deal with the element with several different head char
-            for (auto it = preprocElements.begin(); it != preprocElements.end();
-                 it++) {
-                std::map<std::string, T>& curKV = it->second;
-                size_t expected_associativity =
-                    (double)curKV.size() / (double)Bucket_num / Burst_ratio + 1;
+            // New prefix = prior prefix + common chain prefix
+            string prefix = anode::get_prefix() + string(common_prefix_key, common_prefix_keysize);
 
-                // ceil to the 2
-                expected_associativity =
-                    round_up_2_next_power_2(expected_associativity);
+            // Divide the element into different group by their first char
+            map<CharT, map<string, T>> first_char_to_sub_elements;
+            for (auto& string_to_value : elements) {
+                const string& cur_string = string_to_value.first;
+                first_char_to_sub_elements[cur_string[common_prefix_keysize]]
+                                          [cur_string.substr(
+                                              common_prefix_keysize + 1)] =
+                                              string_to_value.second;
+            }
 
-                hash_node* hnode = new hash_node(parent, prefix + it->first, hm,
-                                                 expected_associativity);
+            // Insert sub_element group by group(A group is a sub_element with
+            // same first char)
+            for (auto it = first_char_to_sub_elements.begin();
+                 it != first_char_to_sub_elements.end(); it++) {
+                std::map<std::string, T>& sub_elements = it->second;
+
+                // Create the hash_node with enough associativity
+                hash_node* hnode = new hash_node(
+                    parent, prefix + it->first, hm,
+                    get_expected_associativity(sub_elements.size()));
 
                 parent->add_child(hnode, it->first);
 
-                bool stop_insert_and_burst = false;
-                for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
+                for (auto itt = sub_elements.begin(); itt != sub_elements.end();
+                     itt++) {
                     const string& temp = itt->first;
 
                     if (temp.size() == 0) {
-                        hnode->insert_kv_in_node(hnode->get_prefix(),
+                        hnode->insert_value_in_node(hnode->get_prefix(),
                                                  itt->second, hm);
                         continue;
                     }
@@ -1390,15 +1404,12 @@ class htrie_map {
                         temp.data(), temp.size(), hm);
                     std::pair<bool, T> res = target_it.insert_hashnode(
                         temp.data(), temp.size(), hm, itt->second);
-                    // if insert failed, it need burst
+                    // If insert failed, it needs burst
                     if (res.first == false) {
-                        stop_insert_and_burst = true;
+                        hnode->burst_by_elements(sub_elements, parent, hm);
+                        delete hnode;
                         break;
                     }
-                }
-                if (stop_insert_and_burst) {
-                    hnode->burst_by_elements(curKV, parent, hm);
-                    delete hnode;
                 }
             }
             return;
@@ -2246,7 +2257,7 @@ class htrie_map {
         if (findMode) {
             return std::pair<bool, T>(it.found, it.v);
         } else {
-            current_node->insert_kv_in_node(string(key, key_size), v, this);
+            current_node->insert_value_in_node(string(key, key_size), v, this);
             return std::pair<bool, T>(true, v);
         }
     }
