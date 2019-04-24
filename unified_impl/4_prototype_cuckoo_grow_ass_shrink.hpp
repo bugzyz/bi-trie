@@ -848,11 +848,12 @@ class htrie_map {
                 }
             }
 
-            // switch the old key_metas to the new key_metas and release the old
+            // Switch the old key_metas to the new key_metas and release the old
             // key_metas
-            delete []key_metas;
+            delete[] key_metas;
             key_metas = new_key_metas;
 
+            // update current associativity
             cur_associativity = need_associativity;
             uint64_t end = get_time();
 
