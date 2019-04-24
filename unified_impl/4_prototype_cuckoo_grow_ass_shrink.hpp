@@ -785,6 +785,21 @@ class htrie_map {
 
         inline int get_index(slot* s) { return s - key_metas; }
 
+        /* 
+         * For eliminating the index update in expand_key_metas_space
+         * we store the column-store-index in v2k instead of row-store-index
+         */
+        inline slot* get_column_store_slot(int column_store_index) {
+            return key_metas +
+                   (cur_associativity * (column_store_index % Bucket_num)) +
+                   column_store_index / Bucket_num;
+        }
+
+        inline int get_column_store_index(slot* s) {
+            return Bucket_num * (get_index(s) % cur_associativity) +
+                   (get_index(s) / cur_associativity);
+        }
+
         void get_all_elements(htrie_map<CharT, T>* hm,
                               std::map<std::string, T>& elements) {
             for (size_t i = 0; i != Bucket_num; i++) {
@@ -809,20 +824,25 @@ class htrie_map {
 
         /*------------------ 1. expand function------------------*/
 
-        bool expand_key_metas_space(size_t need_associativity, htrie_map* hm) {
+        bool expand_key_metas_space() {
             uint64_t sta = get_time();
-            // we cannot expand anymore, return false
+
+            // Already max associativity
+            // We cannot expand anymore, return false
             if (cur_associativity == Associativity) {
                 return false;
             }
 
+            // Get the associativity we need, expand 2 times of cur_associativity
+            unsigned int need_associativity = cur_associativity << 1;
             if (need_associativity > Associativity) {
                 need_associativity = Associativity;
             }
 
-            map<T, int> updating_search_points;
+            // Malloc a bigger memory for new key_metas
             slot* new_key_metas =
                 (slot*)malloc(need_associativity * Bucket_num * sizeof(slot));
+
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != need_associativity; j++) {
                     slot* cur_new_slot =
@@ -830,23 +850,11 @@ class htrie_map {
                     if (j < cur_associativity) {
                         slot* cur_slot = key_metas + i * cur_associativity + j;
                         cur_new_slot->set_slot(cur_slot);
-                        // if cur_slot is not empty which means we need to
-                        // update its slot position in v2k
-                        // adding the new position to the searchPoint update
-                        // list
-                        if (!cur_slot->isEmpty()) {
-                            T v = hm->get_tail_v(get_page_group_id(cur_slot),
-                                                 cur_slot);
-                            updating_search_points[v] =
-                                i * need_associativity + j;
-                        }
                     } else {
                         cur_new_slot->set_slot(0, 0, 0, 0);
                     }
                 }
             }
-            // applying the updating searchPoint
-            apply_the_changed_searchPoint(updating_search_points, hm);
 
             // switch the old key_metas to the new key_metas and release the old
             // key_metas
@@ -887,6 +895,7 @@ class htrie_map {
         int cuckoo_hash(size_t bucketid, htrie_map<CharT, T>* hm) {
             rehash_total_num++;
             uint64_t sta = get_time();
+
             // bucket_list records the mapping of bucket_id=last_empty_slot_id
             std::map<size_t, size_t> bucket_list;
             for (size_t bn = 0; bn != Bucket_num; bn++) {
@@ -1001,7 +1010,7 @@ class htrie_map {
                 dst_slot->set_slot(src_slot);
                 if (!dst_slot->isEmpty())
                     searchPoint_wait_2_be_update[pgp.get_tail_v(dst_slot)] =
-                        get_index(dst_slot);
+                        get_column_store_index(dst_slot);
 
                 // if the destination bucket isn't full, just fill the empty
                 // slot and return
@@ -1031,7 +1040,7 @@ class htrie_map {
                     dst_slot->set_slot(temp_special, temp_length, temp_pos,
                                        temp_page_id);
                     searchPoint_wait_2_be_update[pgp.get_tail_v(dst_slot)] =
-                        get_index(dst_slot);
+                        get_column_store_index(dst_slot);
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
                     free(key_metas_backup);
@@ -1539,8 +1548,7 @@ class htrie_map {
             if (slotid == -1) {
 #ifdef REHASH_BEFORE_EXPAND
                 if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                    bool expand_success =
-                        expand_key_metas_space(cur_associativity << 1, hm);
+                    bool expand_success = expand_key_metas_space();
                     if (!expand_success) {
                         return std::pair<bool, T>(false, T());
                     } else {
@@ -1557,8 +1565,7 @@ class htrie_map {
                     }
                 }
 #else
-                bool expand_success =
-                    expand_key_metas_space(cur_associativity << 1, hm);
+                bool expand_success = expand_key_metas_space();
                 if (!expand_success) {
                     if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
                         return std::pair<bool, T>(false, T());
@@ -1603,7 +1610,7 @@ class htrie_map {
                 hm->write_kv(get_page_group_id(keysize), key, keysize, v));
 
             // set v2k
-            hm->set_v2k(v, this, get_index(target_slot));
+            hm->set_v2k(v, this, get_column_store_index(target_slot));
 
             elem_num++;
 
@@ -2009,10 +2016,10 @@ class htrie_map {
             string res = node->get_prefix();
             if (index != -1) {
                 hash_node* hnode = (hash_node*)node;
-                slot* sl = hnode->get_slot(index);
+                slot* sl = hnode->get_column_store_slot(index);
                 res = res + string(pm->get_tail_pointer_in_pm(
-                                             hnode->get_page_group_id(sl), sl),
-                       sl->get_length());
+                                       hnode->get_page_group_id(sl), sl),
+                                   sl->get_length());
             }
             return res;
         }
