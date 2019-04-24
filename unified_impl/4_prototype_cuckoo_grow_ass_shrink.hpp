@@ -172,9 +172,19 @@ class htrie_map {
         node_type n_type_;
         trie_node* parent_;
 
+        bool have_value_;
+        T value_;
+
+       public:
+        string prefix_;
+
        public:
         anode(node_type n_type, trie_node* parent)
-            : n_type_(n_type), parent_(parent) {}
+            : n_type_(n_type),
+              parent_(parent),
+              have_value_(false),
+              value_(T()),
+              prefix_("") {}
         bool is_hash_node() { return n_type_ == node_type::HASH_NODE; }
         bool is_trie_node() { return n_type_ == node_type::TRIE_NODE; }
         bool is_multi_node() { return n_type_ == node_type::MULTI_NODE; }
@@ -188,6 +198,25 @@ class htrie_map {
         virtual void traverse_for_pgm_resize(page_manager* old_pm,
                                              page_manager* new_pm,
                                              group_type resize_type) = 0;
+
+        // for level traverse
+        virtual vector<anode*> print_node_info() = 0;
+
+        iterator insert_kv_in_node(string prefix, T v,
+                                   htrie_map<CharT, T>* hm) {
+            value_ = v;
+            have_value_ = true;
+            hm->set_v2k(v, this, -1);
+            prefix_ = prefix;
+            return iterator(have_value_, value_, this, -1, -1);
+        }
+
+        iterator search_kv_in_node() {
+            return iterator(have_value_, value_, this, -1, -1);
+        }
+
+        void set_prefix(string& prefix) { prefix_ = prefix; }
+        string& get_prefix() { return prefix_; }
     };
 
     /*-------------string_child_representation-------------*/
@@ -403,10 +432,10 @@ class htrie_map {
         class child_node {
            public:
             char child_node_char;
-            trie_node* current;
+            anode* current;
             child_node* next;
 
-            child_node(char cnc, trie_node* cur)
+            child_node(char cnc, anode* cur)
                 : child_node_char(cnc), current(cur), next(nullptr) {}
 
             child_node()
@@ -424,9 +453,9 @@ class htrie_map {
         class child_iterator {
            public:
             char first;
-            trie_node* second;
+            anode* second;
 
-            child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
+            child_iterator(char c, anode* tn) : first(c), second(tn) {}
 
             inline child_iterator* operator->() { return this; }
 
@@ -445,7 +474,7 @@ class htrie_map {
        public:
         child_representation() : size_(0), first_child_(nullptr) {}
 
-        inline trie_node*& operator[](char c) {
+        inline anode*& operator[](char c) {
             //find the ok node
             child_node* current_child_node = first_child_;
             child_node* last_child_node = nullptr;
@@ -505,12 +534,12 @@ class htrie_map {
         
         // TODO
         /* for shrink node */
-        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
+        inline void get_childs_with_char(vector<pair<CharT, anode*>>& res) {
             child_node* current_child_node = first_child_;
 
             while (current_child_node) {
                 res.push_back(
-                    pair<CharT, trie_node*>(current_child_node->child_node_char,
+                    pair<CharT, anode*>(current_child_node->child_node_char,
                                             current_child_node->current));
 
                 current_child_node = current_child_node->next;
@@ -579,24 +608,8 @@ class htrie_map {
         // store the suffix of hash_node or trie_node
         child_representation trie_node_childs;
         // std::map<CharT, trie_node*> trie_node_childs;
-        // TODO: integrate into child_representation
-        hash_node* hash_node_child;
 
-        // prefix
-        CharT* prefix;
-        uint16_t prefix_len;
-
-        // element end up here
-        bool have_value;
-        T value;
-
-        trie_node(trie_node* p)
-            : anode(node_type::TRIE_NODE, p),
-              have_value(false),
-              value(T()),
-              hash_node_child(nullptr),
-              prefix(nullptr),
-              prefix_len(0) {}
+        trie_node(trie_node* p) : anode(node_type::TRIE_NODE, p) {}
 
         // the virtual function for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
@@ -608,75 +621,30 @@ class htrie_map {
             }
         }
 
-        // get the value that terminate in this trie_node
-        iterator search_kv_in_trienode() {
-            return iterator(have_value, value, this, 0, 0);
-        }
+        vector<anode*> print_node_info(){
+            vector<anode*> res;
+            get_childs_vector(res);
+            cout << "t:" << (void*)this << " ";
 
-        std::pair<bool, T> insert_kv_in_trienode(const CharT* key,
-                                                 size_t key_size,
-                                                 htrie_map<CharT, T>* hm, T v) {
-            // set prefix
-            set_prefix(key, key_size);
-
-            // set the value
-            have_value = true;
-            value = v;
-
-            // update v2k
-            hm->set_v2k(v, this, -1);
-            
-            return pair<bool,T>(true, v);
+            vector<pair<CharT, anode*>> res2;
+            trie_node_childs.get_childs_with_char(res2);
+            for (auto c : res2)
+                cout << ((c.second)->is_hash_node() ? "h:" : "t:") << c.first
+                     << " " << c.second << "  ";
+            return res;
         }
 
         /*---helper function for traverse_for_pgm_resize----*/
         void get_childs_vector(vector<anode*> &res) {
             //get all trie_node childs from child_representation
             trie_node_childs.get_childs(res);
-            
-            //if no trie_node childs, it must have a hash_node child
-            if (res.size()==0)
-                res.push_back(hash_node_child);
         }
-
-        /*-------------------prefix relative-------------------*/
-        size_t get_prefix(char* buf) {
-            memcpy(buf, prefix, prefix_len);
-            return prefix_len;
-        }
-
-        inline string get_prefix() {
-            return prefix == nullptr ? string() : string(prefix, prefix_len);
-        }
-
-        void set_prefix(const CharT* key, size_t key_size) {
-            if (prefix != nullptr) return;
-
-            prefix = (char*)malloc(key_size);
-            memcpy(prefix, key, key_size);
-            prefix_len = key_size;
-        }
-
-        void clean_prefix() {
-            // if prefix aren't allocated or this trie_node contains a value we
-            // return
-            if (prefix_len == 0 || have_value) return;
-
-            // otherwise, free the prefix
-            free(prefix);
-            prefix = nullptr;
-            prefix_len = 0;
-            return;
-        }
-
-        ~trie_node() { clean_prefix(); }
 
         // finding target, if target doesn't exist, return nullptr
-        trie_node* find_trie_node_child(CharT c) {  
+        anode* find_trie_node_child(CharT c) {  
             auto found = trie_node_childs.find(c);
             if (found != trie_node_childs.end()) {
-                trie_node* target = found->second;
-                return target;
+                return found->second;
             } else {
                 return nullptr;
             }
@@ -684,44 +652,22 @@ class htrie_map {
 
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
-        trie_node* find_trie_node_child(CharT c, const CharT* key,
+        anode* find_trie_node_child(CharT c, const CharT* key,
                                         size_t key_size,
                                         htrie_map<CharT, T>* hm) {
             auto found = trie_node_childs.find(c);
             if (found != trie_node_childs.end()) {
-                trie_node* target = found->second;
-                return target;
+                return found->second;
             } else {
-                trie_node* son_trie_node = new trie_node(this);
-                this->add_trie_node_child(son_trie_node, c);
-                son_trie_node->set_hash_node_child(new hash_node(
-                    son_trie_node, string(key, key_size) + c, hm));
-                return son_trie_node;
+                return this->add_trie_node_child(
+                    new hash_node(this, string(key, key_size) + c, hm), c);
             }
         }
 
-        inline void set_hash_node_child(hash_node* node) {
-            hash_node_child = node;
-        }
-
-        inline hash_node* get_hash_node_child() { return hash_node_child; }
-
-        void add_trie_node_child(trie_node* node, CharT c) {
+        anode* add_trie_node_child(anode* node, CharT c) {
             trie_node_childs[c] = node;
-            // clear the hash_node_child because a trie_node will only have
-            // trie_node_childs map or have a single hash_node_child
-            hash_node_child = nullptr;
+            return node;
         }
-
-        pair<CharT, trie_node*> get_only_trie_node_child() {
-            if (trie_node_childs.size() == 1) {
-                auto it = trie_node_childs.begin();
-                return pair<CharT, trie_node*>(it->first, it->second);
-            }
-            return pair<CharT, trie_node*>(CharT(), nullptr);
-        }
-
-        hash_node* get_only_hash_node_child() { return hash_node_child; }
     };
 
     class hash_node : public anode {
@@ -730,9 +676,6 @@ class htrie_map {
         size_t elem_num;
 
         size_t cur_associativity = 1;
-
-        int common_prefix_len;
-
         slot first_slot;
 
         // normal page_group id
@@ -777,12 +720,11 @@ class htrie_map {
                                     ? Associativity
                                     : need_associativity),
               elem_num(0),
-              common_prefix_len(INT_MAX),
               first_slot(0, 0, 0, 0),
               normal_pgid(hm->get_normal_group_id()),
               special_pgid(hm->get_special_group_id()) {
-            if (p != nullptr) this->get_parent()->set_prefix(prefix.data(), prefix.size());
 
+            anode::set_prefix(prefix);
             key_metas =
                 (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
             // key_metas = new slot[cur_associativity * Bucket_num *
@@ -832,13 +774,12 @@ class htrie_map {
             }
         }
 
-        ~hash_node() { free(key_metas); }
-
-        string get_prefix() {
-            return this->get_parent() != nullptr
-                       ? this->get_parent()->get_prefix()
-                       : string();
+        vector<anode*> print_node_info(){
+            cout << "h:" << elem_num << " " << (void*)this << "  ";
+            return vector<anode*>();
         }
+
+        ~hash_node() { free(key_metas); }
 
         inline slot* get_slot(size_t bucketid, size_t slotid) {
             return key_metas + bucketid * cur_associativity + slotid;
@@ -1152,8 +1093,10 @@ class htrie_map {
                                         &first_slot);
         }
 
-        int cal_common_prefix_len(const char* s1, int cur_longest_prefix_len,
-                                  const char* s2, int new_key_size) {
+        unsigned int cal_common_prefix_len(const char* s1,
+                                           unsigned int cur_longest_prefix_len,
+                                           const char* s2,
+                                           unsigned int new_key_size) {
             if (cur_longest_prefix_len > new_key_size) {
                 cur_longest_prefix_len = new_key_size;
             }
@@ -1183,21 +1126,34 @@ class htrie_map {
 
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
-        void burst(trie_node* p, htrie_map* hm, std::string prefix) {
+        void burst(trie_node* parent, htrie_map* hm) {
             burst_total_counter++;
-
-
             page_group_package pgp =
                 hm->pm.get_page_group_package(normal_pgid, special_pgid);
 
             (hm->pm).register_bursting_hash_node(this, &pgp);
 
-            trie_node* parent_wait_to_be_clean_prefix = p;
+            trie_node* original_parent = parent;
+
+            // replace the bursting hash_node record in parent
+            // child_representation
+            // if the parent is null it means that this hash_node is the first hash_node in trie
+            if (parent == nullptr) {
+                // bursting in a root hashnode
+                // the t_root is update to a empty trie_node
+                parent = new trie_node(nullptr);
+                hm->setRoot(parent);
+            } else {
+                //replace the original hash_node child record in parent by trie_node child
+                trie_node* cur_trie_node = new trie_node(parent);
+                parent->trie_node_childs[anode::get_prefix().back()] = cur_trie_node;
+                parent = cur_trie_node;
+            }
 
             // calculate the capacity of hashnode we need
             const char* first_key_p = get_first_key_pointer(hm);
-
-            for (int i = 0; i != Bucket_num; i++) {
+            unsigned int common_prefix_len = INT_MAX;
+            for (int i = 0; i != Bucket_num && common_prefix_len != 0; i++) {
                 for (int j = 0; j != Associativity && common_prefix_len != 0;
                      j++) {
                     slot* s = get_slot(i, j);
@@ -1206,7 +1162,7 @@ class htrie_map {
                     char* key = pgp.get_tail_pointer(s);
 
                     // update the common_prefix_len
-                    int cur_com_prefix_len = cal_common_prefix_len(
+                    unsigned int cur_com_prefix_len = cal_common_prefix_len(
                         first_key_p, common_prefix_len, key, s->get_length());
                     if (common_prefix_len > cur_com_prefix_len) {
                         common_prefix_len = cur_com_prefix_len;
@@ -1214,6 +1170,18 @@ class htrie_map {
                 }
             }
 
+            // create the chain with several single trie_node
+            // the number of node is common_prefix_len
+            for (int i = 0; i != common_prefix_len; i++) {
+                trie_node* cur_trie_node = new trie_node(parent);
+                parent->add_trie_node_child(cur_trie_node, first_key_p[i]);
+                parent = cur_trie_node;
+            }
+
+            // update prefix to (prior prefix + common chain prefix)
+            string prefix = anode::get_prefix() + string(first_key_p, common_prefix_len);
+
+            // calculate the associativity we need in several hash_node
             map<CharT, uint16_t> element_num_of_1st_char;
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != Associativity; j++) {
@@ -1225,55 +1193,27 @@ class htrie_map {
                 }
             }
 
-            // create the chain with several single trie_node
-            // the number of node is common_prefix_len
-            for (int i = 0; i != common_prefix_len; i++) {
-                if (p == nullptr) {
-                    // bursting in a root hashnode
-                    // the t_root is update to a empty trie_node
-                    p = new trie_node(nullptr);
-                    hm->setRoot(p);
-                }
-
-                trie_node* cur_trie_node = new trie_node(p);
-                p->add_trie_node_child(cur_trie_node, first_key_p[i]);
-                p = cur_trie_node;
-            }
-
-            // update prefix to (prior prefix + common chain prefix)
-            prefix = prefix + string(first_key_p, common_prefix_len);
-
             map<char, hash_node*> hnode_set;
             // create several hashnode based on the number of the elements that
             // start with the same char
             for (auto it = element_num_of_1st_char.begin();
                  it != element_num_of_1st_char.end(); it++) {
-                if (p == nullptr) {
-                    // bursting in a root hashnode
-                    // the t_root is update to a empty trie_node
-                    p = new trie_node(nullptr);
-                    hm->setRoot(p);
-                }
-                trie_node* cur_trie_node = new trie_node(p);
-                p->add_trie_node_child(cur_trie_node, it->first);
-
+                // ceil to the 2
                 size_t expected_associativity =
                     (double)it->second / (double)Bucket_num / Burst_ratio + 1;
-
-                // ceil to the 2
                 expected_associativity =
                     round_up_2_next_power_2(expected_associativity);
 
-                hash_node* hnode = new hash_node(
-                    cur_trie_node, prefix + it->first, hm, expected_associativity);
-                cur_trie_node->set_hash_node_child(hnode);
+                hash_node* hnode = new hash_node(parent, prefix + it->first, hm,
+                                                 expected_associativity);
+                parent->add_trie_node_child(hnode, it->first);
 
                 hnode_set[it->first] = hnode;
             }
 
+
             // a map for the hashnode that insert fail
             map<char, pair<hash_node*, map<string, T>>> burst_again_list;
-
             // insert the elements with same first char after common_prefix_len
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != Associativity; j++) {
@@ -1299,10 +1239,7 @@ class htrie_map {
 
                     // rarely, insert in trie_node
                     if (length_left == 0) {
-                        string new_prefix = prefix + key[common_prefix_len];
-
-                        hnode->get_parent()->insert_kv_in_trienode(
-                            new_prefix.data(), new_prefix.size(), hm, v);
+                        hnode->insert_kv_in_node(hnode->get_prefix(), v, hm);
                         continue;
                     }
 
@@ -1340,29 +1277,45 @@ class htrie_map {
                 string burst_again_prefix = prefix + it->first;
                 pair<hash_node*, map<string, T>>& temp_pair = it->second;
                 hash_node* burst_hnode = temp_pair.first;
-                burst_hnode->burst_by_elements(temp_pair.second,
-                                               burst_hnode->get_parent(), hm,
-                                               burst_again_prefix);
+                burst_hnode->burst_by_elements(temp_pair.second, parent, hm);
 
                 delete burst_hnode;
             }
-            if (parent_wait_to_be_clean_prefix != nullptr)
-                parent_wait_to_be_clean_prefix->clean_prefix();
+            if (original_parent != nullptr) {
+                //TODO: need to remove the prefix???
+                // original_parent->clean_prefix();
+            }
 
             (hm->pm).remove_bursting_hash_node(this);
+            // hm->traverse_level();
             return;
         }
 
         // optional burst function, time-consuming, but work fine
         // To turn this(a hashnode) to n trie_node_childs of trie_node linking
         // their hashnode
-        void burst_by_elements(std::map<std::string, T>& elements, trie_node* p,
-                               htrie_map* hm, std::string prefix) {
+        void burst_by_elements(std::map<std::string, T>& elements,
+                               trie_node* parent, htrie_map* hm) {
             // calculate the prefix len first
             auto it = elements.begin();
             string first_string = it->first;
             const char* first_key_p = first_string.data();
             int common_prefix_len = first_string.size();
+
+            // replace the bursting hash_node record in parent
+            // child_representation
+            // if the parent is null it means that this hash_node is the first hash_node in trie
+            if (parent == nullptr) {
+                // bursting in a root hashnode
+                // the t_root is update to a empty trie_node
+                parent = new trie_node(nullptr);
+                hm->setRoot(parent);
+            } else {
+                //replace the original hash_node child record in parent by trie_node child
+                trie_node* cur_trie_node = new trie_node(parent);
+                parent->trie_node_childs[anode::get_prefix().back()] = cur_trie_node;
+                parent = cur_trie_node;
+            }
 
             // those hash_node that without inserting all elements will have a
             // wrong common_prefix_len, so here we recalculate the
@@ -1378,18 +1331,15 @@ class htrie_map {
             }
 
             // create the chain with several single trie_node
+            // the number of node is common_prefix_len
             for (int i = 0; i != common_prefix_len; i++) {
-                if (p == nullptr) {
-                    // bursting in a root hashnode
-                    // the t_root is update to a empty trie_node
-                    p = new trie_node(nullptr);
-                    hm->setRoot(p);
+                trie_node* cur_trie_node = new trie_node(parent);
+                parent->add_trie_node_child(cur_trie_node, first_key_p[i]);
+                parent = cur_trie_node;
                 }
 
-                trie_node* cur_trie_node = new trie_node(p);
-                p->add_trie_node_child(cur_trie_node, first_key_p[i]);
-                p = cur_trie_node;
-            }
+            // update prefix to (prior prefix + common chain prefix)
+            string prefix = anode::get_prefix() + string(first_key_p, common_prefix_len);
 
             // after now, the subsequent key are different at first
             // char
@@ -1401,23 +1351,10 @@ class htrie_map {
                                    it->second;
             }
 
-            // update prefix to (prior prefix + common chain prefix)
-            prefix = prefix + string(first_key_p, common_prefix_len);
-
             // deal with the element with several different head char
             for (auto it = preprocElements.begin(); it != preprocElements.end();
                  it++) {
-                if (p == nullptr) {
-                    // bursting in a root hashnode
-                    // the t_root is update to a empty trie_node
-                    p = new trie_node(nullptr);
-                    hm->setRoot(p);
-                }
-                trie_node* cur_trie_node = new trie_node(p);
-                p->add_trie_node_child(cur_trie_node, it->first);
-
                 std::map<std::string, T>& curKV = it->second;
-
                 size_t expected_associativity =
                     (double)curKV.size() / (double)Bucket_num / Burst_ratio + 1;
 
@@ -1425,18 +1362,18 @@ class htrie_map {
                 expected_associativity =
                     round_up_2_next_power_2(expected_associativity);
 
-                hash_node* hnode = new hash_node(
-                    cur_trie_node, prefix + it->first, hm, expected_associativity);
-                cur_trie_node->set_hash_node_child(hnode);
+                hash_node* hnode = new hash_node(parent, prefix + it->first, hm,
+                                                 expected_associativity);
+
+                parent->add_trie_node_child(hnode, it->first);
 
                 bool stop_insert_and_burst = false;
                 for (auto itt = curKV.begin(); itt != curKV.end(); itt++) {
                     const string& temp = itt->first;
 
                     if (temp.size() == 0) {
-                        cur_trie_node->insert_kv_in_trienode(
-                            (prefix + it->first).data(), prefix.size() + 1, hm,
-                            itt->second);
+                        hnode->insert_kv_in_node(hnode->get_prefix(),
+                                                 itt->second, hm);
                         continue;
                     }
 
@@ -1451,8 +1388,7 @@ class htrie_map {
                     }
                 }
                 if (stop_insert_and_burst) {
-                    hnode->burst_by_elements(curKV, cur_trie_node, hm,
-                                             prefix + it->first);
+                    hnode->burst_by_elements(curKV, parent, hm);
                     delete hnode;
                 }
             }
@@ -1528,6 +1464,7 @@ class htrie_map {
 
         iterator search_kv_in_hashnode(htrie_map<CharT, T>* hm,
                                        const CharT* key, size_t keysize) {
+                                        //    print_key_metas(hm);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
             size_t bucketId1 =
@@ -1577,8 +1514,7 @@ class htrie_map {
         std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, size_t bucketid,
-                                                 int slotid,
-                                                   std::string prefix) {
+                                                 int slotid) {
             // if slotid==-1, it denotes that the bucket(bucketid) is full ,
             // so we rehash the key_metas
             if (slotid == -1) {
@@ -1646,6 +1582,7 @@ class htrie_map {
             // return a slot with position that element been written
             target_slot->set_slot(
                 hm->write_kv(get_page_group_id(keysize), key, keysize, v));
+
             // set v2k
             hm->set_v2k(v, this, get_index(target_slot));
 
@@ -1656,7 +1593,7 @@ class htrie_map {
             elem_num++;
 
             if (need_burst()) {
-                burst(this->get_parent(), hm, prefix);
+                burst(this->get_parent(), hm);
 
                 delete this;
             }
@@ -2052,28 +1989,16 @@ class htrie_map {
             if (node == nullptr) return string();
             // if the node is trie_node, just return the prefix on node
             if (node->is_trie_node()) {
-                return ((trie_node*)node)->get_prefix();
+                return node->get_prefix();
             }
-
-            // get the parent char chain
-            trie_node* cur_node = ((hash_node*)node)->get_parent();
-            static char* buf = (char*)malloc(longest_string_size);
-
-            size_t len = cur_node == nullptr ? 0 : cur_node->get_prefix(buf);
-
-            // get tail
+            string res = node->get_prefix();
             if (index != -1) {
                 hash_node* hnode = (hash_node*)node;
                 slot* sl = hnode->get_slot(index);
-
-                memcpy(buf + len,
-                       pm->get_tail_pointer_in_pm(hnode->get_page_group_id(sl),
-                                                  sl),
+                res = res + string(pm->get_tail_pointer_in_pm(
+                                             hnode->get_page_group_id(sl), sl),
                        sl->get_length());
-                len += sl->get_length();
             }
-            string res = string(buf, len);
-            // free(buf);
             return res;
         }
     };
@@ -2233,22 +2158,12 @@ class htrie_map {
         std::pair<bool, T> insert_hashnode(const CharT* key, size_t key_size,
                                            htrie_map<CharT, T>* hm, T v) {
             return ((hash_node*)target_node)
-                ->insert_kv_in_hashnode(
-                    key, key_size, hm, v, bucketid, slotid,
-                    ((hash_node*)target_node)->get_prefix());
-        }
-
-        std::pair<bool, T> insert_trienode(const CharT* key, size_t key_size,
-                                           htrie_map<CharT, T>* hm, T v) {
-            return ((trie_node*)target_node)
-                ->insert_kv_in_trienode(key, key_size, hm, v);
+                ->insert_kv_in_hashnode(key, key_size, hm, v, bucketid, slotid);
         }
     };
 
     std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
                                               T v, bool findMode, bool clean_on = true) {
-        // if (clean_on && !findMode) clean_prefix();
-
         // update longest_string_size
         longest_string_size =
             longest_string_size > key_size ? longest_string_size : key_size;
@@ -2269,14 +2184,6 @@ class htrie_map {
                             return std::pair<bool, T>(false, T());
                         }
                         pos += jump_pos - 1;
-
-                        if (current_node->is_trie_node() &&
-                            ((trie_node*)current_node)->get_hash_node_child() !=
-                                nullptr &&
-                            pos != key_size - 1) {
-                            current_node = ((trie_node*)current_node)
-                                               ->get_hash_node_child();
-                        }
                     }
                 } break;
                 case node_type::TRIE_NODE: {
@@ -2300,12 +2207,6 @@ class htrie_map {
                         }
                     }
 
-                    if (((trie_node*)current_node)->get_hash_node_child() !=
-                            nullptr &&
-                        pos != key_size - 1) {
-                        current_node =
-                            ((trie_node*)current_node)->get_hash_node_child();
-                    }
                 } break;
                 case node_type::HASH_NODE: {
                     iterator it = ((hash_node*)current_node)
@@ -2323,8 +2224,7 @@ class htrie_map {
                                 (hash_node*)current_node;
 
                             hnode_burst_needed->burst(
-                                hnode_burst_needed->get_parent(), this,
-                                string(key, pos));
+                                hnode_burst_needed->get_parent(), this);
 
                             delete hnode_burst_needed;
                             return access_kv_in_htrie_map(key, key_size, v,
@@ -2339,13 +2239,14 @@ class htrie_map {
             }
         }
 
-        // find a key in trie_node's only value
-        iterator it = ((trie_node*)current_node)->search_kv_in_trienode();
+        // find a key in node's only value
+        iterator it = current_node->search_kv_in_node();
 
         if (findMode) {
             return std::pair<bool, T>(it.found, it.v);
         } else {
-            return it.insert_trienode(key, key_size, this, v);
+            current_node->insert_kv_in_node(string(key, key_size), v, this);
+            return std::pair<bool, T>(true, v);
         }
     }
 
@@ -2393,87 +2294,101 @@ class htrie_map {
         pm.clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
     }
 
+    void traverse_level() {
+        cout << endl;
+        queue<anode*> q;
+        q.push(t_root);
+        while (!q.empty()) {
+            anode* cur_node = q.front();
+            q.pop();
+            vector<anode*> childs = cur_node->print_node_info();
+            for (auto c : childs) q.push(c);
+            cout << endl;
+        }
+    }
+
     /*--------------------global shrink node functions--------------------*/
     // TODO: FIX ME! the branch of deciding the type of node is poor
     anode* shrink_node(anode* node) {
-        if (node->is_trie_node()) {
-            trie_node* cur_node = (trie_node*)node;
+        // if (node->is_trie_node()) {
+        //     trie_node* cur_node = (trie_node*)node;
 
-            hash_node* hash_node_child = cur_node->get_only_hash_node_child();
-            if (hash_node_child != nullptr) {
-                return cur_node;
-            }
+        //     hash_node* hash_node_child = cur_node->get_only_hash_node_child();
+        //     if (hash_node_child != nullptr) {
+        //         return cur_node;
+        //     }
 
-            vector<pair<string, anode*>> traverse_save(
-                cur_node->trie_node_childs.size());
-            vector<pair<CharT, trie_node*>> next_layer;
+        //     vector<pair<string, anode*>> traverse_save(
+        //         cur_node->trie_node_childs.size());
+        //     vector<pair<CharT, trie_node*>> next_layer;
 
-            cur_node->trie_node_childs.get_childs_with_char(next_layer);
+        //     cur_node->trie_node_childs.get_childs_with_char(next_layer);
 
-            bool allow_next_layer = true;
-            size_t string_keysize = 0;
-            do {
-                for (int i = 0; i != next_layer.size(); i++) {
-                    CharT c = next_layer[i].first;
-                    trie_node* next_layer_trie_node = next_layer[i].second;
+        //     bool allow_next_layer = true;
+        //     size_t string_keysize = 0;
+        //     do {
+        //         for (int i = 0; i != next_layer.size(); i++) {
+        //             CharT c = next_layer[i].first;
+        //             trie_node* next_layer_trie_node = next_layer[i].second;
 
-                    // current key_string add the next_layer's char
-                    string new_key_string = traverse_save[i].first + c;
+        //             // current key_string add the next_layer's char
+        //             string new_key_string = traverse_save[i].first + c;
 
-                    traverse_save[i].first = new_key_string;
-                    traverse_save[i].second = next_layer_trie_node;
+        //             traverse_save[i].first = new_key_string;
+        //             traverse_save[i].second = next_layer_trie_node;
 
-                    pair<CharT, trie_node*> next_pair;
-                    if (next_layer_trie_node->get_only_hash_node_child() ==
-                            nullptr &&
-                        next_layer_trie_node->get_only_trie_node_child()
-                                .second == nullptr) {
-                        // have several children
-                        allow_next_layer = false;
-                    } else {
-                        // only have a hash_node child or only have a
-                        // trie_node child
-                        if (next_layer_trie_node->get_only_hash_node_child() !=
-                            nullptr) {
-                            next_layer[i] =
-                                pair<CharT, trie_node*>(CharT(), nullptr);
-                            // stop at this layer
-                            allow_next_layer = false;
-                            traverse_save[i].second = next_layer_trie_node;
-                        } else {
-                            next_pair = next_layer_trie_node
-                                            ->get_only_trie_node_child();
-                            next_layer[i] = next_pair;
-                        }
-                    }
-                }
-                if (allow_next_layer) {
-                    for (int i = 0; i != next_layer.size(); i++) {
-                        delete (next_layer[i].second)->get_parent();
-                    }
-                }
-                string_keysize++;
-            } while (allow_next_layer);
+        //             pair<CharT, trie_node*> next_pair;
+        //             if (next_layer_trie_node->get_only_hash_node_child() ==
+        //                     nullptr &&
+        //                 next_layer_trie_node->get_only_trie_node_child()
+        //                         .second == nullptr) {
+        //                 // have several children
+        //                 allow_next_layer = false;
+        //             } else {
+        //                 // only have a hash_node child or only have a
+        //                 // trie_node child
+        //                 if (next_layer_trie_node->get_only_hash_node_child() !=
+        //                     nullptr) {
+        //                     next_layer[i] =
+        //                         pair<CharT, trie_node*>(CharT(), nullptr);
+        //                     // stop at this layer
+        //                     allow_next_layer = false;
+        //                     traverse_save[i].second = next_layer_trie_node;
+        //                 } else {
+        //                     next_pair = next_layer_trie_node
+        //                                     ->get_only_trie_node_child();
+        //                     next_layer[i] = next_pair;
+        //                 }
+        //             }
+        //         }
+        //         if (allow_next_layer) {
+        //             for (int i = 0; i != next_layer.size(); i++) {
+        //                 delete (next_layer[i].second)->get_parent();
+        //             }
+        //         }
+        //         string_keysize++;
+        //     } while (allow_next_layer);
 
-            // construct the target multi_node
-            multi_node* target_node = new multi_node(string_keysize, traverse_save.size());
+        //     // construct the target multi_node
+        //     multi_node* target_node = new multi_node(string_keysize, traverse_save.size());
 
-            sort(traverse_save.begin(),traverse_save.end(), sort_by_hash_val);
+        //     sort(traverse_save.begin(),traverse_save.end(), sort_by_hash_val);
 
-            for (int i = 0; i != traverse_save.size(); i++) {
-                anode* res = shrink_node(traverse_save[i].second);
+        //     for (int i = 0; i != traverse_save.size(); i++) {
+        //         anode* res = shrink_node(traverse_save[i].second);
 
-                // add new child multi_node target_node
-                target_node->add_child(traverse_save[i].first, i, res);
-            }
-            return target_node;
-        } else if (node->is_hash_node()) {
-            return node;
-        } else {
-            cout << "program are in a unexpected branch\n";
-            assert(false);
-            exit(0);
-        }
+        //         // add new child multi_node target_node
+        //         target_node->add_child(traverse_save[i].first, i, res);
+        //     }
+        //     return target_node;
+        // } else if (node->is_hash_node()) {
+        //     return node;
+        // } else {
+        //     cout << "program are in a unexpected branch\n";
+        //     assert(false);
+        //     exit(0);
+        // }
+        return nullptr;
     }
 
     void shrink() {
