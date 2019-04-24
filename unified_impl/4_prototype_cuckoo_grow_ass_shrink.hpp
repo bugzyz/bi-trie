@@ -723,15 +723,8 @@ class htrie_map {
               special_pgid(hm->get_special_group_id()) {
 
             anode::set_prefix(prefix);
-            key_metas =
-                (slot*)malloc(cur_associativity * Bucket_num * sizeof(slot));
-            // key_metas = new slot[cur_associativity * Bucket_num *
-            // sizeof(slot)];
 
-            // init key space
-            for (int i = 0; i != cur_associativity * Bucket_num; i++) {
-                key_metas[i].set_slot(slot());
-            }
+            key_metas = new slot[cur_associativity * Bucket_num]();
         }
 
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
@@ -775,7 +768,7 @@ class htrie_map {
             return vector<anode*>();
         }
 
-        ~hash_node() { free(key_metas); }
+        ~hash_node() { delete[] key_metas; }
 
         inline slot* get_slot(size_t bucketid, size_t slotid) {
             return key_metas + bucketid * cur_associativity + slotid;
@@ -839,9 +832,8 @@ class htrie_map {
                 need_associativity = Associativity;
             }
 
-            // Malloc a bigger memory for new key_metas
-            slot* new_key_metas =
-                (slot*)malloc(need_associativity * Bucket_num * sizeof(slot));
+            // Allocate a bigger memory for new key_metas
+            slot* new_key_metas = new slot[need_associativity * Bucket_num]();
 
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != need_associativity; j++) {
@@ -858,7 +850,7 @@ class htrie_map {
 
             // switch the old key_metas to the new key_metas and release the old
             // key_metas
-            free(key_metas);
+            delete []key_metas;
             key_metas = new_key_metas;
 
             cur_associativity = need_associativity;
@@ -928,9 +920,8 @@ class htrie_map {
 
                 return -1;
             }
-            // set up the backup for recovery if the rehash fails
-            char* key_metas_backup =
-                (char*)malloc(Bucket_num * cur_associativity * sizeof(slot));
+            // set up the backup for recovery if the rehash fail
+            slot* key_metas_backup = new slot[Bucket_num * cur_associativity]();
             memcpy(key_metas_backup, key_metas,
                    Bucket_num * cur_associativity * sizeof(slot));
 
@@ -970,7 +961,7 @@ class htrie_map {
                         // recover the key_metas
                         memcpy(key_metas, key_metas_backup,
                                Bucket_num * cur_associativity * sizeof(slot));
-                        free(key_metas_backup);
+                        delete[] key_metas_backup;
                         uint64_t end = get_time();
                         rehash_cost_time += end - sta;
                         return -1;
@@ -995,7 +986,7 @@ class htrie_map {
                     // recover the key_metas
                     memcpy(key_metas, key_metas_backup,
                            Bucket_num * cur_associativity * sizeof(slot));
-                    free(key_metas_backup);
+                    delete[] key_metas_backup;
                     uint64_t end = get_time();
                     rehash_cost_time += end - sta;
                     return -1;
@@ -1043,7 +1034,7 @@ class htrie_map {
                         get_column_store_index(dst_slot);
                     apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
                                                   hm);
-                    free(key_metas_backup);
+                    delete[] key_metas_backup;
                     uint64_t end = get_time();
                     rehash_cost_time += end - sta;
                     return ret_slot_id;
@@ -1085,7 +1076,7 @@ class htrie_map {
             // recover the key_metas
             memcpy(key_metas, key_metas_backup,
                    Bucket_num * cur_associativity * sizeof(slot));
-            free(key_metas_backup);
+            delete []key_metas_backup;
             uint64_t end = get_time();
             rehash_cost_time += end - sta;
             return -1;
