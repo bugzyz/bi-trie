@@ -610,6 +610,8 @@ class htrie_map {
 
         trie_node(trie_node* p) : anode(node_type::TRIE_NODE, p) {}
 
+        // TODO: deconstructor
+
         // the virtual function for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
@@ -734,11 +736,11 @@ class htrie_map {
             size_t new_pgid = -1;
             if (resize_type == group_type::SPECIAL_GROUP) {
                 resize_pgid = special_pgid;
-                special_pgid = new_pm->require_a_special_group_id();
+                special_pgid = new_pm->require_group_id(group_type::SPECIAL_GROUP);
                 new_pgid = special_pgid;
             } else {
                 resize_pgid = normal_pgid;
-                normal_pgid = new_pm->require_a_normal_group_id();
+                normal_pgid = new_pm->require_group_id(group_type::NORMAL_GROUP);
                 new_pgid = normal_pgid;
             }
 
@@ -914,7 +916,7 @@ class htrie_map {
             int cur_process_slotid = cur_associativity - 1;
 
             page_group_package pgp =
-                hm->pm.get_page_group_package(normal_pgid, special_pgid);
+                hm->pm->get_page_group_package(normal_pgid, special_pgid);
 
             map<T, int> searchPoint_wait_2_be_update;
             for (int cuckoo_hash_time = 0; cuckoo_hash_time != Max_loop;
@@ -1096,10 +1098,10 @@ class htrie_map {
 
             // Create a page_group_package for later page_group getting
             page_group_package pgp =
-                hm->pm.get_page_group_package(normal_pgid, special_pgid);
+                hm->pm->get_page_group_package(normal_pgid, special_pgid);
             // Tell the page_manager if it triggers a resize(), update this
             // hash_node and the page_group_package in this burst()
-            hm->pm.register_bursting_hash_node(this, &pgp);
+            hm->pm->register_bursting_hash_node(this, &pgp);
 
             // Deal with the relationship between this hash_node and its parent
             if (parent == nullptr) {
@@ -1229,7 +1231,7 @@ class htrie_map {
             }
 
             // remove current hash_node in the notify list in page_manager
-            hm->pm.remove_bursting_hash_node(this);
+            hm->pm->remove_bursting_hash_node(this);
             return;
         }
 
@@ -1504,8 +1506,8 @@ class htrie_map {
              * if page_manager pm have enough memory, the hm->write_kv() will
              * write the content to original page group
              */
-            (hm->pm).try_insert(get_group_type(keysize),
-                                get_page_group_id(keysize), keysize, hm);
+            hm->pm->try_insert(get_group_type(keysize),
+                               get_page_group_id(keysize), keysize, hm);
 
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
@@ -1711,25 +1713,14 @@ class htrie_map {
         }
 
         // TODO: merge this two function
-        inline size_t require_a_normal_group_id() {
+        inline size_t require_group_id(group_type gt) {
             size_t least_page_page_group_id = 0;
             size_t least_page = SIZE_MAX;
+            page_group* pgs =
+                (gt == group_type::NORMAL_GROUP ? normal_pg : special_pg);
             for (int i = 0; i != n_size; i++) {
-                size_t cur_least_page = normal_pg[i].get_cur_page_id();
-                if(least_page > cur_least_page){
-                    least_page = cur_least_page;
-                    least_page_page_group_id = i;
-                }
-            }
-            return least_page_page_group_id;
-        }
-
-        inline size_t require_a_special_group_id() {
-            size_t least_page_page_group_id = 0;
-            size_t least_page = SIZE_MAX;
-            for (int i = 0; i != s_size; i++) {
-                size_t cur_least_page = special_pg[i].get_cur_page_id();
-                if(least_page > cur_least_page){
+                size_t cur_least_page = pgs[i].get_cur_page_id();
+                if (least_page > cur_least_page) {
                     least_page = cur_least_page;
                     least_page_page_group_id = i;
                 }
@@ -1767,35 +1758,31 @@ class htrie_map {
             special_pg = temp_special_pg;
         }
 
-        void swap(page_manager& pm, group_type gt) {
+        void swap(page_manager* pm, group_type gt) {
             // swap the normal part
             // swap the normal page group
             if (gt == group_type::NORMAL_GROUP) {
-                // for (int i = 0; i != n_size; i++)
-                // normal_pg[i].swap(pm.normal_pg[i]);
                 page_group* temp_normal_pg = normal_pg;
-                normal_pg = pm.normal_pg;
-                pm.set_normal_pg(temp_normal_pg);
+                normal_pg = pm->normal_pg;
+                pm->set_normal_pg(temp_normal_pg);
 
                 // swap the n_size
                 int temp_n_size = n_size;
-                set_n_size(pm.n_size);
-                pm.set_n_size(temp_n_size);
+                set_n_size(pm->n_size);
+                pm->set_n_size(temp_n_size);
                 return;
             }
 
             // swap the special part
             // swap the special page group
-            // for (int i = 0; i != s_size; i++)
-            // special_pg[i].swap(pm.special_pg[i]);
             page_group* temp_special_pg = special_pg;
-            special_pg = pm.special_pg;
-            pm.set_special_pg(temp_special_pg);
+            special_pg = pm->special_pg;
+            pm->set_special_pg(temp_special_pg);
 
             // swap the s_size
             int temp_s_size = s_size;
-            set_s_size(pm.s_size);
-            pm.set_s_size(temp_s_size);
+            set_s_size(pm->s_size);
+            pm->set_s_size(temp_s_size);
             return;
         }
 
@@ -1857,7 +1844,7 @@ class htrie_map {
             notify_bursting_hash_node(pm, resize_type);
 
             // old page_manager <=swap=> new page_manager
-            swap(*pm, resize_type);
+            swap(pm, resize_type);
 
             uint64_t end = get_time();
             // cout << "resizeing cost: " << (end - sta) / 1000 / (double)1000
@@ -1884,20 +1871,24 @@ class htrie_map {
         }
     };
 
-    inline size_t get_normal_group_id() { return pm.require_a_normal_group_id(); }
-    inline size_t get_special_group_id() { return pm.require_a_special_group_id(); }
+    inline size_t get_normal_group_id() {
+        return pm->require_group_id(group_type::NORMAL_GROUP);
+    }
+    inline size_t get_special_group_id() {
+        return pm->require_group_id(group_type::SPECIAL_GROUP);
+    }
 
     inline char* get_tail_pointer(size_t page_group_id, slot* s) {
-        return pm.get_tail_pointer_in_pm(page_group_id, s);
+        return pm->get_tail_pointer_in_pm(page_group_id, s);
     }
 
     inline T get_tail_v(size_t page_group_id, slot* s) {
-        return pm.get_tail_v_in_pm(page_group_id, s);
+        return pm->get_tail_v_in_pm(page_group_id, s);
     }
 
     inline slot write_kv(size_t page_group_id, const CharT* key, size_t keysize,
                          T v) {
-        return pm.write_kv(page_group_id, key, keysize, v);
+        return pm->write_kv(page_group_id, key, keysize, v);
     }
 
     class SearchPoint {
@@ -1929,23 +1920,31 @@ class htrie_map {
     };
 
    public:
-    anode* t_root;
-    // std::map<T, SearchPoint> v2k;
-    boost::unordered_map<T, SearchPoint> v2k;
+
+    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
+
+    void set_v2k(T v, anode* node, int index) {
+        v2k[v] = SearchPoint(node, index);
+    }
 
     // function for batch updating the searchPoints to v2k
     void apply_the_changed_searchPoint(map<T, int>& searchPoints) {
         for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
             set_searchPoint_index(it->first, it->second);
     }
+
+    // std::map<T, SearchPoint> v2k;
+    boost::unordered_map<T, SearchPoint> v2k;
+
+    anode* t_root;
     
-    page_manager pm;
+    page_manager *pm;
 
     htrie_map(size_t customized_associativity = DEFAULT_Associativity,
               size_t customized_bucket_count = DEFAULT_Bucket_num,
               size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
               double customized_burst_ratio = DEFAULT_Burst_ratio)
-        : t_root(nullptr) {
+        : t_root(nullptr), pm(new page_manager()) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
         cout << "PM\n";
@@ -1979,11 +1978,7 @@ class htrie_map {
         t_root = new hash_node(nullptr, string(), this, Associativity);
     }
 
-    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
-
-    void set_v2k(T v, anode* node, int index) {
-        v2k[v] = SearchPoint(node, index);
-    }
+    // TODO deconstructor
 
     void setRoot(anode* node) { t_root = node; }
 
@@ -2195,7 +2190,7 @@ class htrie_map {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
     }
 
-    std::string searchByValue(T v) { return v2k[v].get_string(&pm); }
+    std::string searchByValue(T v) { return v2k[v].get_string(pm); }
 
     // find operation
     std::pair<bool, T> findByKey(std::string key) {
@@ -2228,8 +2223,8 @@ class htrie_map {
     /*---------------external cleaning interface-------------------*/
     void clean_useless() {
         // zero at last means that we don't need to expand the page_manager
-        pm.clean_useless_in_pm(group_type ::NORMAL_GROUP, this, 0);
-        pm.clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
+        pm->clean_useless_in_pm(group_type ::NORMAL_GROUP, this, 0);
+        pm->clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
     }
 
     void traverse_level() {
