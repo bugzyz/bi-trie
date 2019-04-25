@@ -702,6 +702,7 @@ class htrie_map {
         }
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
+            return;
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
                     print_slot(i, j, hm);
@@ -778,6 +779,10 @@ class htrie_map {
 
         inline int get_index(slot* s) { return s - key_metas; }
 
+        inline int get_index(int bucketid, int slotid) {
+            return bucketid * cur_associativity + slotid;
+        }
+
         /* 
          * For eliminating the index update in expand_key_metas_space
          * we store the column-store-index in v2k instead of row-store-index
@@ -809,14 +814,7 @@ class htrie_map {
 
         /*------------------ 0. helper function------------------*/
 
-        void apply_the_changed_searchPoint(map<T, int>& searchPoints,
-                                           htrie_map<CharT, T>* hm) {
-            for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
-                hm->set_searchPoint_index(it->first, it->second);
-        }
-
         /*------------------ 1. expand function------------------*/
-
         bool expand_key_metas_space() {
             uint64_t sta = get_time();
 
@@ -862,17 +860,23 @@ class htrie_map {
             return true;
         }
 
-        /*------------------ 2. rehashing function------------------*/
-
-        inline slot* previous_dst_slot_in_same_bucket(slot* s) {
-            size_t slotid = (s - key_metas) % cur_associativity;
-            if (slotid == 0) {
-                return nullptr;
-            } else
-                return s - 1;
+        /*------------------ 2. cuckoo hash function------------------*/
+        /*  cuckoo hash helper function  */
+        // Return previous slotid in current bucket
+        // If current slotid is 0, return -1
+        inline int get_previous_slotid_in_same_bucket(int slotid) {
+            return slotid == 0 ? -1 : slotid - 1;
         }
 
-        // return another possible bucketid that the slot *s can be
+        // Return the first empty slot or last slot in current bucket
+        inline int get_last_slotid_in_bucket(int bucketid) {
+            for (int i = 0; i != cur_associativity; i++)
+                if (get_slot(bucketid, i)->isEmpty()) return i;
+
+            return cur_associativity - 1;
+        }
+
+        // Return another possible bucketid that the slot *s can be at
         inline size_t get_another_bucketid(page_group_package& pgp, slot* s,
                                            size_t current_bucketid) {
             const char* key = pgp.get_tail_pointer(s);
@@ -885,201 +889,108 @@ class htrie_map {
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
+        // Return a empty slot_id in bucketid
         int cuckoo_hash(size_t bucketid, htrie_map<CharT, T>* hm) {
             rehash_total_num++;
             uint64_t sta = get_time();
 
-            // bucket_list records the mapping of bucket_id=last_empty_slot_id
-            std::map<size_t, size_t> bucket_list;
-            for (size_t bn = 0; bn != Bucket_num; bn++) {
-                bucket_list[bn] = cur_associativity;
-                for (int sn = 0; sn != cur_associativity; sn++) {
-                    if (key_metas[bn * cur_associativity + sn].isEmpty()) {
-                        bucket_list[bn] = sn;
-                        break;
-                    }
-                }
-            }
-            // current bucket is definitely full
-            // just pick the last slot to kick
-            int ret_slot_id = cur_associativity - 1;
-
-            page_group_package pgp =
-                hm->pm.get_page_group_package(normal_pgid, special_pgid);
-
-            size_t kicked_slot_id = -1;
-            for (int i = 0; i != cur_associativity; i++) {
-                slot* s = get_slot(bucketid, i);
-                size_t bkid = get_another_bucketid(pgp, s, bucketid);
-                if (bkid != bucketid) {
-                    kicked_slot_id = i;
-                }
-            }
-            if (kicked_slot_id == -1) {
-                uint64_t end = get_time();
-                rehash_cost_time += end - sta;
-
-                return -1;
-            }
-            // set up the backup for recovery if the rehash fail
+            // Set up the backup for recovery if the cuckoo hash fail
             slot* key_metas_backup = new slot[Bucket_num * cur_associativity]();
             memcpy(key_metas_backup, key_metas,
                    Bucket_num * cur_associativity * sizeof(slot));
 
-            ret_slot_id = kicked_slot_id;
+            int ret_index = -1;
 
-            size_t current_bucket_id = bucketid;
+            /*
+             * key_metas:   | x | x | x | x |   extra_slot: | y |
+             *              | x | x | x | x |   slot wait to be exchange
+             *              | x | x | x | x |
+             */
+            slot* extra_slot = new slot(0, 0, 0, 0);
 
-            slot src_slot = slot(0, 0, 0, 0);
-            slot* dst_slot = get_slot(current_bucket_id, kicked_slot_id);
+            // cur_process_bucketid, cur_process_slotid indicate the
+            // extra_slot's destination
+            int cur_process_bucketid = bucketid;
+            int cur_process_slotid = cur_associativity - 1;
 
-            size_t rehash_count = 0;
-
-            size_t last_current_bucketid = 0;
-            size_t last_bucketid_kick_to = 0;
+            page_group_package pgp =
+                hm->pm.get_page_group_package(normal_pgid, special_pgid);
 
             map<T, int> searchPoint_wait_2_be_update;
-            do {
+            for (int cuckoo_hash_time = 0; cuckoo_hash_time != Max_loop;
+                 cuckoo_hash_time++) {
                 /*
-                    src(a,b,c)
-                    cur_bucket: |x      |x      |x      |dst(d,e,f)|
-                    kk2_bucket: |x      |x      |x      |x         |
-                */
-                // calculate the destination
-                size_t bucketid_kick_to =
-                    get_another_bucketid(pgp, dst_slot, current_bucket_id);
+                 * The get_previous_slotid_in_same_bucket() will cause the -1 if
+                 * there aren't any available slot can be cuckoo hash
+                 * If the cur_process_slotid equals to -1, it means that all
+                 * elements in current bucket's is anti-moved
+                 */
+                if (cur_process_slotid == -1) break;
 
-                // if the slot can only place in one bucket, we change the
-                // dst_slot
-                // if the cuckoo hash kick as a circle, we change the dst_slot
-                // to try to break the circle
-                if (bucketid_kick_to == current_bucket_id ||
-                    (last_bucketid_kick_to == current_bucket_id &&
-                     last_current_bucketid == bucketid_kick_to)) {
-                    dst_slot = previous_dst_slot_in_same_bucket(dst_slot);
-                    rehash_count++;
-                    if (dst_slot == nullptr) {
-                        // recover the key_metas
-                        memcpy(key_metas, key_metas_backup,
-                               Bucket_num * cur_associativity * sizeof(slot));
-                        delete[] key_metas_backup;
-                        uint64_t end = get_time();
-                        rehash_cost_time += end - sta;
-                        return -1;
-                    }
+                // Get the slot* we are replacing destination
+                int cur_process_index =
+                    get_index(cur_process_bucketid, cur_process_slotid);
+                slot* cur_process_slot = get_slot(cur_process_index);
+
+                /* Check that whether the cur_process_slot is anti-moved */
+                // Get the another bucketid the cur_process_slot can be at
+                int cur_kick_to_bucketid = get_another_bucketid(
+                    pgp, cur_process_slot, cur_process_bucketid);
+                // If the cur_process_bucketid == cur_kick_to_bucketid, we
+                // process previous slotid
+                if (cur_process_bucketid == cur_kick_to_bucketid ||
+                    cur_process_index == ret_index) {
+                    cur_process_slotid =
+                        get_previous_slotid_in_same_bucket(cur_process_slotid);
                     continue;
                 }
 
-                /*
-                    src(a,b,c)
-                    temp: d,e,f
-                    cur_bucket: |x      |x      |x      |dst(d,e,f)|
-                    kk2_bucket: |x      |x      |x      |x         |
-                */
-                bool temp_special = dst_slot->get_special();
-                KeySizeT temp_length = dst_slot->get_length();
-                size_t temp_pos = dst_slot->get_pos();
-                size_t temp_page_id = dst_slot->get_page_id();
+                /* Checking work is done, executing the cuckoo hashing */
+                // Swap the extra slot content with the current process slot
+                extra_slot->swap(cur_process_slot);
 
-                // if dst_slot is empty, it means now the dst_slot is the first
-                // place we clear for the target slot
-                if (dst_slot->isEmpty()) {
-                    // recover the key_metas
-                    memcpy(key_metas, key_metas_backup,
-                           Bucket_num * cur_associativity * sizeof(slot));
-                    delete[] key_metas_backup;
-                    uint64_t end = get_time();
-                    rehash_cost_time += end - sta;
-                    return -1;
+                // Add this value=index for the searchPoint index updateing
+                searchPoint_wait_2_be_update[pgp.get_tail_v(cur_process_slot)] =
+                    get_column_store_index(cur_process_slot);
+
+                // The first time swap the extra_slot indicate the
+                // cur_process_slotid is ret_index
+                if (ret_index == -1) {
+                    ret_index = cur_process_index;
                 }
 
-                /*
-                    src(a,b,c)
-                    temp: d,e,f
-                    cur_bucket: |x      |x      |x      |dst(a,b,c)|
-                    kk2_bucket: |x      |x      |x      |x         |
-                */
-                dst_slot->set_slot(src_slot);
-                if (!dst_slot->isEmpty())
-                    searchPoint_wait_2_be_update[pgp.get_tail_v(dst_slot)] =
-                        get_column_store_index(dst_slot);
-
-                // if the destination bucket isn't full, just fill the empty
-                // slot and return
-                if (bucket_list[bucketid_kick_to] != cur_associativity) {
-                    /* kick2bucket is have empty slot
-                        src(a,b,c)
-                        temp: d,e,f
-                        cur_bucket: |x      |x      |x      |dst(a,b,c)|
-                        kk2_bucket: |x      |x      |x      |0         |
-                    */
-                    // update dst_slot to the dest bucket's first empty slot
-                    /*
-                        src(a,b,c)
-                        temp: d,e,f
-                        cur_bucket: |x      |x      |x      |x(a,b,c)  |
-                        kk2_bucket: |x      |x      |x      |0-dst     |
-                    */
-                    dst_slot = get_slot(bucketid_kick_to,
-                                        bucket_list[bucketid_kick_to]);
-
-                    /*
-                        src(a,b,c)
-                        temp: d,e,f
-                        cur_bucket: |x      |x      |x      |x(a,b,c)  |
-                        kk2_bucket: |x      |x      |x      |dst(d,e,f)|
-                    */
-                    dst_slot->set_slot(temp_special, temp_length, temp_pos,
-                                       temp_page_id);
-                    searchPoint_wait_2_be_update[pgp.get_tail_v(dst_slot)] =
-                        get_column_store_index(dst_slot);
-                    apply_the_changed_searchPoint(searchPoint_wait_2_be_update,
-                                                  hm);
+                // cur_process_slot is a empty slot, cuckoo hash is done
+                if (extra_slot->isEmpty()) {
                     delete[] key_metas_backup;
-                    uint64_t end = get_time();
-                    rehash_cost_time += end - sta;
-                    return ret_slot_id;
+                    delete extra_slot;
+
+                    hm->apply_the_changed_searchPoint(
+                        searchPoint_wait_2_be_update);
+
+                    rehash_cost_time += get_time() - sta;
+
+                    // return slot_id
+                    return ret_index % cur_associativity;
                 }
 
-                /* kick2bucket is full
-                    src(a,b,c)
-                    temp: d,e,f
-                    cur_bucket: |x      |x      |x      |dst(a,b,c)|
-                    kk2_bucket: |x      |x      |x      |x         |
-                */
+                // update the current bucketid and slotid which are the
+                // replacing destination in next iteration
+                cur_process_bucketid = cur_kick_to_bucketid;
+                cur_process_slotid =
+                    get_last_slotid_in_bucket(cur_kick_to_bucketid);
+            }
 
-                /* kick2bucket is full
-                    src(a,b,c)
-                    temp: d,e,f
-                    cur_bucket: |x      |x      |x      |x(a,b,c)  |
-                    kk2_bucket: |x      |x      |x      |x-dst     |
-                */
-                // update dst_slot to the dest bucket's last empty slot
-                dst_slot = get_slot(bucketid_kick_to, cur_associativity - 1);
-                /*
-                     src(d,e,f)
-                     cur_bucket: |x      |x      |x      |x(a,b,c)  |
-                     kk2_bucket: |x      |x      |x      |x-dst     |
-                */
-                src_slot.set_slot(temp_special, temp_length, temp_pos,
-                                  temp_page_id);
-                /*
-                     src(d,e,f)
-                     (kk2_bucket)
-                     cur_bucket: |x      |x      |x      |x-dst     |
-                */
-                last_bucketid_kick_to = bucketid_kick_to;
-                last_current_bucketid = current_bucket_id;
-                current_bucket_id = bucketid_kick_to;
-
-                rehash_count++;
-            } while (rehash_count != Max_loop);
-            // recover the key_metas
+            // Recover the key_metas
             memcpy(key_metas, key_metas_backup,
                    Bucket_num * cur_associativity * sizeof(slot));
-            delete []key_metas_backup;
-            uint64_t end = get_time();
-            rehash_cost_time += end - sta;
+
+            delete[] key_metas_backup;
+            delete extra_slot;
+
+            rehash_cost_time += get_time() - sta;
+
+            // The cuckoo hash time exceeds Max_loop return -1 as slotid to
+            // indicate cuckoo hash failed
             return -1;
         }
 
@@ -2021,6 +1932,13 @@ class htrie_map {
     anode* t_root;
     // std::map<T, SearchPoint> v2k;
     boost::unordered_map<T, SearchPoint> v2k;
+
+    // function for batch updating the searchPoints to v2k
+    void apply_the_changed_searchPoint(map<T, int>& searchPoints) {
+        for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
+            set_searchPoint_index(it->first, it->second);
+    }
+    
     page_manager pm;
 
     htrie_map(size_t customized_associativity = DEFAULT_Associativity,
@@ -2139,6 +2057,12 @@ class htrie_map {
             return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
                        ? encode % (1 << NBITS_PID_S)
                        : encode % (1 << NBITS_PID);
+        }
+
+        void swap(slot *sl) {
+            uint32_t temp_encode = sl->encode;
+            sl->encode = encode;
+            encode = temp_encode;
         }
     };
 
