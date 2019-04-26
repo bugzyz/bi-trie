@@ -230,8 +230,8 @@ void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
             sizeof(CharT*) + sizeof(uint16_t) + cur_trie_node->prefix_len;
 
         if (childs.size() == 0) {
-            traverse_trie<CharT, T>(cur_trie_node->get_hash_node_child(),
-                                           depth + 1);
+            // traverse_trie<CharT, T>(cur_trie_node->get_hash_node_child(),
+            //                                depth + 1);
         } else {
             
             for (auto it = childs.begin(); it != childs.end(); it++) {
@@ -268,7 +268,7 @@ void traverse_trie(class myTrie::htrie_map<CharT, T>::anode* root,
 template <typename CharT, typename T>
 void scan_tree(class myTrie::htrie_map<CharT, T> &hm){
     // traverse trie to get memory,number information
-    traverse_trie<CharT, T>(hm.t_root);
+    // traverse_trie<CharT, T>(hm.t_root);
 
     // // scan normal
     // for (int i = 0; i != hm.normal_pages.size(); i++) {
