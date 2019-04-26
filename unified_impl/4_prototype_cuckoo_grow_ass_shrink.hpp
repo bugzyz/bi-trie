@@ -1145,6 +1145,11 @@ class htrie_map {
             }
 
             map<CharT, hash_node*> char_to_hash_node;
+            // TODO: maybe use array to replace map? it does reduce 0.1s in 4.5s init time
+            // static hash_node** char_to_hash_node =
+            //     (hash_node**)malloc(sizeof(hash_node*) * ALPHABET);
+            // memset(char_to_hash_node, 0, sizeof(hash_node*) * ALPHABET);
+
             // Create hash_node with enough associativity and store the first
             // char to hash_node* mapping in char_to_hash_node
             for (auto& kv : char_to_need_size) {
