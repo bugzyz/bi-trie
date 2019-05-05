@@ -61,6 +61,8 @@
 #define DEFAULT_SPECIAL_ALIGNMENT 32
 #define DEFAULT_NORMAL_ALIGNMENT 1
 
+#define FAST_PATH_NODE_NUM (20)
+
 static uint32_t longest_string_size;
 
 uint32_t recal_element_num_of_1st_char_counter = 0;
@@ -165,7 +167,7 @@ class htrie_map {
     };
 
     /* node type definition */
-    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE, MULTI_NODE };
+    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
     /* node's base class */
     class anode {
        private:
@@ -176,18 +178,25 @@ class htrie_map {
         T value_;
 
        public:
+       // TODO: adopt a more save-memory way 
         string prefix_;
 
        public:
-        anode(node_type n_type, trie_node* parent)
+        anode(node_type n_type, trie_node* parent, const CharT *key, size_t key_size)
             : n_type_(n_type),
               parent_(parent),
               have_value_(false),
               value_(T()),
-              prefix_("") {}
+              prefix_("") {
+            // If current node's layer equals to multiple of FAST_PATH_NODE_NUM,
+            // we set up a fast path in its x-nd grandparent
+            if (key_size % FAST_PATH_NODE_NUM == 0 && key_size != 0)
+                set_up_fast_path(key + key_size - FAST_PATH_NODE_NUM,
+                                        FAST_PATH_NODE_NUM);
+        }
+
         bool is_hash_node() { return n_type_ == node_type::HASH_NODE; }
         bool is_trie_node() { return n_type_ == node_type::TRIE_NODE; }
-        bool is_multi_node() { return n_type_ == node_type::MULTI_NODE; }
 
         void set_parent(trie_node* p) { parent_ = p; }
         trie_node* get_parent() { return parent_; }
@@ -202,7 +211,7 @@ class htrie_map {
         // for level traverse
         virtual vector<anode*> print_node_info() = 0;
 
-        iterator insert_value_in_node(string prefix, T v,
+        iterator insert_value_in_node(const string &prefix, T v,
                                       htrie_map<CharT, T>* hm) {
             value_ = v;
             have_value_ = true;
@@ -215,142 +224,113 @@ class htrie_map {
             return iterator(have_value_, value_, this, -1, -1);
         }
 
-        void set_prefix(string& prefix) { prefix_ = prefix; }
+        void set_prefix(const string& prefix) { prefix_ = prefix; }
         string& get_prefix() { return prefix_; }
+
+        // Get the x-nd grand parent for adding a fast path
+        inline trie_node* get_fast_path_parent() {
+            trie_node* cur_parent = (trie_node*)this;
+            for (int i = 0; i != FAST_PATH_NODE_NUM; i++) {
+                cur_parent = cur_parent->anode::get_parent();
+                if (cur_parent == nullptr) return nullptr;
+            }
+            return cur_parent;
+        }
+
+        // Set up a fast path in its target grandparent
+        void set_up_fast_path(const char* key, size_t key_size) {
+            // Get the target parent who is going to add a fast path for destination node(this)
+            trie_node* add_fast_path_parent = get_fast_path_parent();
+            assert(add_fast_path_parent != nullptr);
+            add_fast_path_parent->add_fast_path(key, key_size, this);
+        }
     };
 
-    /*-------------string_child_representation-------------*/
-    class string_child_representation {
-       public:
-        // adaptor iterator to adapt the map implementation
-        class child_iterator {
-           public:
-            string first;
-            anode* second;
-
-            child_iterator(string f, anode* tn) : first(f), second(tn) {}
-
-            inline child_iterator* operator->() { return this; }
-
-            inline bool operator==(const child_iterator& right) {
-                return second == right.second;
-            }
-
-            inline bool operator!=(const child_iterator& right) {
-                return second != right.second;
-            }
-        };
-
+    /*-------------fast_path_manager-------------*/
+    class fast_path_manager {
        private:
-        struct child_node {
-            int hash_val_;
-            string child_string_;
-            anode* child_;
+        struct fast_path {
+            unsigned int hash_val_;
+            // TODO: store in page_manager
+            string fast_path_string_;
+            anode* dest_node_;
 
            public:
-            child_node() : hash_val_(0), child_string_(""), child_(nullptr) {}
+            fast_path(unsigned int hash_val, const string &fast_path_string, anode* dest_node)
+                : hash_val_(hash_val),
+                  fast_path_string_(fast_path_string),
+                  dest_node_(dest_node) {}
 
-            inline void set_child_node(int hash_val, string child_string,
-                                       anode* child) {
-                hash_val_ = hash_val;
-                child_string_ = child_string;
-                child_ = child;
-            }
+            inline void set_dest_node(anode *node) { dest_node_ = node; }
 
-            inline int get_hash_val() { return hash_val_; }
-            inline string& get_child_string() { return child_string_; }
-            inline anode* get_child() { return child_; }
+            inline unsigned int get_hash_val() { return hash_val_; }
+            inline string& get_string() { return fast_path_string_; }
+            inline anode* get_dest_node() { return dest_node_; }
         };
 
-        child_node* child_family_;
-        int size_;
+        vector<fast_path> fast_paths;
 
        public:
-        string_child_representation(size_t child_number) : size_(child_number) {
-            child_family_ = new child_node[child_number]();
+        fast_path_manager() {}
+
+        inline void insert_fast_path(const char* key, size_t key_size, anode* node_ptr) {
+            //Insert new element
+            fast_path new_fast_path(
+                myTrie::hashRelative::hash(key, key_size, 1), string(key, key_size), node_ptr);
+
+            for (auto it = fast_paths.begin(); it != fast_paths.end();
+                 it++) {
+              if (it->get_hash_val() > new_fast_path.get_hash_val()) {
+                fast_paths.insert(it, new_fast_path);
+                return;
+              } else if (it->get_hash_val() == new_fast_path.get_hash_val()) {
+                // TODO: FIXME: the hash value may be the same
+                // Maybe the list to solve the same hash_val, different string problem(collision)
+                it->set_dest_node(node_ptr);
+                return;
+              }
+            }
+            fast_paths.push_back(new_fast_path);
         }
 
-        inline void add_child(string child_string, size_t child_index,
-                              anode* n) {
-            child_family_[child_index].set_child_node(
-                myTrie::hashRelative::hash(child_string.data(),
-                                           child_string.size()),
-                child_string, n);
-        }
-
-        // TODO: increase the number of childs to take advantage of binary
-        // search
-        // FIXME: consider the same hash value situation: | 5 | 5 | 5 | 5 | 5 |
-        // 5 | 5 |
-        inline child_iterator find(string target_string) {
-            // if only have one child, just compare its string
-            if (size_ == 1 &&
-                target_string == child_family_[0].get_child_string())
-                return child_iterator(target_string,
-                                      child_family_[0].get_child());
-
+        // TODO: FIXME: consider the same hash value situation: consider the list
+        // | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+        inline anode* lookup_fast_path(const char* key,
+                                                 size_t key_size) {
             // binary search
-            int target_hash_val = myTrie::hashRelative::hash(
-                target_string.data(), target_string.size());
-            int target_index = -1;
+            unsigned int target_hash_val =
+                myTrie::hashRelative::hash(key, key_size);
 
+            size_t node_size = fast_paths.size();
             int low = 0;
-            int high = size_ - 1;
-            while (low <= high) {
-                int mid = low + (high - low) / 2;
-                if (child_family_[mid].get_hash_val() == target_hash_val) {
-                    target_index = mid;
-                    break;
-                } else if (child_family_[mid].get_hash_val() > target_hash_val)
-                    high = mid - 1;
-                else
+            int high = node_size - 1;
+            while (low < high) {
+                int mid = (low + high) >> 1;
+                if (fast_paths[mid].get_hash_val() < target_hash_val) {
                     low = mid + 1;
+                } else
+                    high = mid;
             }
 
             // check the same hash value situation
-            for (int i = target_index;
-                 target_index != size_ &&
-                 child_family_[i].get_hash_val() == target_hash_val;
+            for (int i = low;
+                 low != node_size &&
+                 fast_paths[i].get_hash_val() == target_hash_val;
                  i++) {
-                if (child_family_[i].get_child_string() == target_string) {
-                    return child_iterator(target_string,
-                                          child_family_[i].get_child());
+                if (myTrie::hashRelative::keyEqual(
+                        fast_paths[i].get_string().data(),
+                        fast_paths[i].get_string().size(), key,
+                        key_size)) {
+                    return fast_paths[i].get_dest_node();
                 }
             }
-            return child_iterator(target_string, nullptr);
+            return nullptr;
         }
 
-        inline size_t size() { return size_; }
+        inline size_t size() { return fast_paths.size(); }
 
-        inline child_iterator end() { return child_iterator("", nullptr); }
-    };
-
-    class multi_node : public anode {
-       public:
-        string_child_representation childs_;
-        size_t string_keysize_;
-
-        multi_node(size_t string_keysize_, size_t child_number)
-            : anode(node_type::MULTI_NODE, nullptr),
-              string_keysize_(string_keysize_),
-              childs_(string_child_representation(child_number)) {}
-
-        anode* find_child(const CharT* key, size_t key_size) {
-            auto it = childs_.find(string(key, string_keysize_));
-            if (it == childs_.end()) {
-                return nullptr;
-            } else {
-                return it->second;
-            }
-        }
-
-        void add_child(string child_string, size_t child_index, anode* n){
-            childs_.add_child(child_string, child_index, n);
-        }
-
-        void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
-                                     group_type resize_type) {
-            cout << "im just a multi_node, don't blame me~" << endl;
+        unsigned int get_fpm_memory() {
+            return size() * (sizeof(fast_path) + FAST_PATH_NODE_NUM);
         }
     };
 
@@ -446,25 +426,7 @@ class htrie_map {
             inline child_node* next_child() { return next; }
 
             inline void add_next_child(char c) {
-                next = new child_node(c, new trie_node(nullptr));
-            }
-        };
-
-        class child_iterator {
-           public:
-            char first;
-            anode* second;
-
-            child_iterator(char c, anode* tn) : first(c), second(tn) {}
-
-            inline child_iterator* operator->() { return this; }
-
-            inline bool operator==(child_iterator& right) {
-                return second == right.second;
-            }
-
-            inline bool operator!=(const child_iterator& right) {
-                return second != right.second;
+                next = new child_node(c, nullptr);
             }
         };
 
@@ -500,27 +462,17 @@ class htrie_map {
             return last_child_node->next_child()->current;
         }
 
-        inline child_iterator find(char c) {
+        inline anode* find(char c) {
             child_node* current_child_node = first_child_;
             do {
                 if (current_child_node->child_node_char == c)
-                    return child_iterator(c, current_child_node->current);
+                    return current_child_node->current;
             } while (((current_child_node = current_child_node->next_child()) !=
                       nullptr));
-            return child_iterator(c, nullptr);
+            return nullptr;
         }
 
         inline size_t size() { return size_; }
-
-        /* iterator function */
-        inline child_iterator begin() {
-            return first_child_ != nullptr
-                       ? child_iterator(first_child_->child_node_char,
-                                        first_child_->current)
-                       : child_iterator(0, nullptr);
-        }
-
-        inline child_iterator end() { return child_iterator(0, nullptr); }
 
         /* for traverse_for_pgm_resize() */
         inline void get_childs(vector<anode*>& res) {
@@ -604,11 +556,22 @@ class htrie_map {
 #endif
 
     class trie_node : public anode {
-       public:
+       private:
+        friend void htrie_map::traverse_level();
+        fast_path_manager *fpm_;
         child_representation childs_;  // store the suffix of hash_node or trie_node
-        // std::map<CharT, trie_node*> childs_;
 
-        trie_node(trie_node* p) : anode(node_type::TRIE_NODE, p) {}
+       public:
+        trie_node(trie_node* p, const char* key, size_t key_size)
+            : anode(node_type::TRIE_NODE, p, key, key_size), fpm_(nullptr) {}
+
+        // add a fast path of string(key, key_size) in fast path manager
+        void add_fast_path(const char* key, size_t key_size, anode* node) {
+            if (fpm_ == nullptr)
+                fpm_ = new fast_path_manager();
+            fpm_->insert_fast_path(key, key_size, node);
+            return;
+        }
 
         // TODO: deconstructor
 
@@ -641,33 +604,38 @@ class htrie_map {
             childs_.get_childs(res);
         }
 
-        // finding target, if target doesn't exist, return nullptr
-        anode* find_trie_node_child(CharT c) {  
-            auto found = childs_.find(c);
-            if (found != childs_.end()) {
-                return found->second;
-            } else {
-                return nullptr;
-            }
-        }
-
         // add node in child representation
-        anode* add_child(anode* node, CharT c) {
-            childs_[c] = node;
-            return node;
-        }
+        void add_child(const CharT c, anode* node) { childs_[c] = node; }
 
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
-        anode* find_trie_node_child(CharT c, const CharT* key,
-                                        size_t key_size,
-                                        htrie_map<CharT, T>* hm) {
-            auto found = childs_.find(c);
-            if (found != childs_.end()) {
-                return found->second;
+        anode* find_trie_node_child(bool findMode, const CharT* key, size_t &pos,
+                                    size_t key_size, htrie_map<CharT, T>* hm) {
+            // Find in fast path
+            // If find the target anode in fpm(fast path manager), we return the
+            // fast_path_node
+            if (fpm_ != nullptr && (pos + FAST_PATH_NODE_NUM < key_size)) {
+              anode *fast_path_node =
+                  fpm_->lookup_fast_path(key + pos, FAST_PATH_NODE_NUM);
+              if (fast_path_node != nullptr) {
+                pos += FAST_PATH_NODE_NUM;
+                return fast_path_node;
+              }
+            }
+
+            // Find in normal path
+            anode* target_node = childs_.find(key[pos]);
+            pos++;
+            if (findMode) {
+                return target_node;
             } else {
-                return this->add_child(
-                    new hash_node(this, string(key, key_size) + c, hm), c);
+                if(target_node == nullptr){
+                    // Create a corresponding hash_node and add it to current trie_node's child representation
+                    hash_node* ret_hash_node = new hash_node(this, string(key, pos), hm);
+                    this->add_child(key[pos - 1], ret_hash_node);
+                    return ret_hash_node;
+                } 
+                return target_node;
             }
         }
     };
@@ -715,16 +683,15 @@ class htrie_map {
         }
 
        public:
-        explicit hash_node(trie_node* p, string prefix, htrie_map<CharT, T>* hm,
+        explicit hash_node(trie_node* p,const string &prefix, htrie_map<CharT, T>* hm,
                            size_t need_associativity = 1)
-            : anode(node_type::HASH_NODE, p),
+            : anode(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
               cur_associativity(need_associativity > Associativity
                                     ? Associativity
                                     : need_associativity),
               elem_num(0),
               normal_pgid(hm->get_normal_group_id()),
               special_pgid(hm->get_special_group_id()) {
-
             anode::set_prefix(prefix);
 
             key_metas = new slot[cur_associativity * Bucket_num]();
@@ -1107,12 +1074,14 @@ class htrie_map {
             if (parent == nullptr) {
                 // When burst() in a root hashnode
                 // the trie root is updated to a empty trie_node
-                parent = new trie_node(nullptr);
+                parent = new trie_node(nullptr, nullptr, 0);
                 hm->setRoot(parent);
             } else {
                 //Replace the original hash_node child record in parent by a leading trie_node
-                trie_node* cur_trie_node = new trie_node(parent);
-                parent->childs_[anode::get_prefix().back()] = cur_trie_node;
+                trie_node* cur_trie_node =
+                    new trie_node(parent, anode::get_prefix().data(),
+                                  anode::get_prefix().size());
+                parent->add_child(anode::get_prefix().back(), cur_trie_node);
                 parent = cur_trie_node;
             }
 
@@ -1121,16 +1090,18 @@ class htrie_map {
             const char* common_prefix_key = common_prefix.data();
             unsigned int common_prefix_keysize = common_prefix.size();
 
+            // New prefix = prior prefix + common chain prefix
+            string prefix = anode::get_prefix() + common_prefix;
+
             // Create the common prefix trie chain with several single trie_node
             // The number of node is common_prefix_keysize
             for (int i = 0; i != common_prefix_keysize; i++) {
-                trie_node* cur_trie_node = new trie_node(parent);
-                parent->add_child(cur_trie_node, common_prefix_key[i]);
+                trie_node* cur_trie_node =
+                    new trie_node(parent, prefix.data(),
+                                  prefix.size() - common_prefix_keysize + i + 1);
+                parent->add_child(common_prefix_key[i], cur_trie_node);
                 parent = cur_trie_node;
             }
-
-            // New prefix = prior prefix + common chain prefix
-            string prefix = anode::get_prefix() + string(common_prefix_key, common_prefix_keysize);
 
             // Calculate the associativity we need in several hash_node
             map<CharT, uint16_t> char_to_need_size;
@@ -1156,7 +1127,7 @@ class htrie_map {
                 hash_node* hnode =
                     new hash_node(parent, prefix + kv.first, hm,
                                   get_expected_associativity(kv.second));
-                parent->add_child(hnode, kv.first);
+                parent->add_child(kv.first, hnode);
 
                 char_to_hash_node[kv.first] = hnode;
             }
@@ -1261,12 +1232,15 @@ class htrie_map {
             if (parent == nullptr) {
                 // When burst() in a root hashnode
                 // the trie root is updated to a empty trie_node
-                parent = new trie_node(nullptr);
+                parent = new trie_node(nullptr, nullptr, 0);
                 hm->setRoot(parent);
             } else {
-                //Replace the original hash_node child record in parent by a leading trie_node
-                trie_node* cur_trie_node = new trie_node(parent);
-                parent->childs_[anode::get_prefix().back()] = cur_trie_node;
+                // Replace the original hash_node child record in parent by a
+                // leading trie_node
+                trie_node* cur_trie_node =
+                    new trie_node(parent, anode::get_prefix().data(),
+                                  anode::get_prefix().size());
+                parent->add_child(anode::get_prefix().back(), cur_trie_node);
                 parent = cur_trie_node;
             }
 
@@ -1275,16 +1249,18 @@ class htrie_map {
             const char* common_prefix_key = common_prefix.data();
             unsigned int common_prefix_keysize = common_prefix.size();
 
+            // New prefix = prior prefix + common chain prefix
+            string prefix = anode::get_prefix() + common_prefix;
+
             // Create the common prefix trie chain with several single trie_node
             // The number of node is common_prefix_keysize
             for (int i = 0; i != common_prefix_keysize; i++) {
-                trie_node* cur_trie_node = new trie_node(parent);
-                parent->add_child(cur_trie_node, common_prefix_key[i]);
+                trie_node* cur_trie_node =
+                    new trie_node(parent, prefix.data(),
+                                  prefix.size() - common_prefix_keysize + i);
+                parent->add_child(common_prefix_key[i], cur_trie_node);
                 parent = cur_trie_node;
             }
-
-            // New prefix = prior prefix + common chain prefix
-            string prefix = anode::get_prefix() + string(common_prefix_key, common_prefix_keysize);
 
             // Divide the element into different group by their first char
             map<CharT, map<string, T>> first_char_to_sub_elements;
@@ -1307,7 +1283,7 @@ class htrie_map {
                     parent, prefix + it->first, hm,
                     get_expected_associativity(sub_elements.size()));
 
-                parent->add_child(hnode, it->first);
+                parent->add_child(it->first, hnode);
 
                 for (auto itt = sub_elements.begin(); itt != sub_elements.end();
                      itt++) {
@@ -1717,7 +1693,6 @@ class htrie_map {
                                                                    v);
         }
 
-        // TODO: merge this two function
         inline size_t require_group_id(group_type gt) {
             size_t least_page_page_group_id = 0;
             size_t least_page = SIZE_MAX;
@@ -2108,43 +2083,23 @@ class htrie_map {
 
         anode* current_node = t_root;
 
-        for (size_t pos = 0; pos < key_size; pos++) {
+        // TODO: pos updating need refine?
+        // The pos update is moved to find_trie_node_child(fast-path or
+        // non-fast-path way) while the pos increment
+        for (size_t pos = 0; pos < key_size;) {
             switch (current_node->get_node_type()) {
-                case node_type::MULTI_NODE: {
-                    if (!findMode) {
-                    } else {
-                        size_t jump_pos =
-                            ((multi_node*)current_node)->string_keysize_;
-                        current_node =
-                            ((multi_node*)current_node)
-                                ->find_child(key + pos, key_size - pos);
-                        if (current_node == nullptr) {
-                            return std::pair<bool, T>(false, T());
-                        }
-                        pos += jump_pos - 1;
-                    }
-                } break;
                 case node_type::TRIE_NODE: {
-                    // FIXME: not able to process the element terminated in
-                    // current trie_node
-                    if (!findMode) {
-                        // return the hitted trie_node* or create a new
-                        // trie_node with a hash_node son
-                        current_node =
-                            ((trie_node*)current_node)
-                                ->find_trie_node_child(key[pos], key, pos, this);
-                    } else {
-                        // return the hitted trie_node* or nullptr if not
-                        // found
-                        current_node = ((trie_node*)current_node)
-                                           ->find_trie_node_child(key[pos]);
-                        // only in the findMode==true can cause the
-                        // current_node to be nullptr
-                        if (current_node == nullptr) {
-                            return std::pair<bool, T>(false, T());
-                        }
-                    }
-
+                  // return the hitted trie_node* or create a new
+                  // trie_node with a hash_node son
+                  current_node = ((trie_node *)current_node)
+                                     ->find_trie_node_child(findMode, key, pos,
+                                                            key_size, this);
+                  // TODO: consider move to the for loop condition
+                  // only in the findMode==true can cause the
+                  // current_node to be nullptr
+                  if (findMode && current_node == nullptr) {
+                    return std::pair<bool, T>(false, T());
+                  }
                 } break;
                 case node_type::HASH_NODE: {
                     iterator it = ((hash_node*)current_node)
@@ -2153,6 +2108,7 @@ class htrie_map {
                     if (findMode) {
                         return std::pair<bool, T>(it.found, it.v);
                     } else {
+                        // TODO: consider to move the burst() code into insert_hashnode()
                         pair<bool, T> res = it.insert_hashnode(
                             key + pos, key_size - pos, this, v);
                         if (res.first == false) {
@@ -2190,7 +2146,7 @@ class htrie_map {
 
     /*---------------external accessing interface-------------------*/
 
-    // access element
+    // search operation
     T searchByKey(std::string key) {
         return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
     }
@@ -2210,20 +2166,10 @@ class htrie_map {
         }
     }
 
+    // insert operation
     std::pair<bool, T> insertKV(std::string key, T v) {
         return access_kv_in_htrie_map(key.data(), key.size(), v, false);
     }
-
-    static inline bool sort_by_hash_val(const pair<string, anode*>& t1,
-                                 const pair<string, anode*>& t2) {
-        int hash_val1 =
-            myTrie::hashRelative::hash(t1.first.data(), t1.first.size());
-        int hash_val2 =
-            myTrie::hashRelative::hash(t2.first.data(), t2.first.size());
-
-        return hash_val1 < hash_val2;
-    }
-
 
     /*---------------external cleaning interface-------------------*/
     void clean_useless() {
@@ -2236,105 +2182,23 @@ class htrie_map {
         cout << endl;
         queue<anode*> q;
         q.push(t_root);
+        unsigned int fpm_memory = 0;
         while (!q.empty()) {
             anode* cur_node = q.front();
             q.pop();
-            vector<anode*> childs = cur_node->print_node_info();
+            if (cur_node->is_hash_node()) continue;
+
+            unsigned int cur_fpm_mem =
+                ((trie_node *)cur_node)->fpm_ == nullptr
+                    ? 0
+                    : ((trie_node *)cur_node)->fpm_->get_fpm_memory();
+            fpm_memory += cur_fpm_mem;
+            
+            vector<anode*> childs;
+            ((trie_node*)cur_node)->get_childs_vector(childs);
             for (auto c : childs) q.push(c);
-            cout << endl;
         }
-    }
-
-    /*--------------------global shrink node functions--------------------*/
-    // TODO: FIX ME! the branch of deciding the type of node is poor
-    anode* shrink_node(anode* node) {
-        // if (node->is_trie_node()) {
-        //     trie_node* cur_node = (trie_node*)node;
-
-        //     hash_node* hash_node_child = cur_node->get_only_hash_node_child();
-        //     if (hash_node_child != nullptr) {
-        //         return cur_node;
-        //     }
-
-        //     vector<pair<string, anode*>> traverse_save(
-        //         cur_node->trie_node_childs.size());
-        //     vector<pair<CharT, trie_node*>> next_layer;
-
-        //     cur_node->trie_node_childs.get_childs_with_char(next_layer);
-
-        //     bool allow_next_layer = true;
-        //     size_t string_keysize = 0;
-        //     do {
-        //         for (int i = 0; i != next_layer.size(); i++) {
-        //             CharT c = next_layer[i].first;
-        //             trie_node* next_layer_trie_node = next_layer[i].second;
-
-        //             // current key_string add the next_layer's char
-        //             string new_key_string = traverse_save[i].first + c;
-
-        //             traverse_save[i].first = new_key_string;
-        //             traverse_save[i].second = next_layer_trie_node;
-
-        //             pair<CharT, trie_node*> next_pair;
-        //             if (next_layer_trie_node->get_only_hash_node_child() ==
-        //                     nullptr &&
-        //                 next_layer_trie_node->get_only_trie_node_child()
-        //                         .second == nullptr) {
-        //                 // have several children
-        //                 allow_next_layer = false;
-        //             } else {
-        //                 // only have a hash_node child or only have a
-        //                 // trie_node child
-        //                 if (next_layer_trie_node->get_only_hash_node_child() !=
-        //                     nullptr) {
-        //                     next_layer[i] =
-        //                         pair<CharT, trie_node*>(CharT(), nullptr);
-        //                     // stop at this layer
-        //                     allow_next_layer = false;
-        //                     traverse_save[i].second = next_layer_trie_node;
-        //                 } else {
-        //                     next_pair = next_layer_trie_node
-        //                                     ->get_only_trie_node_child();
-        //                     next_layer[i] = next_pair;
-        //                 }
-        //             }
-        //         }
-        //         if (allow_next_layer) {
-        //             for (int i = 0; i != next_layer.size(); i++) {
-        //                 delete (next_layer[i].second)->get_parent();
-        //             }
-        //         }
-        //         string_keysize++;
-        //     } while (allow_next_layer);
-
-        //     // construct the target multi_node
-        //     multi_node* target_node = new multi_node(string_keysize, traverse_save.size());
-
-        //     sort(traverse_save.begin(),traverse_save.end(), sort_by_hash_val);
-
-        //     for (int i = 0; i != traverse_save.size(); i++) {
-        //         anode* res = shrink_node(traverse_save[i].second);
-
-        //         // add new child multi_node target_node
-        //         target_node->add_child(traverse_save[i].first, i, res);
-        //     }
-        //     return target_node;
-        // } else if (node->is_hash_node()) {
-        //     return node;
-        // } else {
-        //     cout << "program are in a unexpected branch\n";
-        //     assert(false);
-        //     exit(0);
-        // }
-        return nullptr;
-    }
-
-    void shrink() {
-        cout << "Shrinking\n";
-        uint64_t sta = get_time();
-        t_root = shrink_node(t_root);
-        uint64_t end = get_time();
-        shrink_total_time = end - sta;
+        cout << "fast path memory: " << fpm_memory << endl;
     }
 };  // namespace myTrie
 
