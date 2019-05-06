@@ -2086,13 +2086,13 @@ class htrie_map {
         // TODO: pos updating need refine?
         // The pos update is moved to find_trie_node_child(fast-path or
         // non-fast-path way) while the pos increment
-        for (size_t pos = 0; pos < key_size;) {
+        for (size_t ref_pos = 0; ref_pos < key_size;) {
             switch (current_node->get_node_type()) {
                 case node_type::TRIE_NODE: {
                   // return the hitted trie_node* or create a new
                   // trie_node with a hash_node son
                   current_node = ((trie_node *)current_node)
-                                     ->find_trie_node_child(findMode, key, pos,
+                                     ->find_trie_node_child(findMode, key, ref_pos,
                                                             key_size, this);
                   // TODO: consider move to the for loop condition
                   // only in the findMode==true can cause the
@@ -2104,13 +2104,13 @@ class htrie_map {
                 case node_type::HASH_NODE: {
                     iterator it = ((hash_node*)current_node)
                                       ->search_kv_in_hashnode(
-                                          key + pos, key_size - pos, this);
+                                          key + ref_pos, key_size - ref_pos, this);
                     if (findMode) {
                         return std::pair<bool, T>(it.found, it.v);
                     } else {
                         // TODO: consider to move the burst() code into insert_hashnode()
                         pair<bool, T> res = it.insert_hashnode(
-                            key + pos, key_size - pos, this, v);
+                            key + ref_pos, key_size - ref_pos, this, v);
                         if (res.first == false) {
                             // if the insert failed, we burst the
                             // target_hashnode and retry insertion
