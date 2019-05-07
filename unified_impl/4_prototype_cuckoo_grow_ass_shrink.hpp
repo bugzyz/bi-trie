@@ -767,18 +767,6 @@ class htrie_map {
                    (get_index(s) / cur_associativity);
         }
 
-        void get_all_elements(htrie_map<CharT, T>* hm,
-                              std::map<std::string, T>& elements) {
-            for (size_t i = 0; i != Bucket_num; i++) {
-                for (size_t j = 0; j != cur_associativity; j++) {
-                    slot& cur_slot = key_metas[i * cur_associativity + j];
-                    if (cur_slot.isEmpty()) break;
-                    hm->get_tail_str_v(get_page_group_id(&cur_slot), elements,
-                                       &cur_slot);
-                }
-            }
-        }
-
         /*---------function that changed key_metas layout---------*/
 
         /*------------------ 0. helper function------------------*/
@@ -1213,6 +1201,23 @@ class htrie_map {
 
         // Optional burst function, time-consuming(string re-store in map), but
         // work fine
+        // helper function
+        void get_all_elements(htrie_map<CharT, T>* hm,
+                                std::map<std::string, T>& elements) {
+            page_group_package pgp =
+                hm->pm->get_page_group_package(normal_pgid, special_pgid);
+
+            for (size_t i = 0; i != Bucket_num; i++) {
+                for (size_t j = 0; j != cur_associativity; j++) {
+                slot* cur_slot = get_slot(i,j);
+                if (cur_slot->isEmpty()) break;
+                elements[string(pgp.get_tail_pointer(cur_slot),
+                                cur_slot->get_length())] =
+                    pgp.get_tail_v(cur_slot);
+                }
+            }
+        }
+
         /*
          * burst_by_elements()
          * Create a sub burst trie with elements linking with the parent
@@ -2043,18 +2048,6 @@ class htrie_map {
 
     inline static unsigned int calc_align(unsigned int n, unsigned align) {
         return ((n + align - 1) & (~(align - 1)));
-    }
-
-    void get_tail_str_v(size_t page_group_id,
-                        std::map<std::string, T>& elements, slot* s) {
-        char* tail_pointer = get_tail_pointer(page_group_id, s);
-        std::string res(tail_pointer, s->get_length());
-        std::memcpy(&elements[res], tail_pointer + s->get_length(), sizeof(T));
-    }
-
-    slot make_slot(bool is_special, size_t keysize, size_t pos,
-                   size_t page_id) {
-        return slot(is_special, keysize, pos, page_id);
     }
 
     class iterator {
