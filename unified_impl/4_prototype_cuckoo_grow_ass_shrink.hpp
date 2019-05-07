@@ -2068,13 +2068,13 @@ class htrie_map {
         }
     };
 
-    std::pair<bool, T> access_kv_in_htrie_map(const CharT* key, size_t key_size,
+    std::pair<bool, T> access_kv_in_htrie_map(anode *start_node, const CharT* key, size_t key_size,
                                               T v, bool findMode, bool clean_on = true) {
         // update longest_string_size
         longest_string_size =
             longest_string_size > key_size ? longest_string_size : key_size;
 
-        anode* current_node = t_root;
+        anode* current_node = start_node;
 
         // TODO: pos updating need refine?
         // The pos update is moved to find_trie_node_child(fast-path or
@@ -2114,7 +2114,7 @@ class htrie_map {
                                 hnode_burst_needed->get_parent(), this);
 
                             delete hnode_burst_needed;
-                            return access_kv_in_htrie_map(key, key_size, v,
+                            return access_kv_in_htrie_map(t_root, key, key_size, v,
                                                           false, false);
                         }
                         return res;
@@ -2141,14 +2141,14 @@ class htrie_map {
 
     // search operation
     T searchByKey(std::string key) {
-        return access_kv_in_htrie_map(key.data(), key.size(), T(), true).second;
+        return access_kv_in_htrie_map(t_root, key.data(), key.size(), T(), true).second;
     }
 
     std::string searchByValue(T v) { return v2k[v].get_string(pm); }
 
     // find operation
     std::pair<bool, T> findByKey(std::string key) {
-        return access_kv_in_htrie_map(key.data(), key.size(), T(), true);
+        return access_kv_in_htrie_map(t_root, key.data(), key.size(), T(), true);
     }
 
     std::pair<bool, std::string> findByValue(T v) {
@@ -2161,7 +2161,7 @@ class htrie_map {
 
     // insert operation
     std::pair<bool, T> insertKV(std::string key, T v) {
-        return access_kv_in_htrie_map(key.data(), key.size(), v, false);
+        return access_kv_in_htrie_map(t_root, key.data(), key.size(), v, false);
     }
 
     /*---------------external cleaning interface-------------------*/
