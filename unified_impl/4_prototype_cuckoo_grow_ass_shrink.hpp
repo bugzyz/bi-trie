@@ -987,7 +987,7 @@ class htrie_map {
 
                     if (s->is_empty()) break;
 
-                    if (s->isSpecial())
+                    if (s->is_special())
                         s->set_slot(hm->write_kv_to_page(
                             hm->get_tail_pointer(s), s->get_length(),
                             hm->get_tail_v(s), new_special_page));
@@ -1815,7 +1815,7 @@ class htrie_map {
 
         bool is_empty() { return get_length() == 0; }
 
-        bool isSpecial() { return get_special(); }
+        bool is_special() { return get_special(); }
 
         slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
             encode = encode_slot(is_special, l, p, pi);
