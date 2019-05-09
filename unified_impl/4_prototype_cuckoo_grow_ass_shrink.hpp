@@ -150,6 +150,17 @@ class htrie_map {
                        : n_group;
         }
 
+        inline typename page_manager::page_group* get_page_group(group_type get_type) {
+            return get_type == group_type::SPECIAL_GROUP ? s_group : n_group;
+        }
+
+        inline void set_page_group(
+            group_type get_type,
+                typename page_manager::page_group* update_page_group) {
+          get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
+                                                : (n_group = update_page_group);
+        }
+
         inline bool is_special(slot* s) {
             return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP;
         }
@@ -225,7 +236,7 @@ class htrie_map {
         }
 
         void set_prefix(const string& prefix) { prefix_ = prefix; }
-        string& get_prefix() { return prefix_; }
+        const string& get_prefix() { return prefix_; }
 
         // Get the x-nd grand parent for adding a fast path
         inline trie_node* get_fast_path_parent() {
@@ -464,11 +475,12 @@ class htrie_map {
 
         inline anode* find(char c) {
             child_node* current_child_node = first_child_;
-            do {
+            while(current_child_node != nullptr) {
                 if (current_child_node->child_node_char == c)
                     return current_child_node->current;
-            } while (((current_child_node = current_child_node->next_child()) !=
-                      nullptr));
+
+                current_child_node = current_child_node->next_child();
+            };
             return nullptr;
         }
 
@@ -629,12 +641,6 @@ class htrie_map {
             if (findMode) {
                 return target_node;
             } else {
-                if(target_node == nullptr){
-                    // Create a corresponding hash_node and add it to current trie_node's child representation
-                    hash_node* ret_hash_node = new hash_node(this, string(key, pos), hm);
-                    this->add_child(key[pos - 1], ret_hash_node);
-                    return ret_hash_node;
-                } 
                 return target_node;
             }
         }
@@ -672,7 +678,6 @@ class htrie_map {
         }
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
-            return;
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
                     print_slot(i, j, hm);
@@ -719,7 +724,7 @@ class htrie_map {
 
                     // ignore the slot that not belong to current resize group
                     // type
-                    if (s->isEmpty() || get_group_type(s) != resize_type)
+                    if (s->is_empty() || get_group_type(s) != resize_type)
                         continue;
 
                     // get the content from old page_manager and write it to the
@@ -828,7 +833,7 @@ class htrie_map {
         // Return the first empty slot or last slot in current bucket
         inline int get_last_slotid_in_bucket(int bucketid) {
             for (int i = 0; i != cur_associativity; i++)
-                if (get_slot(bucketid, i)->isEmpty()) return i;
+                if (get_slot(bucketid, i)->is_empty()) return i;
 
             return cur_associativity - 1;
         }
@@ -917,7 +922,7 @@ class htrie_map {
                 }
 
                 // cur_process_slot is a empty slot, cuckoo hash is done
-                if (extra_slot->isEmpty()) {
+                if (extra_slot->is_empty()) {
                     delete[] key_metas_backup;
                     delete extra_slot;
 
@@ -952,21 +957,6 @@ class htrie_map {
         }
 
         /*------------------ 3. bursting function------------------*/
-        inline unsigned int cal_common_prefix_len(const char* s1,
-                                           unsigned int cur_longest_prefix_len,
-                                           const char* s2,
-                                           unsigned int new_key_size) {
-            if (cur_longest_prefix_len > new_key_size) {
-                cur_longest_prefix_len = new_key_size;
-            }
-            for (int i = 0; i != cur_longest_prefix_len; i++) {
-                if (s1[i] != s2[i]) {
-                    return i;
-                }
-            }
-            return cur_longest_prefix_len;
-        }
-
         inline unsigned int round_up_2_next_power_2(unsigned int x) {
             x--;
             x |= x >> 1;   // handle  2 bit numbers
@@ -983,339 +973,8 @@ class htrie_map {
                 (double)need_size / (double)Bucket_num / Burst_ratio + 1);
         }
 
-        string get_common_prefix(map<string, T>& elements) {
-            // calculate the prefix len first
-            const char* ret_key_pointer = nullptr;
-            unsigned int common_prefix_len = INT_MAX;
-
-            for (auto& string_to_value : elements) {
-                const char* key = string_to_value.first.data();
-                unsigned int length = string_to_value.first.size();
-
-                if (ret_key_pointer == nullptr) ret_key_pointer = key;
-
-                // update the common_prefix_len
-                unsigned int cur_com_prefix_len = cal_common_prefix_len(
-                    ret_key_pointer, common_prefix_len, key, length);
-                if (common_prefix_len > cur_com_prefix_len) {
-                    common_prefix_len = cur_com_prefix_len;
-                }
-            }
-            return string(ret_key_pointer, common_prefix_len);
-        }
-
-        string get_common_prefix(page_group_package& pgp) {
-            // calculate the capacity of hashnode we need
-            const char* ret_key_pointer = nullptr;
-            unsigned int common_prefix_len = INT_MAX;
-            for (int i = 0; i != Bucket_num && common_prefix_len != 0; i++) {
-                for (int j = 0; j != Associativity && common_prefix_len != 0;
-                     j++) {
-                    slot* s = get_slot(i, j);
-                    if (s->isEmpty()) break;
-
-                    char* key = pgp.get_tail_pointer(s);
-                    if (ret_key_pointer == nullptr) ret_key_pointer = key;
-
-                    // update the common_prefix_len
-                    unsigned int cur_com_prefix_len = cal_common_prefix_len(
-                        ret_key_pointer, common_prefix_len, key,
-                        s->get_length());
-                    if (common_prefix_len > cur_com_prefix_len) {
-                        common_prefix_len = cur_com_prefix_len;
-                    }
-                }
-            }
-            return string(ret_key_pointer, common_prefix_len);
-        }
-
         inline bool need_burst() const {
             return elem_num >= Max_slot_num * Burst_ratio;
-        }
-
-        /*
-         * burst()
-         * when the hash_node's element reach the need_busrt() threshold, we
-         * burst this element into a tree with several small size of
-         * hash_node or trie_node linking with those hash_node
-         *
-         * hash_node(size:100)
-         *
-         *       burst()↓
-         *
-         * trie_node(size:0)
-         * childs: |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
-         *                              |
-         *                      hash_node(size:49)
-         */
-        void burst(trie_node* parent, htrie_map* hm) {
-            burst_total_counter++;
-
-            // Create a page_group_package for later page_group getting
-            page_group_package pgp =
-                hm->pm->get_page_group_package(normal_pgid, special_pgid);
-            // Tell the page_manager if it triggers a resize(), update this
-            // hash_node and the page_group_package in this burst()
-            hm->pm->register_bursting_hash_node(this, &pgp);
-
-            // Deal with the relationship between this hash_node and its parent
-            if (parent == nullptr) {
-                // When burst() in a root hashnode
-                // the trie root is updated to a empty trie_node
-                parent = new trie_node(nullptr, nullptr, 0);
-                hm->setRoot(parent);
-            } else {
-                //Replace the original hash_node child record in parent by a leading trie_node
-                trie_node* cur_trie_node =
-                    new trie_node(parent, anode::get_prefix().data(),
-                                  anode::get_prefix().size());
-                parent->add_child(anode::get_prefix().back(), cur_trie_node);
-                parent = cur_trie_node;
-            }
-
-            // Get the common_prefix to eliminate the redundant burst
-            string common_prefix = get_common_prefix(pgp);
-            const char* common_prefix_key = common_prefix.data();
-            unsigned int common_prefix_keysize = common_prefix.size();
-
-            // New prefix = prior prefix + common chain prefix
-            string prefix = anode::get_prefix() + common_prefix;
-
-            // Create the common prefix trie chain with several single trie_node
-            // The number of node is common_prefix_keysize
-            for (int i = 0; i != common_prefix_keysize; i++) {
-                trie_node* cur_trie_node =
-                    new trie_node(parent, prefix.data(),
-                                  prefix.size() - common_prefix_keysize + i + 1);
-                parent->add_child(common_prefix_key[i], cur_trie_node);
-                parent = cur_trie_node;
-            }
-
-            // Calculate the associativity we need in several hash_node
-            map<CharT, uint16_t> char_to_need_size;
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot* s = get_slot(i, j);
-                    if (s->isEmpty()) break;
-
-                    char* key = pgp.get_tail_pointer(s);
-                    char_to_need_size[key[common_prefix_keysize]]++;
-                }
-            }
-
-            map<CharT, hash_node*> char_to_hash_node;
-            // TODO: maybe use array to replace map? it does reduce 0.1s in 4.5s init time
-            // static hash_node** char_to_hash_node =
-            //     (hash_node**)malloc(sizeof(hash_node*) * ALPHABET);
-            // memset(char_to_hash_node, 0, sizeof(hash_node*) * ALPHABET);
-
-            // Create hash_node with enough associativity and store the first
-            // char to hash_node* mapping in char_to_hash_node
-            for (auto& kv : char_to_need_size) {
-                hash_node* hnode =
-                    new hash_node(parent, prefix + kv.first, hm,
-                                  get_expected_associativity(kv.second));
-                parent->add_child(kv.first, hnode);
-
-                char_to_hash_node[kv.first] = hnode;
-            }
-
-            // A map for the hashnode that insertion failed
-            map<char, pair<hash_node*, map<string, T>>> burst_again_list;
-            // Insert the elements with same first char after common_prefix_len
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != Associativity; j++) {
-                    slot* s = get_slot(i, j);
-                    if (s->isEmpty()) break;
-
-                    char* key = pgp.get_tail_pointer(s);
-                    // The first_char represent the element belongs to which hash_node
-                    char first_char = key[common_prefix_keysize];
-
-                    // New element wait to be inserted in hash_node
-                    unsigned int move_pos = common_prefix_keysize + 1;
-                    char* new_key = key + move_pos;
-                    size_t length_left = s->get_length() - move_pos;
-                    T v = pgp.get_tail_v(s);
-
-                    hash_node* hnode =
-                        char_to_hash_node[first_char];
-
-                    if (hnode == nullptr) {
-                        map<string, T>& temp_elements =
-                            burst_again_list[first_char].second;
-                        temp_elements[string(new_key, length_left)] = v;
-                        continue;
-                    }
-
-                    // Rarely, only insert value in current hash_node
-                    if (length_left == 0) {
-                        hnode->insert_value_in_node(hnode->get_prefix(), v, hm);
-                        continue;
-                    }
-
-                    // Normally, search the target in hash_node and insert
-                    iterator target_it =
-                        hnode->search_kv_in_hashnode(new_key, length_left, hm);
-                    pair<bool, T> res =
-                        target_it.insert_hashnode(new_key, length_left, hm, v);
-
-                    // TODO: this is definitely not a good way to burst again
-                    // If insert failed, it need burst() again
-                    if (res.first == false) {
-                        // Get the element already inserted
-                        map<string, T> temp_elements;
-                        hnode->get_all_elements(hm, temp_elements);
-
-                        // and current key=value
-                        temp_elements[string(new_key, length_left)] = v;
-
-                        burst_again_list[first_char] =
-                            pair<hash_node*, map<string, T>>(hnode,
-                                                             temp_elements);
-
-                        char_to_hash_node[first_char] = nullptr;
-                    }
-                }
-            }
-
-            // Check if there is some failure when insert in hash_node
-            for (auto& char_and_node_and_elements : burst_again_list) {
-                // If burst() fail at this prefix char, we use the old way to
-                // burst
-                auto& node_and_elements = char_and_node_and_elements.second;
-                
-                hash_node* burst_hnode = node_and_elements.first;
-                map<string, T>& elements = node_and_elements.second;
-                
-                // burst the insert-failed hash_node with elements
-                burst_hnode->burst_by_elements(elements, parent, hm);
-
-                delete burst_hnode;
-            }
-
-            // remove current hash_node in the notify list in page_manager
-            hm->pm->remove_bursting_hash_node(this);
-            return;
-        }
-
-        // Optional burst function, time-consuming(string re-store in map), but
-        // work fine
-        // helper function
-        void get_all_elements(htrie_map<CharT, T>* hm,
-                                std::map<std::string, T>& elements) {
-            page_group_package pgp =
-                hm->pm->get_page_group_package(normal_pgid, special_pgid);
-
-            for (size_t i = 0; i != Bucket_num; i++) {
-                for (size_t j = 0; j != cur_associativity; j++) {
-                slot* cur_slot = get_slot(i,j);
-                if (cur_slot->isEmpty()) break;
-                elements[string(pgp.get_tail_pointer(cur_slot),
-                                cur_slot->get_length())] =
-                    pgp.get_tail_v(cur_slot);
-                }
-            }
-        }
-
-        /*
-         * burst_by_elements()
-         * Create a sub burst trie with elements linking with the parent
-         * 
-         * elements(size:100)
-         *
-         *       burst()↓
-         *
-         * trie_node(size:0)
-         * childs: |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
-         *                              |
-         *                      hash_node(size:49)
-         */
-        void burst_by_elements(map<string, T>& elements, trie_node* parent,
-                               htrie_map* hm) {
-            // Deal with the relationship between this hash_node and its parent
-            if (parent == nullptr) {
-                // When burst() in a root hashnode
-                // the trie root is updated to a empty trie_node
-                parent = new trie_node(nullptr, nullptr, 0);
-                hm->setRoot(parent);
-            } else {
-                // Replace the original hash_node child record in parent by a
-                // leading trie_node
-                trie_node* cur_trie_node =
-                    new trie_node(parent, anode::get_prefix().data(),
-                                  anode::get_prefix().size());
-                parent->add_child(anode::get_prefix().back(), cur_trie_node);
-                parent = cur_trie_node;
-            }
-
-            // Get the common_prefix to eliminate the redundant burst
-            string common_prefix = get_common_prefix(elements);
-            const char* common_prefix_key = common_prefix.data();
-            unsigned int common_prefix_keysize = common_prefix.size();
-
-            // New prefix = prior prefix + common chain prefix
-            string prefix = anode::get_prefix() + common_prefix;
-
-            // Create the common prefix trie chain with several single trie_node
-            // The number of node is common_prefix_keysize
-            for (int i = 0; i != common_prefix_keysize; i++) {
-                trie_node* cur_trie_node =
-                    new trie_node(parent, prefix.data(),
-                                  prefix.size() - common_prefix_keysize + i);
-                parent->add_child(common_prefix_key[i], cur_trie_node);
-                parent = cur_trie_node;
-            }
-
-            // Divide the element into different group by their first char
-            map<CharT, map<string, T>> first_char_to_sub_elements;
-            for (auto& string_to_value : elements) {
-                const string& cur_string = string_to_value.first;
-                first_char_to_sub_elements[cur_string[common_prefix_keysize]]
-                                          [cur_string.substr(
-                                              common_prefix_keysize + 1)] =
-                                              string_to_value.second;
-            }
-
-            // Insert sub_element group by group(A group is a sub_element with
-            // same first char)
-            for (auto it = first_char_to_sub_elements.begin();
-                 it != first_char_to_sub_elements.end(); it++) {
-                std::map<std::string, T>& sub_elements = it->second;
-
-                // Create the hash_node with enough associativity
-                hash_node* hnode = new hash_node(
-                    parent, prefix + it->first, hm,
-                    get_expected_associativity(sub_elements.size()));
-
-                parent->add_child(it->first, hnode);
-
-                for (auto itt = sub_elements.begin(); itt != sub_elements.end();
-                     itt++) {
-                    const string& element_string = itt->first;
-
-                    // Rarely, only insert value in current hash_node
-                    if (element_string.size() == 0) {
-                        hnode->insert_value_in_node(hnode->get_prefix(),
-                                                    itt->second, hm);
-                        continue;
-                    }
-
-                    // Normally, search the target in hash_node and insert
-                    iterator target_it = hnode->search_kv_in_hashnode(
-                        element_string.data(), element_string.size(), hm);
-                    std::pair<bool, T> res = target_it.insert_hashnode(
-                        element_string.data(), element_string.size(), hm,
-                        itt->second);
-                    // If insert failed, it needs burst
-                    if (res.first == false) {
-                        hnode->burst_by_elements(sub_elements, parent, hm);
-                        delete hnode;
-                        break;
-                    }
-                }
-            }
-            return;
         }
 
         /*----------------searching in hash_node----------------*/
@@ -1326,7 +985,7 @@ class htrie_map {
                 for (int j = 0; j != cur_associativity; j++) {
                     slot* s = get_slot(i, j);
 
-                    if (s->isEmpty()) break;
+                    if (s->is_empty()) break;
 
                     if (s->isSpecial())
                         s->set_slot(hm->write_kv_to_page(
@@ -1366,7 +1025,7 @@ class htrie_map {
             // find the hitted slot in hashnode
             for (int i = 0; i != cur_associativity; i++) {
                 slot* target_slot = get_slot(bucketid, i);
-                if (target_slot->isEmpty()) {
+                if (target_slot->is_empty()) {
                     return std::pair<bool, iterator>(
                         false, iterator(false, T(), this, bucketid, i));
                 }
@@ -1430,7 +1089,7 @@ class htrie_map {
                        : normal_pgid;
         }
 
-        std::pair<bool, T> insert_kv_in_hashnode(const CharT* key,
+        void insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, size_t bucketid,
                                                  int slotid) {
@@ -1448,7 +1107,7 @@ class htrie_map {
                         for (int i = 0; i != cur_associativity; i++) {
                             slot* empty_slot =
                                 key_metas + bucketid * cur_associativity + i;
-                            if (empty_slot->isEmpty()) {
+                            if (empty_slot->is_empty()) {
                                 slotid = i;
                                 break;
                             }
@@ -1459,7 +1118,17 @@ class htrie_map {
                 bool expand_success = expand_key_metas_space();
                 if (!expand_success) {
                     if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                        return std::pair<bool, T>(false, T());
+
+                        const string &prefix = this->anode::get_prefix();
+                        trie_node* new_parent = hm->burst(burst_package(this, key_metas, Bucket_num, cur_associativity,
+                                        hm->pm->get_page_group_package(
+                                            normal_pgid, special_pgid)),
+                            hm, this->anode::get_parent(),
+                            prefix);
+
+                        hm->access_kv_in_htrie_map(new_parent, key, keysize, v, false, prefix.data(), prefix.size());
+                        delete this;
+                        return;
                     }
                 } else {
                     // if expand success, we get new elem a empty slot in
@@ -1467,7 +1136,7 @@ class htrie_map {
                     for (int i = 0; i != cur_associativity; i++) {
                         slot* empty_slot =
                             key_metas + bucketid * cur_associativity + i;
-                        if (empty_slot->isEmpty()) {
+                        if (empty_slot->is_empty()) {
                             slotid = i;
                             break;
                         }
@@ -1504,16 +1173,168 @@ class htrie_map {
             hm->set_v2k(v, this, get_column_store_index(target_slot));
 
             elem_num++;
-
-            if (need_burst()) {
-                burst(this->get_parent(), hm);
-
-                delete this;
-            }
-
-            return std::pair<bool, T>(true, v);
+            
+            return;
         }
     };
+
+    /*
+    * burst()
+    * when the hash_node's element reach the need_busrt() threshold, we
+    * burst this element into a tree with several small size of
+    * hash_node or trie_node linking with those hash_node
+    *
+    * hash_node(size:100)
+    *
+    *       burst()↓
+    *
+    * trie_node(size:0)
+    * childs: |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
+    *                              |
+    *                      hash_node(size:49)
+    */
+    struct burst_package {
+       private:
+        hash_node* bursting_node_;
+        page_group_package pgp_;
+        vector<slot> elems_;
+
+       public:
+        burst_package(hash_node* bursting_node, slot* elems, size_t bucket_num,
+                      size_t associativity, page_group_package pgp)
+            : bursting_node_(bursting_node), pgp_(pgp) {
+          for (int i = 0; i != bucket_num; i++)
+            for (int j = 0; j != associativity; j++) {
+              slot* s = elems + i * associativity + j;
+              if (s->is_empty()) break;
+              elems_.push_back(*s);
+            }
+        }
+
+        void update_burst_package(page_manager* new_pm, group_type resize_type) {
+            size_t n_group_id = new_pm->require_group_id(group_type::NORMAL_GROUP);
+            size_t s_group_id =new_pm->require_group_id(group_type::SPECIAL_GROUP);
+
+            page_group_package new_pgp = new_pm->get_page_group_package(n_group_id, s_group_id);
+            for (auto& s : elems_) {
+                // ignore the slot that not belong to current resize group
+                // type
+                if (get_group_type(&s) != resize_type) continue;
+
+                // get the content from old page_manager and write it to the
+                // new page_manager
+                s.set_slot(new_pm->write_kv((resize_type == group_type::NORMAL_GROUP
+                                        ? n_group_id
+                                        : s_group_id),
+                                    pgp_.get_tail_pointer(&s),
+                                    s.get_length(), pgp_.get_tail_v(&s)));
+            }
+            pgp_.set_page_group(resize_type, new_pgp.get_page_group(resize_type));
+        }
+
+        slot operator[](int index) { return elems_[index]; }
+        const slot top() const { return elems_.back(); }
+        void pop() { elems_.pop_back(); }
+
+        size_t size() {return elems_.size(); }
+        page_group_package get_pgp() const { return pgp_; }
+        const hash_node* get_bursting_node() const {return bursting_node_; }
+
+        void print_bp() {
+            cout << "-----------------\n";
+            for(int i=0; i!= elems_.size(); i++){
+                elems_[i].print_slot(pgp_);
+            }
+            cout << endl;
+        }
+        
+        inline unsigned int cal_common_prefix_len(const char* s1,
+                                           unsigned int cur_longest_prefix_len,
+                                           const char* s2,
+                                           unsigned int new_key_size) {
+            if (cur_longest_prefix_len > new_key_size) {
+                cur_longest_prefix_len = new_key_size;
+            }
+            for (int i = 0; i != cur_longest_prefix_len; i++) {
+                if (s1[i] != s2[i]) {
+                    return i;
+                }
+            }
+            return cur_longest_prefix_len;
+        }
+
+        string get_common_prefix() {
+            // calculate the capacity of hashnode we need
+            const char* ret_key_pointer = nullptr;
+            unsigned int common_prefix_len = INT_MAX;
+            for (int i = 0; i != elems_.size() && common_prefix_len != 0; i++){
+                    char* key = pgp_.get_tail_pointer(&(elems_[i]));
+                    if (ret_key_pointer == nullptr) ret_key_pointer = key;
+
+                    // update the common_prefix_len
+                    unsigned int cur_com_prefix_len = cal_common_prefix_len(
+                        ret_key_pointer, common_prefix_len, key,
+                        elems_[i].get_length());
+                    if (common_prefix_len > cur_com_prefix_len) {
+                        common_prefix_len = cur_com_prefix_len;
+                }
+            }
+            return string(ret_key_pointer, common_prefix_len);
+        }
+    };
+
+    // bursting function
+    trie_node* burst(burst_package bp, htrie_map* hm, trie_node* orig_parent, const string &orig_prefix) {
+        burst_total_counter++;
+
+        pm->register_burst_package(&bp);
+
+        // The return header
+        trie_node* ret_trie_root = new trie_node(orig_parent, orig_prefix.data(), orig_prefix.size());
+
+        if (orig_parent == nullptr)
+            hm->set_t_root(ret_trie_root);
+        else
+            orig_parent->add_child(orig_prefix.back(), ret_trie_root);
+
+        trie_node* parent = ret_trie_root;
+
+        // Get the common_prefix to eliminate the redundant burst
+        string common_prefix = bp.get_common_prefix();
+        const char* common_prefix_key = common_prefix.data();
+        unsigned int common_prefix_keysize = common_prefix.size();
+
+        // New prefix = prior prefix + common chain prefix
+        string prefix = orig_prefix + common_prefix;
+
+        // Create the common prefix trie chain with several single trie_node
+        // The number of node is common_prefix_keysize
+        for (int i = 0; i != common_prefix_keysize; i++) {
+            trie_node* cur_trie_node =
+                new trie_node(parent, prefix.data(),
+                                prefix.size() - common_prefix_keysize + i + 1);
+            parent->add_child(common_prefix_key[i], cur_trie_node);
+            parent = cur_trie_node;
+        }
+
+        // Insert the elements with same first char after common_prefix_len
+        while (bp.size() != 0) {
+                slot s = bp.top();
+
+                char* new_key = bp.get_pgp().get_tail_pointer(&s) + common_prefix_keysize;
+                size_t length_left = s.get_length() - common_prefix_keysize;
+                T v = bp.get_pgp().get_tail_v(&s);
+
+                hm->access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
+
+                bp.pop();
+        }
+
+        // remove current hash_node in the notify list in page_manager
+        pm->remove_burst_package(&bp);
+
+        return ret_trie_root;
+    }
 
     class page_manager {
        public:
@@ -1779,31 +1600,26 @@ class htrie_map {
         /* 
          * Oberserver design pattern
          * page_manager is a Subject that have the function of register, remove,
-         * notify(traverse_for_pgm_resize) those hash_node in burst()
+         * notify(traverse_for_pgm_resize) those burst_package in burst()
          */
-        vector<pair<hash_node*, page_group_package*>> notify_list;
-        void register_bursting_hash_node(hash_node* hnode,
-                                         page_group_package* pgp) {
-            notify_list.push_back(pair<hash_node*, page_group_package*>(hnode, pgp));
+        vector<burst_package*> notify_list;
+        void register_burst_package(burst_package *add_bp_ptr) {
+            notify_list.push_back(add_bp_ptr);
         }
 
-        void remove_bursting_hash_node(hash_node* hnode){
-            for (auto it = notify_list.begin(); it != notify_list.end(); it++) {
-                if (it->first == hnode) {
+        void remove_burst_package(const burst_package *const rm_bp_ptr){
+            for(auto it = notify_list.begin(); it!=notify_list.end(); it++) {
+                if( (*it)->get_bursting_node() == rm_bp_ptr->get_bursting_node()){ 
                     notify_list.erase(it);
-                    return;
+                    break;
                 }
             }
         }
 
-        void notify_bursting_hash_node(page_manager* pm,
-                                       group_type resize_type) {
-            for (auto it : notify_list){
-                it.first->traverse_for_pgm_resize(this, pm, resize_type);
-                *(it.second) = pm->get_page_group_package(
-                    it.first->normal_pgid, it.first->special_pgid);
-                }
-            
+        void notify_burst_package(page_manager *new_pm, group_type resize_type) {
+            for (auto bp_ptr : notify_list) {
+                bp_ptr->update_burst_package(new_pm, resize_type);
+            }
         }
 
         void clean_useless_in_pm(group_type resize_type,
@@ -1826,7 +1642,7 @@ class htrie_map {
 
             // notify the bursting hash node that your keymetas have been change
             // because of the resize
-            notify_bursting_hash_node(pm, resize_type);
+            notify_burst_package(pm, resize_type);
 
             // old page_manager <=swap=> new page_manager
             swap(pm, resize_type);
@@ -1965,7 +1781,7 @@ class htrie_map {
 
     // TODO deconstructor
 
-    void setRoot(anode* node) { t_root = node; }
+    void set_t_root(anode* node) { t_root = node; }
 
     class slot {
        public:
@@ -1997,7 +1813,7 @@ class htrie_map {
             return encode;
         }
 
-        bool isEmpty() { return get_length() == 0; }
+        bool is_empty() { return get_length() == 0; }
 
         bool isSpecial() { return get_special(); }
 
@@ -2044,6 +1860,13 @@ class htrie_map {
             sl->encode = encode;
             encode = temp_encode;
         }
+
+        void print_slot(page_group_package &pgp) {
+            cout << get_special() << "," << get_length() << "," << get_pos()
+                << "," << get_page_id() << ","
+                << string(pgp.get_tail_pointer(this), get_length()) << ","
+                << pgp.get_tail_v(this) << endl;
+        }
     };
 
     inline static unsigned int calc_align(unsigned int n, unsigned align) {
@@ -2061,80 +1884,78 @@ class htrie_map {
         iterator(bool f, T vv, anode* hnode, size_t bid, int sid)
             : found(f), v(vv), target_node(hnode), bucketid(bid), slotid(sid) {}
 
-        std::pair<bool, T> insert_hashnode(const CharT* key, size_t key_size,
+        void insert_hashnode(const CharT* key, size_t key_size,
                                            htrie_map<CharT, T>* hm, T v) {
-            return ((hash_node*)target_node)
+            ((hash_node*)target_node)
                 ->insert_kv_in_hashnode(key, key_size, hm, v, bucketid, slotid);
+            return;
         }
     };
 
-    std::pair<bool, T> access_kv_in_htrie_map(anode *start_node, const CharT* key, size_t key_size,
-                                              T v, bool findMode, bool clean_on = true) {
-        // update longest_string_size
-        longest_string_size =
-            longest_string_size > key_size ? longest_string_size : key_size;
+    std::pair<bool, T> access_kv_in_htrie_map(anode* start_node,
+                                              const CharT* key, size_t key_size,
+                                              T v, bool findMode,
+                                              const CharT* prefix_key = nullptr,
+                                              size_t prefix_key_size = 0) {
+      // update longest_string_size
+      longest_string_size =
+          longest_string_size > key_size ? longest_string_size : key_size;
 
-        anode* current_node = start_node;
+      anode* current_node = start_node;
 
-        // TODO: pos updating need refine?
-        // The pos update is moved to find_trie_node_child(fast-path or
-        // non-fast-path way) while the pos increment
-        for (size_t ref_pos = 0; ref_pos < key_size;) {
-            switch (current_node->get_node_type()) {
-                case node_type::TRIE_NODE: {
-                  // return the hitted trie_node* or create a new
-                  // trie_node with a hash_node son
-                  current_node = ((trie_node *)current_node)
-                                     ->find_trie_node_child(findMode, key, ref_pos,
-                                                            key_size, this);
-                  // TODO: consider move to the for loop condition
-                  // only in the findMode==true can cause the
-                  // current_node to be nullptr
-                  if (findMode && current_node == nullptr) {
-                    return std::pair<bool, T>(false, T());
-                  }
-                } break;
-                case node_type::HASH_NODE: {
-                    iterator it = ((hash_node*)current_node)
-                                      ->search_kv_in_hashnode(
-                                          key + ref_pos, key_size - ref_pos, this);
-                    if (findMode) {
-                        return std::pair<bool, T>(it.found, it.v);
-                    } else {
-                        // TODO: consider to move the burst() code into insert_hashnode()
-                        pair<bool, T> res = it.insert_hashnode(
-                            key + ref_pos, key_size - ref_pos, this, v);
-                        if (res.first == false) {
-                            // if the insert failed, we burst the
-                            // target_hashnode and retry insertion
-                            hash_node* hnode_burst_needed =
-                                (hash_node*)current_node;
+      // TODO: pos updating need refine?
+      // The pos update is moved to find_trie_node_child(fast-path or
+      // non-fast-path way) while the pos increment
+      for (size_t ref_pos = 0; ref_pos < key_size;) {
+        switch (current_node->get_node_type()) {
+          case node_type::TRIE_NODE: {
+              trie_node* orig_tnode = (trie_node*)current_node;
+            // return the hitted trie_node* or create a new
+            // trie_node with a hash_node son
+            current_node = ((trie_node*)current_node)
+                               ->find_trie_node_child(findMode, key, ref_pos,
+                                                      key_size, this);
 
-                            hnode_burst_needed->burst(
-                                hnode_burst_needed->get_parent(), this);
+            if(current_node == nullptr){
+              if (findMode) {
+                return std::pair<bool, T>(false, T());
+              } else {
+                string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
+                // Create a corresponding hash_node and add it to current
+                // trie_node's child representation
+                current_node =
+                    new hash_node(orig_tnode, new_prefix, this);
+                orig_tnode->add_child(key[ref_pos - 1], current_node);
+              }
+            } 
 
-                            delete hnode_burst_needed;
-                            return access_kv_in_htrie_map(t_root, key, key_size, v,
-                                                          false, false);
-                        }
-                        return res;
-                    }
-                } break;
-                default:
-                    cout << "wrong type!";
-                    exit(0);
+          } break;
+          case node_type::HASH_NODE: {
+            iterator it = ((hash_node*)current_node)
+                              ->search_kv_in_hashnode(key + ref_pos,
+                                                      key_size - ref_pos, this);
+            if (findMode) {
+              return std::pair<bool, T>(it.found, it.v);
+            } else {
+              it.insert_hashnode(key + ref_pos, key_size - ref_pos, this, v);
+              return std::pair<bool, T>(it.found, it.v);
             }
+          } break;
+          default:
+            cout << "wrong type!";
+            exit(0);
         }
+      }
 
-        // find a key in node's only value
-        iterator it = current_node->search_kv_in_node();
+      // find a key in node's only value
+      iterator it = current_node->search_kv_in_node();
 
-        if (findMode) {
-            return std::pair<bool, T>(it.found, it.v);
-        } else {
-            current_node->insert_value_in_node(string(key, key_size), v, this);
-            return std::pair<bool, T>(true, v);
-        }
+      if (findMode) {
+        return std::pair<bool, T>(it.found, it.v);
+      } else {
+        current_node->insert_value_in_node(string(prefix_key, prefix_key_size) + string(key, key_size), v, this);
+        return std::pair<bool, T>(true, v);
+      }
     }
 
     /*---------------external accessing interface-------------------*/
