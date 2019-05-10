@@ -187,6 +187,20 @@ class htrie_map {
             return is_special(s) ? s_group->get_value_in_page(s)
                                  : n_group->get_value_in_page(s);
         }
+
+        // Try to insert element to its right group and return availability
+        inline bool try_insert(size_t keysize) {
+            return get_group_type(keysize) == group_type::SPECIAL_GROUP
+                       ? s_group->try_insert(keysize)
+                       : n_group->try_insert(keysize);
+        }
+
+        // Insert element to its right group and return the slot(position)
+        inline slot insert_element(const CharT* key, size_t keysize, T v) {
+            return get_group_type(keysize) == group_type::SPECIAL_GROUP
+                       ? s_group->write_kv_to_page(key, keysize, v)
+                       : n_group->write_kv_to_page(key, keysize, v);
+        }
     };
 
     /* node type definition */
@@ -700,15 +714,15 @@ class htrie_map {
         }
 
        public:
-        explicit hash_node(trie_node* p,const string &prefix, htrie_map<CharT, T>* hm,
+        explicit hash_node(trie_node* p,const string &prefix, page_manager* pm,
                            size_t need_associativity = 1)
             : anode(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
               cur_associativity(need_associativity > Associativity
                                     ? Associativity
                                     : need_associativity),
               elem_num(0),
-              normal_pgid(hm->get_normal_group_id()),
-              special_pgid(hm->get_special_group_id()) {
+              normal_pgid(pm->require_group_id(group_type::NORMAL_GROUP)),
+              special_pgid(pm->require_group_id(group_type::SPECIAL_GROUP)) {
             anode::set_prefix(prefix);
 
             key_metas = new slot[cur_associativity * Bucket_num]();
@@ -716,19 +730,23 @@ class htrie_map {
 
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
-            size_t resize_pgid = -1;
+            size_t old_normal_pgid = normal_pgid;
+            size_t old_special_pgid = special_pgid;
             size_t new_pgid = -1;
+
             if (resize_type == group_type::SPECIAL_GROUP) {
-                resize_pgid = special_pgid;
-                special_pgid = new_pm->require_group_id(group_type::SPECIAL_GROUP);
-                new_pgid = special_pgid;
+                new_pgid = new_pm->require_group_id(group_type::SPECIAL_GROUP);
+                set_special_pgid(new_pgid);
             } else {
-                resize_pgid = normal_pgid;
-                normal_pgid = new_pm->require_group_id(group_type::NORMAL_GROUP);
-                new_pgid = normal_pgid;
+                new_pgid = new_pm->require_group_id(group_type::NORMAL_GROUP);
+                set_normal_pgid(new_pgid);
             }
 
-            assert(resize_pgid != -1 && new_pgid != -1);
+            page_group_package old_pgp = old_pm->get_page_group_package(old_normal_pgid, old_special_pgid);
+
+            page_group_package new_pgp = 
+                resize_type == group_type::SPECIAL_GROUP ? 
+                new_pm->get_page_group_package(-1, new_pgid) : new_pm->get_page_group_package(new_pgid, -1);
 
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
@@ -741,13 +759,13 @@ class htrie_map {
 
                     // get the content from old page_manager and write it to the
                     // new page_manager
-                    s->set_slot(new_pm->write_kv(
-                        new_pgid,
-                        old_pm->get_content_pointer_in_pm(resize_pgid, s),
-                        s->get_length(),
-                        old_pm->get_value_in_pm(resize_pgid, s)));
+                    s->set_slot(new_pgp.insert_element(old_pgp.get_content_pointer(s),
+                                                        s->get_length(),
+                                                        old_pgp.get_value(s)));
                 }
             }
+
+            
         }
 
         vector<anode*> print_node_info(){
@@ -768,6 +786,9 @@ class htrie_map {
         inline int get_index(int bucketid, int slotid) {
             return bucketid * cur_associativity + slotid;
         }
+
+        inline void set_normal_pgid (size_t new_normal_pgid) { normal_pgid = new_normal_pgid; }
+        inline void set_special_pgid (size_t new_special_pgid) { special_pgid = new_special_pgid; }
 
         /* 
          * For eliminating the index update in expand_key_metas_space
@@ -1122,13 +1143,16 @@ class htrie_map {
              * if page_manager pm have enough memory, the hm->write_kv() will
              * write the content to original page group
              */
-            hm->pm->try_insert(get_group_type(keysize),
-                               get_page_group_id(keysize), keysize, hm);
+            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
+
+            if(!pgp.try_insert(keysize)) {
+                hm->pm->resize(get_group_type(keysize), hm);
+                pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
+            }
 
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
-            target_slot->set_slot(
-                hm->pm->write_kv(get_page_group_id(keysize), key, keysize, v));
+            target_slot->set_slot(pgp.insert_element(key, keysize, v));
 
             // set v2k
             hm->set_v2k(v, this, get_column_store_index(target_slot));
@@ -1184,10 +1208,7 @@ class htrie_map {
 
                 // get the content from old page_manager and write it to the
                 // new page_manager
-                s.set_slot(new_pm->write_kv((resize_type == group_type::NORMAL_GROUP
-                                        ? n_group_id
-                                        : s_group_id),
-                                    pgp_.get_content_pointer(&s),
+                s.set_slot(new_pgp.insert_element(pgp_.get_content_pointer(&s),
                                     s.get_length(), pgp_.get_value(&s)));
             }
             pgp_.set_page_group(resize_type, new_pgp.get_page_group(resize_type));
@@ -1390,13 +1411,6 @@ class htrie_map {
                 return ret_slot;
             }
 
-            page_group(const page_group& orig) {
-                cout << "calling copy func\n";
-                pages = orig.pages;
-                cur_page_id = orig.cur_page_id;
-                is_special = orig.is_special;
-            }
-
             inline size_t get_cur_page_id(){
                 return cur_page_id;
             }
@@ -1422,31 +1436,13 @@ class htrie_map {
                 delete []pages;
             }
         };
-
+        
+       private:
         page_group* normal_pg;
         page_group* special_pg;
 
         size_t n_size;
         size_t s_size;
-
-        void init_a_new_page_group(group_type type, size_t page_group_index) {
-            if (type == group_type::SPECIAL_GROUP) {
-                s_size++;
-                special_pg[page_group_index].init_pg(MAX_SPECIAL_PAGE, true);
-                // cout << "special page group increase!" << endl;
-                return;
-            } else if (type == group_type::NORMAL_GROUP) {
-                n_size++;
-                normal_pg[page_group_index].init_pg(MAX_NORMAL_PAGE, false);
-                // cout << "normal page group increase!" << endl;
-                return;
-            } else {
-                cout << "undefined type!" << endl;
-                assert(false);
-                exit(0);
-                return;
-            }
-        }
 
        public:
         page_manager(size_t normal_page_group_number = 1,
@@ -1465,16 +1461,6 @@ class htrie_map {
         ~page_manager(){
             delete []normal_pg;
             delete []special_pg;
-            // cout << "page manager deconstruction" << endl;
-        }
-
-        inline slot write_kv(size_t page_group_id, const CharT* key,
-                             size_t keysize, T v) {
-            return get_group_type(keysize) == group_type::SPECIAL_GROUP
-                       ? special_pg[page_group_id].write_kv_to_page(key,
-                                                                    keysize, v)
-                       : normal_pg[page_group_id].write_kv_to_page(key, keysize,
-                                                                   v);
         }
 
         inline size_t require_group_id(group_type gt) {
@@ -1492,22 +1478,82 @@ class htrie_map {
             return least_page_page_group_id;
         }
 
-        inline char* get_content_pointer_in_pm(size_t page_group_id,
-                                            slot* s) {
-            return get_group_type(s) == group_type::SPECIAL_GROUP
-                       ? special_pg[page_group_id].get_content_pointer_in_page(s)
-                       : normal_pg[page_group_id].get_content_pointer_in_page(s);
+        inline page_group_package get_page_group_package(int n_pg,
+                                                         int s_pg) {
+            return page_group_package(n_pg == -1 ? nullptr : normal_pg + n_pg,
+                                        s_pg == -1 ? nullptr : special_pg + s_pg);
         }
 
-        inline T get_value_in_pm(size_t page_group_id, slot* s) {
-            return get_group_type(s) == group_type::SPECIAL_GROUP
-                       ? special_pg[page_group_id].get_value_in_page(s)
-                       : normal_pg[page_group_id].get_value_in_page(s);
+        /* 
+         * Oberserver design pattern
+         * page_manager is a Subject that have the function of register, remove,
+         * notify(traverse_for_pgm_resize) those burst_package in burst()
+         */
+        vector<burst_package*> notify_list;
+        void register_burst_package(burst_package *add_bp_ptr) {
+            notify_list.push_back(add_bp_ptr);
         }
 
-        inline page_group_package get_page_group_package(size_t n_pg,
-                                                         size_t s_pg) {
-            return page_group_package(normal_pg + n_pg, special_pg + s_pg);
+        void remove_burst_package(const burst_package *const rm_bp_ptr){
+            for(auto it = notify_list.begin(); it!=notify_list.end(); it++) {
+                if( (*it)->get_bursting_node() == rm_bp_ptr->get_bursting_node()){ 
+                    notify_list.erase(it);
+                    break;
+                }
+            }
+        }
+
+        void resize(group_type resize_type,
+                                 htrie_map<CharT, T>* hm,
+                                 size_t expand_ratio = 1) {
+            uint64_t sta = get_time();
+
+            page_manager* pm;
+            // cout << "resizing!!!\n";
+            if (resize_type == group_type::SPECIAL_GROUP) {
+                pm = new page_manager(0, s_size << expand_ratio);
+            } else {
+                pm = new page_manager(n_size << expand_ratio, 0);
+            }
+
+            // try insert, if failed, we reallocate the page groups,
+            // update the pgid in hashnodes and return
+            anode* root = hm->t_root;
+            root->traverse_for_pgm_resize(this, pm, resize_type);
+
+            // notify the bursting hash node that your keymetas have been change
+            // because of the resize
+            notify_burst_package(pm, resize_type);
+
+            // old page_manager <=swap=> new page_manager
+            swap(pm, resize_type);
+
+            uint64_t end = get_time();
+            // cout << "resizeing cost: " << (end - sta) / 1000 / (double)1000
+            //      << " s" << endl;
+
+            delete pm;
+            return;
+        }
+
+       private:
+        void init_a_new_page_group(group_type type, size_t page_group_index) {
+            if (type == group_type::SPECIAL_GROUP) {
+                s_size++;
+                special_pg[page_group_index].init_pg(MAX_SPECIAL_PAGE, true);
+                // cout << "special page group increase!" << endl;
+                return;
+            } else if (type == group_type::NORMAL_GROUP) {
+                n_size++;
+                normal_pg[page_group_index].init_pg(MAX_NORMAL_PAGE, false);
+                // cout << "normal page group increase!" << endl;
+                return;
+            } else {
+                cout << "undefined type!" << endl;
+                assert(false);
+                exit(0);
+                return;
+            }
         }
 
         void set_n_size(size_t new_n_size) { n_size = new_n_size; }
@@ -1555,87 +1601,12 @@ class htrie_map {
             swap(pm, group_type::SPECIAL_GROUP);
         }
 
-        /* 
-         * Oberserver design pattern
-         * page_manager is a Subject that have the function of register, remove,
-         * notify(traverse_for_pgm_resize) those burst_package in burst()
-         */
-        vector<burst_package*> notify_list;
-        void register_burst_package(burst_package *add_bp_ptr) {
-            notify_list.push_back(add_bp_ptr);
-        }
-
-        void remove_burst_package(const burst_package *const rm_bp_ptr){
-            for(auto it = notify_list.begin(); it!=notify_list.end(); it++) {
-                if( (*it)->get_bursting_node() == rm_bp_ptr->get_bursting_node()){ 
-                    notify_list.erase(it);
-                    break;
-                }
-            }
-        }
-
         void notify_burst_package(page_manager *new_pm, group_type resize_type) {
             for (auto bp_ptr : notify_list) {
                 bp_ptr->update_burst_package(new_pm, resize_type);
             }
         }
-
-        void clean_useless_in_pm(group_type resize_type,
-                                 htrie_map<CharT, T>* hm,
-                                 size_t expand_ratio = 1) {
-            uint64_t sta = get_time();
-
-            page_manager* pm;
-            // cout << "resizing!!!\n";
-            if (resize_type == group_type::SPECIAL_GROUP) {
-                pm = new page_manager(0, s_size << expand_ratio);
-            } else {
-                pm = new page_manager(n_size << expand_ratio, 0);
-            }
-
-            // try insert, if failed, we reallocate the page groups,
-            // update the pgid in hashnodes and return
-            anode* root = hm->t_root;
-            root->traverse_for_pgm_resize(this, pm, resize_type);
-
-            // notify the bursting hash node that your keymetas have been change
-            // because of the resize
-            notify_burst_package(pm, resize_type);
-
-            // old page_manager <=swap=> new page_manager
-            swap(pm, resize_type);
-
-            uint64_t end = get_time();
-            // cout << "resizeing cost: " << (end - sta) / 1000 / (double)1000
-            //      << " s" << endl;
-
-            delete pm;
-            return;
-        }
-
-        void try_insert(group_type resize_type, size_t page_group_id,
-                        size_t try_insert_keysize, htrie_map<CharT, T>* hm) {
-
-            // get target page_group
-            page_group& target = (resize_type == group_type::SPECIAL_GROUP
-                                      ? special_pg[page_group_id]
-                                      : normal_pg[page_group_id]);
-
-            // try insert, if success just return
-            if (target.try_insert(try_insert_keysize)) return;
-
-            // traverse the trie and clean the useless content
-            clean_useless_in_pm(resize_type, hm);
-            return;
-        }
     };
-
-    inline size_t get_normal_group_id() {
-        return pm->require_group_id(group_type::NORMAL_GROUP);
-    }
-    inline size_t get_special_group_id() {
-        return pm->require_group_id(group_type::SPECIAL_GROUP);
-    }
 
     class SearchPoint {
        public:
@@ -1657,8 +1628,8 @@ class htrie_map {
             if (index != -1) {
                 hash_node* hnode = (hash_node*)node;
                 slot* sl = hnode->get_column_store_slot(index);
-                res = res + string(pm->get_content_pointer_in_pm(
-                                       hnode->get_page_group_id(sl), sl),
+                page_group_package pgp = pm->get_page_group_package(hnode->normal_pgid, hnode->special_pgid);
+                res = res + string(pgp.get_content_pointer(sl),
                                    sl->get_length());
             }
             return res;
@@ -1721,7 +1692,7 @@ class htrie_map {
         Max_slot_num = Associativity * Bucket_num;
         Max_loop = Max_slot_num * 0.5;
 
-        t_root = new hash_node(nullptr, string(), this, Associativity);
+        t_root = new hash_node(nullptr, string(), pm, Associativity);
     }
 
     // TODO deconstructor
@@ -1864,7 +1835,7 @@ class htrie_map {
                     // Create a corresponding hash_node and add it to current
                     // trie_node's child representation
                     current_node =
-                        new hash_node(orig_tnode, new_prefix, this);
+                        new hash_node(orig_tnode, new_prefix, pm);
                     orig_tnode->add_child(key[ref_pos - 1], current_node);
               }
             } 
@@ -1928,8 +1899,8 @@ class htrie_map {
     /*---------------external cleaning interface-------------------*/
     void clean_useless() {
         // zero at last means that we don't need to expand the page_manager
-        pm->clean_useless_in_pm(group_type ::NORMAL_GROUP, this, 0);
-        pm->clean_useless_in_pm(group_type ::SPECIAL_GROUP, this, 0);
+        pm->resize(group_type ::NORMAL_GROUP, this, 0);
+        pm->resize(group_type ::SPECIAL_GROUP, this, 0);
     }
 
     void traverse_level() {
