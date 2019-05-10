@@ -179,12 +179,12 @@ class htrie_map {
     class found_result;
 
     class slot;
-    
+
     /* page management */
     class page_manager;
+    class page_manager_agent;
     class page_group;
     class page;
-    class page_group_package;
 
     /* group type divided by the keysize */
     enum class group_type : unsigned char {
@@ -284,21 +284,21 @@ class htrie_map {
             encode = temp_encode;
         }
 
-        void print_slot(page_group_package &pgp) {
+        void print_slot(page_manager_agent &pm_agent) {
             cout << get_special() << "," << get_length() << "," << get_pos()
                 << "," << get_page_id() << ","
-                << string(pgp.get_content_pointer(this), get_length()) << ","
-                << pgp.get_value(this) << endl;
+                << string(pm_agent.get_content_pointer(this), get_length()) << ","
+                << pm_agent.get_value(this) << endl;
         }
     };
 
     /* helper class for hash_node get its page_groups */
-    class page_group_package {
+    class page_manager_agent {
         typename page_manager::page_group* n_group;
         typename page_manager::page_group* s_group;
 
        public:
-        page_group_package(typename page_manager::page_group* ng,
+        page_manager_agent(typename page_manager::page_group* ng,
                            typename page_manager::page_group* sg)
             : n_group(ng), s_group(sg) {}
 
@@ -718,15 +718,15 @@ class htrie_map {
 
        public:
         // debug function
-        void print_slot(int i, int j, page_group_package &pgp) {
+        void print_slot(int i, int j, page_manager_agent &pm_agent) {
             slot* s = key_metas + i * cur_associativity + j;
             cout << i * cur_associativity + j << ":" << s->get_special() << ","
                  << s->get_length() << "," << s->get_pos() << ","
                  << s->get_page_id() << ",";
-            string str = string(pgp.get_content_pointer(s),
+            string str = string(pm_agent.get_content_pointer(s),
                                 s->get_length());
             cout << str;
-            T v = pgp.get_value(s);
+            T v = pm_agent.get_value(s);
             cout << "=" << v << "\n";
         }
 
@@ -736,10 +736,10 @@ class htrie_map {
         }
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
-            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
+            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
-                    print_slot(i, j, pgp);
+                    print_slot(i, j, pm_agent);
                 }
                 cout << "---\n";
             }
@@ -775,11 +775,11 @@ class htrie_map {
                 set_normal_pgid(new_pgid);
             }
 
-            page_group_package old_pgp = old_pm->get_page_group_package(old_normal_pgid, old_special_pgid);
+            page_manager_agent old_pm_agent = old_pm->get_page_manager_agent(old_normal_pgid, old_special_pgid);
 
-            page_group_package new_pgp = 
+            page_manager_agent new_pm_agent = 
                 resize_type == group_type::SPECIAL_GROUP ? 
-                new_pm->get_page_group_package(-1, new_pgid) : new_pm->get_page_group_package(new_pgid, -1);
+                new_pm->get_page_manager_agent(-1, new_pgid) : new_pm->get_page_manager_agent(new_pgid, -1);
 
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
@@ -792,9 +792,9 @@ class htrie_map {
 
                     // get the content from old page_manager and write it to the
                     // new page_manager
-                    s->set_slot(new_pgp.insert_element(old_pgp.get_content_pointer(s),
+                    s->set_slot(new_pm_agent.insert_element(old_pm_agent.get_content_pointer(s),
                                                         s->get_length(),
-                                                        old_pgp.get_value(s)));
+                                                        old_pm_agent.get_value(s)));
                 }
             }
 
@@ -899,9 +899,9 @@ class htrie_map {
         }
 
         // Return another possible bucketid that the slot *s can be at
-        inline size_t get_another_bucketid(page_group_package& pgp, slot* s,
+        inline size_t get_another_bucketid(page_manager_agent& pm_agent, slot* s,
                                            size_t current_bucketid) {
-            const char* key = pgp.get_content_pointer(s);
+            const char* key = pm_agent.get_content_pointer(s);
             size_t bucketid1 = hash(key, s->get_length(), 1) % Bucket_num;
             size_t bucketid2 = hash(key, s->get_length(), 2) % Bucket_num;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
@@ -931,8 +931,8 @@ class htrie_map {
             int cur_process_bucketid = bucketid;
             int cur_process_slotid = cur_associativity - 1;
 
-            page_group_package pgp =
-                hm->pm->get_page_group_package(normal_pgid, special_pgid);
+            page_manager_agent pm_agent =
+                hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
 
             map<T, int> searchPoint_wait_2_be_update;
             for (int cuckoo_hash_time = 0; cuckoo_hash_time != Max_loop;
@@ -953,7 +953,7 @@ class htrie_map {
                 /* Check that whether the cur_process_slot is anti-moved */
                 // Get the another bucketid the cur_process_slot can be at
                 int cur_kick_to_bucketid = get_another_bucketid(
-                    pgp, cur_process_slot, cur_process_bucketid);
+                    pm_agent, cur_process_slot, cur_process_bucketid);
                 // If the cur_process_bucketid == cur_kick_to_bucketid, we
                 // process previous slotid
                 if (cur_process_bucketid == cur_kick_to_bucketid ||
@@ -968,7 +968,7 @@ class htrie_map {
                 extra_slot->swap(cur_process_slot);
 
                 // Add this value=index for the searchPoint index updateing
-                searchPoint_wait_2_be_update[pgp.get_value(cur_process_slot)] =
+                searchPoint_wait_2_be_update[pm_agent.get_value(cur_process_slot)] =
                     get_column_store_index(cur_process_slot);
 
                 // The first time swap the extra_slot indicate the
@@ -1017,34 +1017,34 @@ class htrie_map {
         // iterator:    if slotid==-1, bucket is full
         //              if slotid!=-1, slotid is the insert position
         found_result find_in_bucket(size_t bucketid, const CharT* key,
-                                    size_t keysize, page_group_package& pgp) {
+                                    size_t keysize, page_manager_agent& pm_agent) {
             // find the hitted slot in hashnode
             for (int i = 0; i != cur_associativity; i++) {
                 slot* target_slot = get_slot(bucketid, i);
                 if (target_slot->is_empty())
                     return found_result(false, T(), bucketid, i);
 
-                if (key_equal(key, keysize, pgp.get_content_pointer(target_slot),
+                if (key_equal(key, keysize, pm_agent.get_content_pointer(target_slot),
                             target_slot->get_length()))
-                    return found_result(true, pgp.get_value(target_slot), bucketid, i);
+                    return found_result(true, pm_agent.get_value(target_slot), bucketid, i);
             }
             return found_result(false, T(), bucketid, -1);
         }
 
         found_result search_kv_in_hashnode(const CharT* key, size_t keysize,
                                        page_manager* pm) {
-            page_group_package pgp = 
-                    pm->get_page_group_package(normal_pgid, special_pgid);
+            page_manager_agent pm_agent = 
+                    pm->get_page_manager_agent(normal_pgid, special_pgid);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
             size_t bucketId1 = hash(key, keysize, 1) % Bucket_num;
-            found_result res1 = find_in_bucket(bucketId1, key, keysize, pgp);
+            found_result res1 = find_in_bucket(bucketId1, key, keysize, pm_agent);
             if (res1.is_founded()) {
                 return res1;
             }
 
             size_t bucketId2 = hash(key, keysize, 2) % Bucket_num;
-            found_result res2 = find_in_bucket(bucketId2, key, keysize, pgp);
+            found_result res2 = find_in_bucket(bucketId2, key, keysize, pm_agent);
             if (res2.is_founded()) {
                 return res2;
             }
@@ -1062,7 +1062,7 @@ class htrie_map {
                                                  T v, found_result fr) {
             size_t bucketid = fr.bucketid;
             int slotid = fr.slotid;
-            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
+            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
 
             if (slotid == -1 && 
                 (slotid = expand_key_metas_space()) == -1 &&
@@ -1072,7 +1072,7 @@ class htrie_map {
 
                 trie_node* new_parent =
                     hm->burst(burst_package(this, key_metas, Bucket_num,
-                                            cur_associativity, pgp),
+                                            cur_associativity, pm_agent),
                               this->anode::get_parent(), prefix);
 
                 hm->access_kv_in_htrie_map(new_parent, key, keysize, v, false,
@@ -1098,14 +1098,14 @@ class htrie_map {
              * write the content to original page group
              */
 
-            if(!pgp.try_insert(keysize)) {
+            if(!pm_agent.try_insert(keysize)) {
                 hm->pm->resize(get_group_type(keysize), hm);
-                pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
+                pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
             }
 
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
-            target_slot->set_slot(pgp.insert_element(key, keysize, v));
+            target_slot->set_slot(pm_agent.insert_element(key, keysize, v));
 
             // set v2k
             hm->set_v2k(v, this, get_column_store_index(target_slot));
@@ -1134,13 +1134,13 @@ class htrie_map {
     class burst_package {
        private:
         hash_node* bursting_node_;
-        page_group_package pgp_;
+        page_manager_agent pm_agent_;
         vector<slot> elems_;
 
        public:
         burst_package(hash_node* bursting_node, slot* elems, size_t bucket_num,
-                      size_t associativity, page_group_package pgp)
-            : bursting_node_(bursting_node), pgp_(pgp) {
+                      size_t associativity, page_manager_agent pm_agent)
+            : bursting_node_(bursting_node), pm_agent_(pm_agent) {
           for (int i = 0; i != bucket_num; i++)
             for (int j = 0; j != associativity; j++) {
               slot* s = elems + i * associativity + j;
@@ -1153,7 +1153,7 @@ class htrie_map {
             size_t n_group_id = new_pm->require_group_id(group_type::NORMAL_GROUP);
             size_t s_group_id =new_pm->require_group_id(group_type::SPECIAL_GROUP);
 
-            page_group_package new_pgp = new_pm->get_page_group_package(n_group_id, s_group_id);
+            page_manager_agent new_pm_agent = new_pm->get_page_manager_agent(n_group_id, s_group_id);
             for (auto& s : elems_) {
                 // ignore the slot that not belong to current resize group
                 // type
@@ -1161,10 +1161,10 @@ class htrie_map {
 
                 // get the content from old page_manager and write it to the
                 // new page_manager
-                s.set_slot(new_pgp.insert_element(pgp_.get_content_pointer(&s),
-                                    s.get_length(), pgp_.get_value(&s)));
+                s.set_slot(new_pm_agent.insert_element(pm_agent_.get_content_pointer(&s),
+                                    s.get_length(), pm_agent_.get_value(&s)));
             }
-            pgp_.set_page_group(resize_type, new_pgp.get_page_group(resize_type));
+            pm_agent_.set_page_group(resize_type, new_pm_agent.get_page_group(resize_type));
         }
 
         slot operator[](int index) { return elems_[index]; }
@@ -1172,13 +1172,13 @@ class htrie_map {
         void pop() { elems_.pop_back(); }
 
         size_t size() {return elems_.size(); }
-        page_group_package get_pgp() const { return pgp_; }
+        page_manager_agent get_agent() const { return pm_agent_; }
         const hash_node* get_bursting_node() const {return bursting_node_; }
 
         void print_bp() {
             cout << "-----------------\n";
             for(int i=0; i!= elems_.size(); i++){
-                elems_[i].print_slot(pgp_);
+                elems_[i].print_slot(pm_agent_);
             }
             cout << endl;
         }
@@ -1203,7 +1203,7 @@ class htrie_map {
             const char* ret_key_pointer = nullptr;
             unsigned int common_prefix_len = INT_MAX;
             for (int i = 0; i != elems_.size() && common_prefix_len != 0; i++){
-                    char* key = pgp_.get_content_pointer(&(elems_[i]));
+                    char* key = pm_agent_.get_content_pointer(&(elems_[i]));
                     if (ret_key_pointer == nullptr) ret_key_pointer = key;
 
                     // update the common_prefix_len
@@ -1256,9 +1256,9 @@ class htrie_map {
         while (bp.size() != 0) {
                 slot s = bp.top();
 
-                char* new_key = bp.get_pgp().get_content_pointer(&s) + common_prefix_keysize;
+                char* new_key = bp.get_agent().get_content_pointer(&s) + common_prefix_keysize;
                 size_t length_left = s.get_length() - common_prefix_keysize;
-                T v = bp.get_pgp().get_value(&s);
+                T v = bp.get_agent().get_value(&s);
 
                 access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
 
@@ -1430,9 +1430,9 @@ class htrie_map {
             return least_page_page_group_id;
         }
 
-        inline page_group_package get_page_group_package(int n_pg,
+        inline page_manager_agent get_page_manager_agent(int n_pg,
                                                          int s_pg) {
-            return page_group_package(n_pg == -1 ? nullptr : normal_pg + n_pg,
+            return page_manager_agent(n_pg == -1 ? nullptr : normal_pg + n_pg,
                                         s_pg == -1 ? nullptr : special_pg + s_pg);
         }
 
@@ -1579,8 +1579,8 @@ class htrie_map {
             if (index != -1) {
                 hash_node* hnode = (hash_node*)node;
                 slot* sl = hnode->get_column_store_slot(index);
-                page_group_package pgp = pm->get_page_group_package(hnode->normal_pgid, hnode->special_pgid);
-                res = res + string(pgp.get_content_pointer(sl),
+                page_manager_agent pm_agent = pm->get_page_manager_agent(hnode->normal_pgid, hnode->special_pgid);
+                res = res + string(pm_agent.get_content_pointer(sl),
                                    sl->get_length());
             }
             return res;
