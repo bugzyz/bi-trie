@@ -686,15 +686,15 @@ class htrie_map {
 
        public:
         // debug function
-        void print_slot(int i, int j, htrie_map<CharT, T>* hm) {
+        void print_slot(int i, int j, page_group_package &pgp) {
             slot* s = key_metas + i * cur_associativity + j;
             cout << i * cur_associativity + j << ":" << s->get_special() << ","
                  << s->get_length() << "," << s->get_pos() << ","
                  << s->get_page_id() << ",";
-            string str = string(hm->get_content_pointer(get_page_group_id(s), s),
+            string str = string(pgp.get_content_pointer(s),
                                 s->get_length());
             cout << str;
-            T v = hm->get_value(get_page_group_id(s), s);
+            T v = pgp.get_value(s);
             cout << "=" << v << "\n";
         }
 
@@ -704,9 +704,10 @@ class htrie_map {
         }
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
+            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
             for (int i = 0; i != Bucket_num; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
-                    print_slot(i, j, hm);
+                    print_slot(i, j, pgp);
                 }
                 cout << "---\n";
             }
@@ -1055,18 +1056,6 @@ class htrie_map {
                 return res2;
             } else
                 return res1;
-        }
-
-        inline size_t get_page_group_id(size_t keysize) {
-            return get_group_type(keysize) == group_type::SPECIAL_GROUP
-                       ? special_pgid
-                       : normal_pgid;
-        }
-
-        inline size_t get_page_group_id(slot* sl) {
-            return get_group_type(sl->get_length()) == group_type::SPECIAL_GROUP
-                       ? special_pgid
-                       : normal_pgid;
         }
 
         void insert_kv_in_hashnode(const CharT* key,
