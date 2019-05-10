@@ -173,7 +173,6 @@ class htrie_map {
         }
     }
 
-   public:
     /* trie node type */
     class trie_node;
     class hash_node;
@@ -185,12 +184,16 @@ class htrie_map {
     class page_manager;
     class page_group;
     class page;
+    class page_group_package;
 
     /* group type divided by the keysize */
     enum class group_type : unsigned char {
         NORMAL_GROUP,
         SPECIAL_GROUP,
     };
+
+    /* node type definition */
+    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
 
     /* helper function */
     static inline group_type get_group_type(size_t keysize) {
@@ -202,6 +205,92 @@ class htrie_map {
         return s->get_length() < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                                 : group_type::SPECIAL_GROUP;
     }
+
+   private:
+    // Slot
+    class slot {
+       public:
+        uint32_t encode;
+
+        slot() : encode(0) {}
+
+        // encode slot as | special | length | position | page_id |
+        uint64_t encode_slot(bool spe, uint64_t len, uint64_t po, uint64_t pd) {
+            encode = pd;
+            if (spe) {
+                assert(len < 1 << NBITS_LEN_S &&
+                       (po / DEFAULT_SPECIAL_ALIGNMENT) < 1 << NBITS_POS_S &&
+                       pd < 1 << NBITS_PID_S);
+                encode += ((po / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
+                encode += len << (NBITS_PID_S + NBITS_POS_S);
+                encode += ((uint64_t)1)
+                          << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
+            } else {
+                assert(len < 1 << NBITS_LEN &&
+                       (po / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
+                       pd < 1 << NBITS_PID);
+                // encode into a 64bit data
+                encode += (po / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
+                encode += len << (NBITS_PID + NBITS_POS);
+                encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
+            }
+
+            return encode;
+        }
+
+        bool is_empty() { return get_length() == 0; }
+
+        bool is_special() { return get_special(); }
+
+        slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
+            encode = encode_slot(is_special, l, p, pi);
+        }
+
+        void set_slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
+            encode = encode_slot(is_special, l, p, pi);
+        }
+
+        void set_slot(slot s) { encode = s.encode; }
+
+        bool get_special() {
+            return (encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)) == 1;
+        }
+
+        size_t get_length() {
+            return encode >> (NBITS_LEN + NBITS_POS + NBITS_PID)
+                       ? ((encode >> (NBITS_PID_S + NBITS_POS_S)) %
+                          (1 << NBITS_LEN_S))
+                       : ((encode >> (NBITS_PID + NBITS_POS)) %
+                          (1 << NBITS_LEN));
+        }
+
+        size_t get_pos() {
+            return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
+                       ? ((encode >> NBITS_PID_S) % (1 << NBITS_POS_S) *
+                          DEFAULT_SPECIAL_ALIGNMENT)
+                       : ((encode >> NBITS_PID) % (1 << NBITS_POS) *
+                          DEFAULT_NORMAL_ALIGNMENT);
+        }
+
+        size_t get_page_id() {
+            return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
+                       ? encode % (1 << NBITS_PID_S)
+                       : encode % (1 << NBITS_PID);
+        }
+
+        void swap(slot *sl) {
+            uint32_t temp_encode = sl->encode;
+            sl->encode = encode;
+            encode = temp_encode;
+        }
+
+        void print_slot(page_group_package &pgp) {
+            cout << get_special() << "," << get_length() << "," << get_pos()
+                << "," << get_page_id() << ","
+                << string(pgp.get_content_pointer(this), get_length()) << ","
+                << pgp.get_value(this) << endl;
+        }
+    };
 
     /* helper class for hash_node get its page_groups */
     class page_group_package {
@@ -260,8 +349,6 @@ class htrie_map {
         }
     };
 
-    /* node type definition */
-    enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
     /* node's base class */
     class anode {
        private:
@@ -340,204 +427,205 @@ class htrie_map {
         }
     };
 
-    /*-------------fast_path_manager-------------*/
-    class fast_path_manager {
-       private:
-        struct fast_path {
-            unsigned int hash_val_;
-            // TODO: store in page_manager
-            string fast_path_string_;
-            anode* dest_node_;
-
-           public:
-            fast_path(unsigned int hash_val, const string &fast_path_string, anode* dest_node)
-                : hash_val_(hash_val),
-                  fast_path_string_(fast_path_string),
-                  dest_node_(dest_node) {}
-
-            inline void set_dest_node(anode *node) { dest_node_ = node; }
-
-            inline unsigned int get_hash_val() { return hash_val_; }
-            inline string& get_string() { return fast_path_string_; }
-            inline anode* get_dest_node() { return dest_node_; }
-        };
-
-        vector<fast_path> fast_paths;
-
-       public:
-        fast_path_manager() {}
-
-        inline void insert_fast_path(const char* key, size_t key_size, anode* node_ptr) {
-            //Insert new element
-            fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
-
-            for (auto it = fast_paths.begin(); it != fast_paths.end();
-                 it++) {
-              if (it->get_hash_val() > new_fast_path.get_hash_val()) {
-                fast_paths.insert(it, new_fast_path);
-                return;
-              } else if (it->get_hash_val() == new_fast_path.get_hash_val()) {
-                // TODO: FIXME: the hash value may be the same
-                // Maybe the list to solve the same hash_val, different string problem(collision)
-                it->set_dest_node(node_ptr);
-                return;
-              }
-            }
-            fast_paths.push_back(new_fast_path);
-        }
-
-        // TODO: FIXME: consider the same hash value situation: consider the list
-        // | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
-        inline anode* lookup_fast_path(const char* key,
-                                                 size_t key_size) {
-            // binary search
-            unsigned int target_hash_val = hash(key, key_size);
-
-            size_t node_size = fast_paths.size();
-            int low = 0;
-            int high = node_size - 1;
-            while (low < high) {
-                int mid = (low + high) >> 1;
-                if (fast_paths[mid].get_hash_val() < target_hash_val) {
-                    low = mid + 1;
-                } else
-                    high = mid;
-            }
-
-            // check the same hash value situation
-            for (int i = low;
-                 low != node_size &&
-                 fast_paths[i].get_hash_val() == target_hash_val;
-                 i++) {
-                if (key_equal(
-                        fast_paths[i].get_string().data(),
-                        fast_paths[i].get_string().size(), key,
-                        key_size)) {
-                    return fast_paths[i].get_dest_node();
-                }
-            }
-            return nullptr;
-        }
-
-        inline size_t size() { return fast_paths.size(); }
-
-        unsigned int get_fpm_memory() {
-            return size() * (sizeof(fast_path) + FAST_PATH_NODE_NUM);
-        }
-    };
-
-    /*-----------------list child_representation-----------------*/
-    class child_representation {
-       private:
-        class child_node {
-           public:
-            char child_node_char;
-            anode* current;
-            child_node* next;
-
-            child_node(char cnc, anode* cur)
-                : child_node_char(cnc), current(cur), next(nullptr) {}
-
-            child_node()
-                : child_node_char(0), current(nullptr), next(nullptr) {}
-
-            inline bool have_next() { return next != nullptr; }
-
-            inline child_node* next_child() { return next; }
-
-            inline void add_next_child(char c) {
-                next = new child_node(c, nullptr);
-            }
-        };
-
-        child_node* first_child_;
-        int size_;
-
-       public:
-        child_representation() : size_(0), first_child_(nullptr) {}
-
-        inline anode*& operator[](char c) {
-            //find the ok node
-            child_node* current_child_node = first_child_;
-            child_node* last_child_node = nullptr;
-
-            while (current_child_node) {
-                if (current_child_node->child_node_char == c)
-                    return current_child_node->current;
-
-                last_child_node = current_child_node;
-                current_child_node = current_child_node->next;
-            }
-
-            // find no target node, add one
-            if (first_child_ == nullptr) {
-                first_child_ = new child_node(c, nullptr);
-
-                size_++;
-                return first_child_->current;
-            }
-
-            last_child_node->add_next_child(c);
-            size_++;
-            return last_child_node->next_child()->current;
-        }
-
-        inline anode* find(char c) {
-            child_node* current_child_node = first_child_;
-            while(current_child_node != nullptr) {
-                if (current_child_node->child_node_char == c)
-                    return current_child_node->current;
-
-                current_child_node = current_child_node->next_child();
-            };
-            return nullptr;
-        }
-
-        inline size_t size() { return size_; }
-
-        /* for traverse_for_pgm_resize() */
-        inline void get_childs(vector<anode*>& res) {
-            child_node* current_child_node = first_child_;
-
-            while (current_child_node) {
-                res.push_back(current_child_node->current);
-                current_child_node = current_child_node->next;
-            }
-        }
-        
-        // TODO
-        /* for shrink node */
-        inline void get_childs_with_char(vector<pair<CharT, anode*>>& res) {
-            child_node* current_child_node = first_child_;
-
-            while (current_child_node) {
-                res.push_back(
-                    pair<CharT, anode*>(current_child_node->child_node_char,
-                                            current_child_node->current));
-
-                current_child_node = current_child_node->next;
-            }
-        }
-
-        ~child_representation() {
-            // release the list
-            child_node* current_child_node = first_child_;
-            child_node* previous_current_child_node = nullptr;
-
-            while (current_child_node) {
-                previous_current_child_node = current_child_node;
-                current_child_node = current_child_node->next;
-                delete (previous_current_child_node);
-            }
-        }
-
-        /* helper function: memory evaluation */
-        size_t get_childs_representation_mem() {
-            return sizeof(child_representation) + size_ * sizeof(child_node);
-        }
-    };
 
     class trie_node : public anode {
+        /*-------------fast_path_manager-------------*/
+        class fast_path_manager {
+        private:
+            struct fast_path {
+                unsigned int hash_val_;
+                // TODO: store in page_manager
+                string fast_path_string_;
+                anode* dest_node_;
+
+            public:
+                fast_path(unsigned int hash_val, const string &fast_path_string, anode* dest_node)
+                    : hash_val_(hash_val),
+                    fast_path_string_(fast_path_string),
+                    dest_node_(dest_node) {}
+
+                inline void set_dest_node(anode *node) { dest_node_ = node; }
+
+                inline unsigned int get_hash_val() { return hash_val_; }
+                inline string& get_string() { return fast_path_string_; }
+                inline anode* get_dest_node() { return dest_node_; }
+            };
+
+            vector<fast_path> fast_paths;
+
+        public:
+            fast_path_manager() {}
+
+            inline void insert_fast_path(const char* key, size_t key_size, anode* node_ptr) {
+                //Insert new element
+                fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
+
+                for (auto it = fast_paths.begin(); it != fast_paths.end();
+                    it++) {
+                if (it->get_hash_val() > new_fast_path.get_hash_val()) {
+                    fast_paths.insert(it, new_fast_path);
+                    return;
+                } else if (it->get_hash_val() == new_fast_path.get_hash_val()) {
+                    // TODO: FIXME: the hash value may be the same
+                    // Maybe the list to solve the same hash_val, different string problem(collision)
+                    it->set_dest_node(node_ptr);
+                    return;
+                }
+                }
+                fast_paths.push_back(new_fast_path);
+            }
+
+            // TODO: FIXME: consider the same hash value situation: consider the list
+            // | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+            inline anode* lookup_fast_path(const char* key,
+                                                    size_t key_size) {
+                // binary search
+                unsigned int target_hash_val = hash(key, key_size);
+
+                size_t node_size = fast_paths.size();
+                int low = 0;
+                int high = node_size - 1;
+                while (low < high) {
+                    int mid = (low + high) >> 1;
+                    if (fast_paths[mid].get_hash_val() < target_hash_val) {
+                        low = mid + 1;
+                    } else
+                        high = mid;
+                }
+
+                // check the same hash value situation
+                for (int i = low;
+                    low != node_size &&
+                    fast_paths[i].get_hash_val() == target_hash_val;
+                    i++) {
+                    if (key_equal(
+                            fast_paths[i].get_string().data(),
+                            fast_paths[i].get_string().size(), key,
+                            key_size)) {
+                        return fast_paths[i].get_dest_node();
+                    }
+                }
+                return nullptr;
+            }
+
+            inline size_t size() { return fast_paths.size(); }
+
+            unsigned int get_fpm_memory() {
+                return size() * (sizeof(fast_path) + FAST_PATH_NODE_NUM);
+            }
+        };
+
+        /*-----------------list child_representation-----------------*/
+        class child_representation {
+        private:
+            class child_node {
+            public:
+                char child_node_char;
+                anode* current;
+                child_node* next;
+
+                child_node(char cnc, anode* cur)
+                    : child_node_char(cnc), current(cur), next(nullptr) {}
+
+                child_node()
+                    : child_node_char(0), current(nullptr), next(nullptr) {}
+
+                inline bool have_next() { return next != nullptr; }
+
+                inline child_node* next_child() { return next; }
+
+                inline void add_next_child(char c) {
+                    next = new child_node(c, nullptr);
+                }
+            };
+
+            child_node* first_child_;
+            int size_;
+
+        public:
+            child_representation() : size_(0), first_child_(nullptr) {}
+
+            inline anode*& operator[](char c) {
+                //find the ok node
+                child_node* current_child_node = first_child_;
+                child_node* last_child_node = nullptr;
+
+                while (current_child_node) {
+                    if (current_child_node->child_node_char == c)
+                        return current_child_node->current;
+
+                    last_child_node = current_child_node;
+                    current_child_node = current_child_node->next;
+                }
+
+                // find no target node, add one
+                if (first_child_ == nullptr) {
+                    first_child_ = new child_node(c, nullptr);
+
+                    size_++;
+                    return first_child_->current;
+                }
+
+                last_child_node->add_next_child(c);
+                size_++;
+                return last_child_node->next_child()->current;
+            }
+
+            inline anode* find(char c) {
+                child_node* current_child_node = first_child_;
+                while(current_child_node != nullptr) {
+                    if (current_child_node->child_node_char == c)
+                        return current_child_node->current;
+
+                    current_child_node = current_child_node->next_child();
+                };
+                return nullptr;
+            }
+
+            inline size_t size() { return size_; }
+
+            /* for traverse_for_pgm_resize() */
+            inline void get_childs(vector<anode*>& res) {
+                child_node* current_child_node = first_child_;
+
+                while (current_child_node) {
+                    res.push_back(current_child_node->current);
+                    current_child_node = current_child_node->next;
+                }
+            }
+            
+            // TODO
+            /* for shrink node */
+            inline void get_childs_with_char(vector<pair<CharT, anode*>>& res) {
+                child_node* current_child_node = first_child_;
+
+                while (current_child_node) {
+                    res.push_back(
+                        pair<CharT, anode*>(current_child_node->child_node_char,
+                                                current_child_node->current));
+
+                    current_child_node = current_child_node->next;
+                }
+            }
+
+            ~child_representation() {
+                // release the list
+                child_node* current_child_node = first_child_;
+                child_node* previous_current_child_node = nullptr;
+
+                while (current_child_node) {
+                    previous_current_child_node = current_child_node;
+                    current_child_node = current_child_node->next;
+                    delete (previous_current_child_node);
+                }
+            }
+
+            /* helper function: memory evaluation */
+            size_t get_childs_representation_mem() {
+                return sizeof(child_representation) + size_ * sizeof(child_node);
+            }
+        };
+
        private:
         friend void htrie_map::traverse_level();
         fast_path_manager *fpm_;
@@ -1001,25 +1089,25 @@ class htrie_map {
             // if slotid==-1, it denotes that the bucket(bucketid) is full ,
             // so we rehash the key_metas
             if (slotid == -1) {
-#ifdef REHASH_BEFORE_EXPAND
-                if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                    bool expand_success = expand_key_metas_space();
-                    if (!expand_success) {
-                        return std::pair<bool, T>(false, T());
-                    } else {
-                        // if expand success, we get new elem a empty slot
-                        // in bucketid
-                        for (int i = 0; i != cur_associativity; i++) {
-                            slot* empty_slot =
-                                key_metas + bucketid * cur_associativity + i;
-                            if (empty_slot->is_empty()) {
-                                slotid = i;
-                                break;
-                            }
-                        }
-                    }
-                }
-#else
+                // #ifdef REHASH_BEFORE_EXPAND
+                //                 if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
+                //                     bool expand_success = expand_key_metas_space();
+                //                     if (!expand_success) {
+                //                         return std::pair<bool, T>(false, T());
+                //                     } else {
+                //                         // if expand success, we get new elem a empty slot
+                //                         // in bucketid
+                //                         for (int i = 0; i != cur_associativity; i++) {
+                //                             slot* empty_slot =
+                //                                 key_metas + bucketid * cur_associativity + i;
+                //                             if (empty_slot->is_empty()) {
+                //                                 slotid = i;
+                //                                 break;
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                // #else
                 bool expand_success = expand_key_metas_space();
                 if (!expand_success) {
                     if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
@@ -1047,7 +1135,7 @@ class htrie_map {
                         }
                     }
                     }
-#endif
+                    // #endif
             }
 
             // now the slotid cannot be -1 and slotid is lower than
@@ -1101,7 +1189,7 @@ class htrie_map {
     *                              |
     *                      hash_node(size:49)
     */
-    struct burst_package {
+    class burst_package {
        private:
         hash_node* bursting_node_;
         page_group_package pgp_;
@@ -1245,10 +1333,15 @@ class htrie_map {
        public:
         class page_group {
             class page {
-               public:
+               private:
+                friend class page_group;
+                inline static unsigned int calc_align(unsigned int n, unsigned align) {
+                    return ((n + align - 1) & (~(align - 1)));
+                }
                 unsigned int cur_pos;
                 char* content;
 
+               public:
                 page() : cur_pos(0), content(nullptr) {}
 
                 void init_page(size_t size_per_page) {
@@ -1269,13 +1362,7 @@ class htrie_map {
                                           alignment);
                 }
 
-                ~page() {
-                    if (content != nullptr) {
-                        free(content);
-                        // static int counting = 0;
-                        // cout << "page dec " << counting++ << endl;
-                    }
-                }
+                ~page() { if (content != nullptr) { free(content); } }
             };
 
             page* pages;
@@ -1464,12 +1551,10 @@ class htrie_map {
             if (type == group_type::SPECIAL_GROUP) {
                 s_size++;
                 special_pg[page_group_index].init_pg(MAX_SPECIAL_PAGE, true);
-                // cout << "special page group increase!" << endl;
                 return;
             } else if (type == group_type::NORMAL_GROUP) {
                 n_size++;
                 normal_pg[page_group_index].init_pg(MAX_NORMAL_PAGE, false);
-                // cout << "normal page group increase!" << endl;
                 return;
             } else {
                 cout << "undefined type!" << endl;
@@ -1532,10 +1617,11 @@ class htrie_map {
     };
 
     class SearchPoint {
-       public:
+       private:
         anode* node;
         int index;
 
+       public:
         SearchPoint() : node(nullptr), index(-1) {}
         SearchPoint(anode* n, int i) : node(n), index(i) {}
 
@@ -1558,157 +1644,6 @@ class htrie_map {
             return res;
         }
     };
-
-   public:
-
-    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
-
-    void set_v2k(T v, anode* node, int index) {
-        v2k[v] = SearchPoint(node, index);
-    }
-
-    // function for batch updating the searchPoints to v2k
-    void apply_the_changed_searchPoint(map<T, int>& searchPoints) {
-        for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
-            set_searchPoint_index(it->first, it->second);
-    }
-
-    // std::map<T, SearchPoint> v2k;
-    boost::unordered_map<T, SearchPoint> v2k;
-
-    anode* t_root;
-    
-    page_manager *pm;
-
-    htrie_map(size_t customized_associativity = DEFAULT_Associativity,
-              size_t customized_bucket_count = DEFAULT_Bucket_num,
-              size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
-              double customized_burst_ratio = DEFAULT_Burst_ratio)
-        : t_root(nullptr), pm(new page_manager()) {
-        std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
-        cout << "GROW_ASSOCIATIVITY\n";
-        cout << "PM\n";
-
-#ifdef REHASH_BEFORE_EXPAND
-        std::cout << "REHASH_BEFORE_EXPAND\n";
-
-#else
-        std::cout << "EXPAND_BEFORE_REHASH\n";
-
-#endif
-
-#ifdef MAP_REP
-        cout << "MAP REPRESENTATION\n";
-#endif
-#ifdef ARRAY_REP
-        cout << "ARRAY REPRESENTATION\n";
-#endif
-#ifdef LIST_REP
-        cout << "LIST REPRESENTATION\n";
-#endif
-
-        Associativity = customized_associativity;
-        Bucket_num = customized_bucket_count;
-        Max_bytes_per_kv = customized_byte_per_kv;
-        Burst_ratio = customized_burst_ratio;
-
-        Max_slot_num = Associativity * Bucket_num;
-        Max_loop = Max_slot_num * 0.5;
-
-        t_root = new hash_node(nullptr, string(), pm, Associativity);
-    }
-
-    // TODO deconstructor
-
-    void set_t_root(anode* node) { t_root = node; }
-
-    class slot {
-       public:
-        uint32_t encode;
-
-        slot() : encode(0) {}
-
-        // encode slot as | special | length | position | page_id |
-        uint64_t encode_slot(bool spe, uint64_t len, uint64_t po, uint64_t pd) {
-            encode = pd;
-            if (spe) {
-                assert(len < 1 << NBITS_LEN_S &&
-                       (po / DEFAULT_SPECIAL_ALIGNMENT) < 1 << NBITS_POS_S &&
-                       pd < 1 << NBITS_PID_S);
-                encode += ((po / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
-                encode += len << (NBITS_PID_S + NBITS_POS_S);
-                encode += ((uint64_t)1)
-                          << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
-            } else {
-                assert(len < 1 << NBITS_LEN &&
-                       (po / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
-                       pd < 1 << NBITS_PID);
-                // encode into a 64bit data
-                encode += (po / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
-                encode += len << (NBITS_PID + NBITS_POS);
-                encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
-            }
-
-            return encode;
-        }
-
-        bool is_empty() { return get_length() == 0; }
-
-        bool is_special() { return get_special(); }
-
-        slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
-            encode = encode_slot(is_special, l, p, pi);
-        }
-
-        void set_slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
-            encode = encode_slot(is_special, l, p, pi);
-        }
-
-        void set_slot(slot s) { encode = s.encode; }
-
-        bool get_special() {
-            return (encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)) == 1;
-        }
-
-        size_t get_length() {
-            return encode >> (NBITS_LEN + NBITS_POS + NBITS_PID)
-                       ? ((encode >> (NBITS_PID_S + NBITS_POS_S)) %
-                          (1 << NBITS_LEN_S))
-                       : ((encode >> (NBITS_PID + NBITS_POS)) %
-                          (1 << NBITS_LEN));
-        }
-
-        size_t get_pos() {
-            return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
-                       ? ((encode >> NBITS_PID_S) % (1 << NBITS_POS_S) *
-                          DEFAULT_SPECIAL_ALIGNMENT)
-                       : ((encode >> NBITS_PID) % (1 << NBITS_POS) *
-                          DEFAULT_NORMAL_ALIGNMENT);
-        }
-
-        size_t get_page_id() {
-            return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
-                       ? encode % (1 << NBITS_PID_S)
-                       : encode % (1 << NBITS_PID);
-        }
-
-        void swap(slot *sl) {
-            uint32_t temp_encode = sl->encode;
-            sl->encode = encode;
-            encode = temp_encode;
-        }
-
-        void print_slot(page_group_package &pgp) {
-            cout << get_special() << "," << get_length() << "," << get_pos()
-                << "," << get_page_id() << ","
-                << string(pgp.get_content_pointer(this), get_length()) << ","
-                << pgp.get_value(this) << endl;
-        }
-    };
-
-    inline static unsigned int calc_align(unsigned int n, unsigned align) {
-        return ((n + align - 1) & (~(align - 1)));
-    }
 
     class found_result {
        public:
@@ -1791,6 +1726,65 @@ class htrie_map {
         return std::pair<bool, T>(true, v);
       }
     }
+
+    void set_t_root(anode* node) { t_root = node; }
+
+    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
+
+    void set_v2k(T v, anode* node, int index) {
+        v2k[v] = SearchPoint(node, index);
+    }
+
+    // function for batch updating the searchPoints to v2k
+    void apply_the_changed_searchPoint(map<T, int>& searchPoints) {
+        for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
+            set_searchPoint_index(it->first, it->second);
+    }
+
+    boost::unordered_map<T, SearchPoint> v2k;
+    anode* t_root;
+    page_manager *pm;
+
+   public:
+    htrie_map(size_t customized_associativity = DEFAULT_Associativity,
+              size_t customized_bucket_count = DEFAULT_Bucket_num,
+              size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
+              double customized_burst_ratio = DEFAULT_Burst_ratio)
+        : t_root(nullptr), pm(new page_manager()) {
+        std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
+        cout << "GROW_ASSOCIATIVITY\n";
+        cout << "PM\n";
+
+#ifdef REHASH_BEFORE_EXPAND
+        std::cout << "REHASH_BEFORE_EXPAND\n";
+
+#else
+        std::cout << "EXPAND_BEFORE_REHASH\n";
+
+#endif
+
+#ifdef MAP_REP
+        cout << "MAP REPRESENTATION\n";
+#endif
+#ifdef ARRAY_REP
+        cout << "ARRAY REPRESENTATION\n";
+#endif
+#ifdef LIST_REP
+        cout << "LIST REPRESENTATION\n";
+#endif
+
+        Associativity = customized_associativity;
+        Bucket_num = customized_bucket_count;
+        Max_bytes_per_kv = customized_byte_per_kv;
+        Burst_ratio = customized_burst_ratio;
+
+        Max_slot_num = Associativity * Bucket_num;
+        Max_loop = Max_slot_num * 0.5;
+
+        t_root = new hash_node(nullptr, string(), pm, Associativity);
+    }
+
+    // TODO deconstructor
 
     /*---------------external accessing interface-------------------*/
 
