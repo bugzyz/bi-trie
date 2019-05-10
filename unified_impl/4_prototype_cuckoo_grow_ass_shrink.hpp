@@ -1419,9 +1419,6 @@ class htrie_map {
             }
 
             ~page_group() {
-                // cout << (void*)this << "page_group deconstructor" << endl;
-                int pages_size =
-                    is_special ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE;
                 delete []pages;
             }
         };
