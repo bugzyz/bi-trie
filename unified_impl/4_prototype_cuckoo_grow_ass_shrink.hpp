@@ -173,13 +173,13 @@ class htrie_map {
         }
     }
 
-    /* trie node type */
     class trie_node;
     class hash_node;
 
     class found_result;
 
     class slot;
+    
     /* page management */
     class page_manager;
     class page_group;
@@ -812,8 +812,6 @@ class htrie_map {
             return key_metas + bucketid * cur_associativity + slotid;
         }
 
-        inline slot* get_slot(int index) { return key_metas + index; }
-
         inline int get_index(slot* s) { return s - key_metas; }
 
         inline int get_index(int bucketid, int slotid) {
@@ -839,18 +837,13 @@ class htrie_map {
         }
 
         /*---------function that changed key_metas layout---------*/
-
-        /*------------------ 0. helper function------------------*/
-
         /*------------------ 1. expand function------------------*/
-        bool expand_key_metas_space() {
+        int expand_key_metas_space() {
             uint64_t sta = get_time();
 
             // Already max associativity
-            // We cannot expand anymore, return false
-            if (cur_associativity == Associativity) {
-                return false;
-            }
+            // We cannot expand anymore, return -1
+            if (cur_associativity == Associativity) return -1;
 
             // Get the associativity we need, expand 2 times of cur_associativity
             unsigned int need_associativity = cur_associativity << 1;
@@ -879,13 +872,14 @@ class htrie_map {
             delete[] key_metas;
             key_metas = new_key_metas;
 
+            int ret_slotid = cur_associativity;
             // update current associativity
             cur_associativity = need_associativity;
             uint64_t end = get_time();
 
             expand_cost_time += end - sta;
 
-            return true;
+            return ret_slotid;
         }
 
         /*------------------ 2. cuckoo hash function------------------*/
@@ -954,7 +948,7 @@ class htrie_map {
                 // Get the slot* we are replacing destination
                 int cur_process_index =
                     get_index(cur_process_bucketid, cur_process_slotid);
-                slot* cur_process_slot = get_slot(cur_process_index);
+                slot* cur_process_slot = get_slot(cur_process_bucketid, cur_process_slotid);
 
                 /* Check that whether the cur_process_slot is anti-moved */
                 // Get the another bucketid the cur_process_slot can be at
@@ -1018,23 +1012,6 @@ class htrie_map {
             return -1;
         }
 
-        /*------------------ 3. bursting function------------------*/
-        inline unsigned int round_up_2_next_power_2(unsigned int x) {
-            x--;
-            x |= x >> 1;   // handle  2 bit numbers
-            x |= x >> 2;   // handle  4 bit numbers
-            x |= x >> 4;   // handle  8 bit numbers
-            x |= x >> 8;   // handle 16 bit numbers
-            x |= x >> 16;  // handle 32 bit numbers
-            x++;
-            return x;
-        }
-
-        inline unsigned int get_expected_associativity(unsigned int need_size) {
-            return round_up_2_next_power_2(
-                (double)need_size / (double)Bucket_num / Burst_ratio + 1);
-        }
-
         /*----------------searching in hash_node----------------*/
         // return <found?, iterator>
         // iterator:    if slotid==-1, bucket is full
@@ -1085,57 +1062,23 @@ class htrie_map {
                                                  T v, found_result fr) {
             size_t bucketid = fr.bucketid;
             int slotid = fr.slotid;
+            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
 
-            // if slotid==-1, it denotes that the bucket(bucketid) is full ,
-            // so we rehash the key_metas
-            if (slotid == -1) {
-                // #ifdef REHASH_BEFORE_EXPAND
-                //                 if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
-                //                     bool expand_success = expand_key_metas_space();
-                //                     if (!expand_success) {
-                //                         return std::pair<bool, T>(false, T());
-                //                     } else {
-                //                         // if expand success, we get new elem a empty slot
-                //                         // in bucketid
-                //                         for (int i = 0; i != cur_associativity; i++) {
-                //                             slot* empty_slot =
-                //                                 key_metas + bucketid * cur_associativity + i;
-                //                             if (empty_slot->is_empty()) {
-                //                                 slotid = i;
-                //                                 break;
-                //                             }
-                //                         }
-                //                     }
-                //                 }
-                // #else
-                bool expand_success = expand_key_metas_space();
-                if (!expand_success) {
-                    if ((slotid = cuckoo_hash(bucketid, hm)) == -1) {
+            if (slotid == -1 && 
+                (slotid = expand_key_metas_space()) == -1 &&
+                (slotid = cuckoo_hash(bucketid, hm)) == -1) {
 
-                        const string &prefix = this->anode::get_prefix();
-                        trie_node* new_parent = hm->burst(burst_package(this, key_metas, Bucket_num, cur_associativity,
-                                        hm->pm->get_page_group_package(
-                                            normal_pgid, special_pgid)),
-                            hm, this->anode::get_parent(),
-                            prefix);
+                const string& prefix = this->anode::get_prefix();
 
-                        hm->access_kv_in_htrie_map(new_parent, key, keysize, v, false, prefix.data(), prefix.size());
-                        delete this;
-                        return;
-                    }
-                } else {
-                    // if expand success, we get new elem a empty slot in
-                    // bucketid
-                    for (int i = 0; i != cur_associativity; i++) {
-                        slot* empty_slot =
-                            key_metas + bucketid * cur_associativity + i;
-                        if (empty_slot->is_empty()) {
-                            slotid = i;
-                            break;
-                        }
-                    }
-                    }
-                    // #endif
+                trie_node* new_parent =
+                    hm->burst(burst_package(this, key_metas, Bucket_num,
+                                            cur_associativity, pgp),
+                              this->anode::get_parent(), prefix);
+
+                hm->access_kv_in_htrie_map(new_parent, key, keysize, v, false,
+                                            prefix.data(), prefix.size());
+                delete this;
+                return;
             }
 
             // now the slotid cannot be -1 and slotid is lower than
@@ -1154,7 +1097,6 @@ class htrie_map {
              * if page_manager pm have enough memory, the hm->write_kv() will
              * write the content to original page group
              */
-            page_group_package pgp = hm->pm->get_page_group_package(normal_pgid, special_pgid);
 
             if(!pgp.try_insert(keysize)) {
                 hm->pm->resize(get_group_type(keysize), hm);
@@ -1277,7 +1219,7 @@ class htrie_map {
     };
 
     // bursting function
-    trie_node* burst(burst_package bp, htrie_map* hm, trie_node* orig_parent, const string &orig_prefix) {
+    trie_node* burst(burst_package bp, trie_node* orig_parent, const string &orig_prefix) {
         burst_total_counter++;
 
         pm->register_burst_package(&bp);
@@ -1286,7 +1228,7 @@ class htrie_map {
         trie_node* ret_trie_root = new trie_node(orig_parent, orig_prefix.data(), orig_prefix.size());
 
         if (orig_parent == nullptr)
-            hm->set_t_root(ret_trie_root);
+            set_t_root(ret_trie_root);
         else
             orig_parent->add_child(orig_prefix.back(), ret_trie_root);
 
@@ -1318,7 +1260,7 @@ class htrie_map {
                 size_t length_left = s.get_length() - common_prefix_keysize;
                 T v = bp.get_pgp().get_value(&s);
 
-                hm->access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
+                access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
 
                 bp.pop();
         }
