@@ -101,15 +101,27 @@ namespace myTrie {
 // charT = char, T = value type, keysizeT = the type describe keysize
 template <class CharT, class T, class KeySizeT = std::uint16_t>
 class htrie_map {
-   public:
+   private:
+    static bool key_equal(const CharT* key_lhs, std::size_t key_size_lhs,
+                const CharT* key_rhs, std::size_t key_size_rhs) {
+        if (key_size_lhs == 0 && key_size_rhs == 0) {
+            return true;
+        }
+        if (key_size_lhs != key_size_rhs) {
+            return false;
+        } else {
+            return std::memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(CharT)) ==
+                0;
+        }
+    }
+
     public:
     
     /* trie node type */
     class trie_node;
     class hash_node;
 
-    /* iterator that contains */
-    class iterator;
+    class found_result;
 
     class slot;
     /* page management */
@@ -222,17 +234,17 @@ class htrie_map {
         // for level traverse
         virtual vector<anode*> print_node_info() = 0;
 
-        iterator insert_value_in_node(const string &prefix, T v,
+        found_result insert_value_in_node(const string &prefix, T v,
                                       htrie_map<CharT, T>* hm) {
             value_ = v;
             have_value_ = true;
             hm->set_v2k(v, this, -1);
             prefix_ = prefix;
-            return iterator(have_value_, value_, this, -1, -1);
+            return found_result(have_value_, value_, -1, -1);
         }
 
-        iterator search_kv_in_node() {
-            return iterator(have_value_, value_, this, -1, -1);
+        found_result search_kv_in_node() {
+            return found_result(have_value_, value_, -1, -1);
         }
 
         void set_prefix(const string& prefix) { prefix_ = prefix; }
@@ -328,7 +340,7 @@ class htrie_map {
                  low != node_size &&
                  fast_paths[i].get_hash_val() == target_hash_val;
                  i++) {
-                if (myTrie::hashRelative::keyEqual(
+                if (key_equal(
                         fast_paths[i].get_string().data(),
                         fast_paths[i].get_string().size(), key,
                         key_size)) {
@@ -801,7 +813,7 @@ class htrie_map {
                         new_key_metas + i * need_associativity + j;
                     if (j < cur_associativity) {
                         slot* cur_slot = key_metas + i * cur_associativity + j;
-                        cur_new_slot->set_slot(cur_slot);
+                        cur_new_slot->set_slot(*cur_slot);
                     } else {
                         cur_new_slot->set_slot(0, 0, 0, 0);
                     }
@@ -973,108 +985,55 @@ class htrie_map {
                 (double)need_size / (double)Bucket_num / Burst_ratio + 1);
         }
 
-        inline bool need_burst() const {
-            return elem_num >= Max_slot_num * Burst_ratio;
-        }
-
         /*----------------searching in hash_node----------------*/
-        void move_suffix_to_new_page(htrie_map<CharT, T>* hm,
-                                  vector<page>& new_normal_page,
-                                  vector<page>& new_special_page) {
-            for (int i = 0; i != Bucket_num; i++) {
-                for (int j = 0; j != cur_associativity; j++) {
-                    slot* s = get_slot(i, j);
-
-                    if (s->is_empty()) break;
-
-                    if (s->is_special())
-                        s->set_slot(hm->write_kv_to_page(
-                            hm->get_content_pointer(s), s->get_length(),
-                            hm->get_value(s), new_special_page));
-                    else
-                        s->set_slot(hm->write_kv_to_page(
-                            hm->get_content_pointer(s), s->get_length(),
-                            hm->get_value(s), new_normal_page));
-                }
-            }
-        }
-
-        /*----------------searching in hash_node----------------*/
-
-        std::pair<bool, T> find_kv_in_pages(htrie_map<CharT, T>* hm, slot* s,
-                                            const CharT* key,
-                                            size_t keysize) {
-            if (myTrie::hashRelative::keyEqual(
-                    hm->get_content_pointer(get_page_group_id(s), s),
-                                               s->get_length(), key, keysize)) {
-                return std::pair<bool, T>(
-                    true, *((T*)(hm->get_content_pointer(get_page_group_id(s), s) +
-                                 s->get_length())));
-            }
-            return std::pair<bool, T>(false, T());
-        }
-
         // return <found?, iterator>
         // iterator:    if slotid==-1, bucket is full
         //              if slotid!=-1, slotid is the insert position
-        std::pair<bool, iterator> find_in_bucket(htrie_map<CharT, T>* hm,
-                                                 size_t bucketid,
-                                                 const CharT* key,
-                                                 size_t keysize) {
-            // print_key_metas(hm);
+        found_result find_in_bucket(size_t bucketid, const CharT* key,
+                                    size_t keysize, page_group_package& pgp) {
             // find the hitted slot in hashnode
             for (int i = 0; i != cur_associativity; i++) {
                 slot* target_slot = get_slot(bucketid, i);
-                if (target_slot->is_empty()) {
-                    return std::pair<bool, iterator>(
-                        false, iterator(false, T(), this, bucketid, i));
-                }
+                if (target_slot->is_empty())
+                    return found_result(false, T(), bucketid, i);
 
-                std::pair<bool, T> res =
-                    find_kv_in_pages(hm, target_slot, key, keysize);
-                if (res.first) {
-                    return std::pair<bool, iterator>(
-                        true, iterator(true, res.second, this, bucketid, i));
-                }
+                if (key_equal(key, keysize, pgp.get_content_pointer(target_slot),
+                            target_slot->get_length()))
+                    return found_result(true, pgp.get_value(target_slot), bucketid, i);
             }
-            return std::pair<bool, iterator>(
-                false, iterator(false, T(), this, bucketid, -1));
+            return found_result(false, T(), bucketid, -1);
         }
 
-        iterator search_kv_in_hashnode(const CharT* key, size_t keysize,
-                                       htrie_map<CharT, T>* hm) {
+        found_result search_kv_in_hashnode(const CharT* key, size_t keysize,
+                                       page_manager* pm) {
+            page_group_package pgp = 
+                    pm->get_page_group_package(normal_pgid, special_pgid);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
             size_t bucketId1 =
                 myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
-            std::pair<bool, iterator> res1 =
-                find_in_bucket(hm, bucketId1, key, keysize);
+            found_result res1 =
+                find_in_bucket(bucketId1, key, keysize, pgp);
 
-            if (res1.first) {
-                return res1.second;
+            if (res1.is_founded()) {
+                return res1;
             }
 
             size_t bucketId2 =
                 myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
-            std::pair<bool, iterator> res2 =
-                find_in_bucket(hm, bucketId2, key, keysize);
+            found_result res2 =
+                find_in_bucket(bucketId2, key, keysize, pgp);
 
-            if (res2.first) {
-                return res2.second;
+            if (res2.is_founded()) {
+                return res2;
             }
 
             // if the code reach here it means the target doesn't exist
             // we return the iterator with empty slot
-            if (res1.second.slotid != -1) {
-                return res1.second;
-            } else if (res2.second.slotid != -1) {
-                return res2.second;
-            }
-            // if two bucket are both full, we return the res1's iterator
-            // with slotid == -1, and let the
-            // 1. findMode: found==false
-            // 2. !findMode:found==false, slotid==-1, need to kick some slot
-            return res1.second;
+            if (res1.is_bucket_full()) {
+                return res2;
+            } else
+                return res1;
         }
 
         inline size_t get_page_group_id(size_t keysize) {
@@ -1091,8 +1050,10 @@ class htrie_map {
 
         void insert_kv_in_hashnode(const CharT* key,
                                                  size_t keysize, htrie_map* hm,
-                                                 T v, size_t bucketid,
-                                                 int slotid) {
+                                                 T v, found_result fr) {
+            size_t bucketid = fr.bucketid;
+            int slotid = fr.slotid;
+
             // if slotid==-1, it denotes that the bucket(bucketid) is full ,
             // so we rehash the key_metas
             if (slotid == -1) {
@@ -1167,7 +1128,7 @@ class htrie_map {
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
             target_slot->set_slot(
-                hm->write_kv(get_page_group_id(keysize), key, keysize, v));
+                hm->pm->write_kv(get_page_group_id(keysize), key, keysize, v));
 
             // set v2k
             hm->set_v2k(v, this, get_column_store_index(target_slot));
@@ -1679,19 +1640,6 @@ class htrie_map {
         return pm->require_group_id(group_type::SPECIAL_GROUP);
     }
 
-    inline char* get_content_pointer(size_t page_group_id, slot* s) {
-        return pm->get_content_pointer_in_pm(page_group_id, s);
-    }
-
-    inline T get_value(size_t page_group_id, slot* s) {
-        return pm->get_value_in_pm(page_group_id, s);
-    }
-
-    inline slot write_kv(size_t page_group_id, const CharT* key, size_t keysize,
-                         T v) {
-        return pm->write_kv(page_group_id, key, keysize, v);
-    }
-
     class SearchPoint {
        public:
         anode* node;
@@ -1827,8 +1775,6 @@ class htrie_map {
 
         void set_slot(slot s) { encode = s.encode; }
 
-        void set_slot(slot* s) { encode = s->encode; }
-
         bool get_special() {
             return (encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)) == 1;
         }
@@ -1873,23 +1819,19 @@ class htrie_map {
         return ((n + align - 1) & (~(align - 1)));
     }
 
-    class iterator {
+    class found_result {
        public:
         bool found;
         const T v;
-        anode* target_node;
         size_t bucketid;
         int slotid;
 
-        iterator(bool f, T vv, anode* hnode, size_t bid, int sid)
-            : found(f), v(vv), target_node(hnode), bucketid(bid), slotid(sid) {}
+        found_result(bool f, T vv, size_t bid, int sid)
+            : found(f), v(vv), bucketid(bid), slotid(sid) {}
 
-        void insert_hashnode(const CharT* key, size_t key_size,
-                                           htrie_map<CharT, T>* hm, T v) {
-            ((hash_node*)target_node)
-                ->insert_kv_in_hashnode(key, key_size, hm, v, bucketid, slotid);
-            return;
-        }
+        bool is_founded() { return found; }
+
+        bool is_bucket_full() { return slotid == -1; }
     };
 
     // TODO: divided into find and insert mode
@@ -1918,29 +1860,29 @@ class htrie_map {
                                                       key_size, this);
 
             if(current_node == nullptr){
-              if (findMode) {
-                return std::pair<bool, T>(false, T());
-              } else {
-                string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
-                // Create a corresponding hash_node and add it to current
-                // trie_node's child representation
-                current_node =
-                    new hash_node(orig_tnode, new_prefix, this);
-                orig_tnode->add_child(key[ref_pos - 1], current_node);
+                if (findMode) {
+                    return std::pair<bool, T>(false, T());
+                } else {
+                    string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
+                    // Create a corresponding hash_node and add it to current
+                    // trie_node's child representation
+                    current_node =
+                        new hash_node(orig_tnode, new_prefix, this);
+                    orig_tnode->add_child(key[ref_pos - 1], current_node);
               }
             } 
 
           } break;
           case node_type::HASH_NODE: {
-            iterator it = ((hash_node*)current_node)
-                              ->search_kv_in_hashnode(key + ref_pos,
-                                                      key_size - ref_pos, this);
-            if (findMode) {
-              return std::pair<bool, T>(it.found, it.v);
-            } else {
-              it.insert_hashnode(key + ref_pos, key_size - ref_pos, this, v);
-              return std::pair<bool, T>(it.found, it.v);
-            }
+                hash_node* hnode = (hash_node*)current_node;
+                found_result res = hnode->search_kv_in_hashnode(key + ref_pos,
+                                                        key_size - ref_pos, pm);
+                if (findMode) {
+                    return std::pair<bool, T>(res.found, res.v);
+                } else {
+                    hnode->insert_kv_in_hashnode(key + ref_pos, key_size - ref_pos, this, v, res);
+                    return std::pair<bool, T>(res.found, res.v);
+                }
           } break;
           default:
             cout << "wrong type!";
@@ -1949,10 +1891,10 @@ class htrie_map {
       }
 
       // find a key in node's only value
-      iterator it = current_node->search_kv_in_node();
+      found_result res = current_node->search_kv_in_node();
 
       if (findMode) {
-        return std::pair<bool, T>(it.found, it.v);
+        return std::pair<bool, T>(res.found, res.v);
       } else {
         current_node->insert_value_in_node(string(prefix_key, prefix_key_size) + string(key, key_size), v, this);
         return std::pair<bool, T>(true, v);
