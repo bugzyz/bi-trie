@@ -9,7 +9,6 @@
 #include <queue>
 #include <sstream>
 #include <stack>
-#include "../util/hashFunc.hpp"
 #include "../util/my_timer.hpp"
 
 #include <fstream>
@@ -115,8 +114,66 @@ class htrie_map {
         }
     }
 
-    public:
-    
+    // For fasthash64:
+    static inline uint64_t mix(uint64_t h) {
+        h ^= h >> 23;
+        h *= 0x2127599bf4325c37ULL;
+        h ^= h >> 47;
+        return h;
+    }
+
+    // A default hash function:
+    static uint64_t fasthash64(const char* buf, size_t len, uint64_t seed) {
+        uint64_t const m = 0x880355f21e6d1965ULL;
+        uint64_t const* pos = (uint64_t const*)buf;
+        uint64_t const* end = pos + (len / 8);
+        const unsigned char* pos2;
+        uint64_t h = seed ^ (len * m);
+        uint64_t v;
+
+        while (pos != end) {
+            v = *pos++;
+            h ^= mix(v);
+            h *= m;
+        }
+
+        pos2 = (const unsigned char*)pos;
+        v = 0;
+
+        switch (len & 7) {
+            case 7:
+                v ^= (uint64_t)pos2[6] << 48;
+            case 6:
+                v ^= (uint64_t)pos2[5] << 40;
+            case 5:
+                v ^= (uint64_t)pos2[4] << 32;
+            case 4:
+                v ^= (uint64_t)pos2[3] << 24;
+            case 3:
+                v ^= (uint64_t)pos2[2] << 16;
+            case 2:
+                v ^= (uint64_t)pos2[1] << 8;
+            case 1:
+                v ^= (uint64_t)pos2[0];
+                h ^= mix(v);
+                h *= m;
+        }
+
+        return mix(h);
+    }
+
+    static size_t hash(const CharT* key, std::size_t key_size, size_t hashType = 1) {
+        uint64_t hash;
+        if (hashType == 1) {
+            hash = fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
+            return hash;
+        } else {
+            hash = fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
+            return hash;
+        }
+    }
+
+   public:
     /* trie node type */
     class trie_node;
     class hash_node;
@@ -312,8 +369,7 @@ class htrie_map {
 
         inline void insert_fast_path(const char* key, size_t key_size, anode* node_ptr) {
             //Insert new element
-            fast_path new_fast_path(
-                myTrie::hashRelative::hash(key, key_size, 1), string(key, key_size), node_ptr);
+            fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
 
             for (auto it = fast_paths.begin(); it != fast_paths.end();
                  it++) {
@@ -335,8 +391,7 @@ class htrie_map {
         inline anode* lookup_fast_path(const char* key,
                                                  size_t key_size) {
             // binary search
-            unsigned int target_hash_val =
-                myTrie::hashRelative::hash(key, key_size);
+            unsigned int target_hash_val = hash(key, key_size);
 
             size_t node_size = fast_paths.size();
             int low = 0;
@@ -371,81 +426,9 @@ class htrie_map {
         }
     };
 
-#ifdef ARRAY_REP
-    /*-----------------array child_representation-----------------*/
-    class child_representation {
-        trie_node** childs;
-        int number;
-
-       public:
-        class child_iterator {
-           public:
-            char first;
-            trie_node* second;
-
-            child_iterator(char c, trie_node* tn) : first(c), second(tn) {}
-
-            inline child_iterator* operator->() { return this; }
-
-            inline bool operator==(child_iterator& right) {
-                return second == right.second;
-            }
-
-            inline bool operator!=(const child_iterator& right) {
-                return second != right.second;
-            }
-        };
-
-        child_representation() : number(0) {
-            childs = (trie_node**)malloc(sizeof(trie_node*) * ALPHABET);
-            for (int i = 0; i != ALPHABET; i++) {
-                childs[i] = nullptr;
-            }
-        }
-
-        inline trie_node*& operator[](char c) {
-            number++;
-            return childs[(int)c];
-        }
-
-        inline child_iterator find(char c) {
-            return child_iterator(c, childs[(int)c]);
-        }
-
-        inline size_t size() { return number; }
-
-        inline child_iterator end() { return child_iterator(0, nullptr); }
-
-        inline child_iterator begin() {
-            if (number != 0) {
-                for (int i = 0; i != ALPHABET; i++) {
-                    if (childs[i]) return child_iterator((char)i, childs[i]);
-                }
-            }
-            return child_iterator(0, nullptr);
-        }
-
-        inline void get_childs(vector<anode*>& res) {
-            for (int i = 0; i != ALPHABET; i++) {
-                if (childs[i]) res.push_back(childs[i]);
-            }
-        }
-
-        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
-            for (int i = 0; i != ALPHABET; i++)
-                if (childs[i])
-                    res.push_back(pair<CharT, trie_node*>((char)i, childs[i]));
-        }
-
-        size_t get_childs_representation_mem() {
-            return sizeof(child_representation) + ALPHABET * sizeof(trie_node*);
-        }
-    };
-#endif
-
-#ifdef LIST_REP
     /*-----------------list child_representation-----------------*/
     class child_representation {
+       private:
         class child_node {
            public:
             char child_node_char;
@@ -553,45 +536,6 @@ class htrie_map {
             return sizeof(child_representation) + size_ * sizeof(child_node);
         }
     };
-#endif
-
-#ifdef MAP_REP
-    /*-----------------map child_representation-----------------*/
-    class child_representation {
-
-       public:
-        map<char, trie_node*> childs;
-        child_representation() {}
-
-        inline trie_node*& operator[](char c) { return childs[(int)c]; }
-
-        inline typename map<char, trie_node*>::iterator find(char c) {
-            return childs.find(c);
-        }
-
-        inline size_t size() { return childs.size(); }
-
-        inline typename map<char, trie_node*>::iterator end() {
-            return childs.end();
-        }
-
-        inline typename map<char, trie_node*>::iterator begin() {
-            return childs.begin();
-        }
-
-        void get_childs(vector<anode*> &res) {
-            for (auto it = childs.begin(); it != childs.end(); it++) {
-                res.push_back(it->second);
-            }
-        }
-
-        inline void get_childs_with_char(vector<pair<CharT, trie_node*>>& res) {
-            for(auto it = childs.begin();it!=childs.end();it++){
-                res.push_back(pair<CharT,trie_node*>(it->first, it->second));
-            }
-        }
-    };
-#endif
 
     class trie_node : public anode {
        private:
@@ -611,7 +555,7 @@ class htrie_map {
             return;
         }
 
-        // TODO: deconstructor
+        ~trie_node() { if (fpm_ != nullptr) delete fpm_; }
 
         // the virtual function for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
@@ -876,12 +820,8 @@ class htrie_map {
         inline size_t get_another_bucketid(page_group_package& pgp, slot* s,
                                            size_t current_bucketid) {
             const char* key = pgp.get_content_pointer(s);
-            size_t bucketid1 =
-                myTrie::hashRelative::hash(key, s->get_length(), 1) %
-                Bucket_num;
-            size_t bucketid2 =
-                myTrie::hashRelative::hash(key, s->get_length(), 2) %
-                Bucket_num;
+            size_t bucketid1 = hash(key, s->get_length(), 1) % Bucket_num;
+            size_t bucketid2 = hash(key, s->get_length(), 2) % Bucket_num;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
@@ -1032,26 +972,20 @@ class htrie_map {
                     pm->get_page_group_package(normal_pgid, special_pgid);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
-            size_t bucketId1 =
-                myTrie::hashRelative::hash(key, keysize, 1) % Bucket_num;
-            found_result res1 =
-                find_in_bucket(bucketId1, key, keysize, pgp);
-
+            size_t bucketId1 = hash(key, keysize, 1) % Bucket_num;
+            found_result res1 = find_in_bucket(bucketId1, key, keysize, pgp);
             if (res1.is_founded()) {
                 return res1;
             }
 
-            size_t bucketId2 =
-                myTrie::hashRelative::hash(key, keysize, 2) % Bucket_num;
-            found_result res2 =
-                find_in_bucket(bucketId2, key, keysize, pgp);
-
+            size_t bucketId2 = hash(key, keysize, 2) % Bucket_num;
+            found_result res2 = find_in_bucket(bucketId2, key, keysize, pgp);
             if (res2.is_founded()) {
                 return res2;
             }
 
             // if the code reach here it means the target doesn't exist
-            // we return the iterator with empty slot
+            // we try our best return the iterator with empty slot
             if (res1.is_bucket_full()) {
                 return res2;
             } else
