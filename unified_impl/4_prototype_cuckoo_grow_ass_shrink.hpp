@@ -166,14 +166,14 @@ class htrie_map {
         }
 
         // get function
-        inline char* get_tail_pointer(slot* s) {
-            return is_special(s) ? s_group->get_tail_pointer_in_page(s)
-                                 : n_group->get_tail_pointer_in_page(s);
+        inline char* get_content_pointer(slot* s) {
+            return is_special(s) ? s_group->get_content_pointer_in_page(s)
+                                 : n_group->get_content_pointer_in_page(s);
         }
 
-        inline T get_tail_v(slot* s) {
-            return is_special(s) ? s_group->get_tail_v_in_page(s)
-                                 : n_group->get_tail_v_in_page(s);
+        inline T get_value(slot* s) {
+            return is_special(s) ? s_group->get_value_in_page(s)
+                                 : n_group->get_value_in_page(s);
         }
     };
 
@@ -665,10 +665,10 @@ class htrie_map {
             cout << i * cur_associativity + j << ":" << s->get_special() << ","
                  << s->get_length() << "," << s->get_pos() << ","
                  << s->get_page_id() << ",";
-            string str = string(hm->get_tail_pointer(get_page_group_id(s), s),
+            string str = string(hm->get_content_pointer(get_page_group_id(s), s),
                                 s->get_length());
             cout << str;
-            T v = hm->get_tail_v(get_page_group_id(s), s);
+            T v = hm->get_value(get_page_group_id(s), s);
             cout << "=" << v << "\n";
         }
 
@@ -731,9 +731,9 @@ class htrie_map {
                     // new page_manager
                     s->set_slot(new_pm->write_kv(
                         new_pgid,
-                        old_pm->get_tail_pointer_in_pm(resize_pgid, s),
+                        old_pm->get_content_pointer_in_pm(resize_pgid, s),
                         s->get_length(),
-                        old_pm->get_tail_v_in_pm(resize_pgid, s)));
+                        old_pm->get_value_in_pm(resize_pgid, s)));
                 }
             }
         }
@@ -841,7 +841,7 @@ class htrie_map {
         // Return another possible bucketid that the slot *s can be at
         inline size_t get_another_bucketid(page_group_package& pgp, slot* s,
                                            size_t current_bucketid) {
-            const char* key = pgp.get_tail_pointer(s);
+            const char* key = pgp.get_content_pointer(s);
             size_t bucketid1 =
                 myTrie::hashRelative::hash(key, s->get_length(), 1) %
                 Bucket_num;
@@ -912,7 +912,7 @@ class htrie_map {
                 extra_slot->swap(cur_process_slot);
 
                 // Add this value=index for the searchPoint index updateing
-                searchPoint_wait_2_be_update[pgp.get_tail_v(cur_process_slot)] =
+                searchPoint_wait_2_be_update[pgp.get_value(cur_process_slot)] =
                     get_column_store_index(cur_process_slot);
 
                 // The first time swap the extra_slot indicate the
@@ -989,12 +989,12 @@ class htrie_map {
 
                     if (s->is_special())
                         s->set_slot(hm->write_kv_to_page(
-                            hm->get_tail_pointer(s), s->get_length(),
-                            hm->get_tail_v(s), new_special_page));
+                            hm->get_content_pointer(s), s->get_length(),
+                            hm->get_value(s), new_special_page));
                     else
                         s->set_slot(hm->write_kv_to_page(
-                            hm->get_tail_pointer(s), s->get_length(),
-                            hm->get_tail_v(s), new_normal_page));
+                            hm->get_content_pointer(s), s->get_length(),
+                            hm->get_value(s), new_normal_page));
                 }
             }
         }
@@ -1005,10 +1005,10 @@ class htrie_map {
                                             const CharT* key,
                                             size_t keysize) {
             if (myTrie::hashRelative::keyEqual(
-                    hm->get_tail_pointer(get_page_group_id(s), s),
+                    hm->get_content_pointer(get_page_group_id(s), s),
                                                s->get_length(), key, keysize)) {
                 return std::pair<bool, T>(
-                    true, *((T*)(hm->get_tail_pointer(get_page_group_id(s), s) +
+                    true, *((T*)(hm->get_content_pointer(get_page_group_id(s), s) +
                                  s->get_length())));
             }
             return std::pair<bool, T>(false, T());
@@ -1226,8 +1226,8 @@ class htrie_map {
                 s.set_slot(new_pm->write_kv((resize_type == group_type::NORMAL_GROUP
                                         ? n_group_id
                                         : s_group_id),
-                                    pgp_.get_tail_pointer(&s),
-                                    s.get_length(), pgp_.get_tail_v(&s)));
+                                    pgp_.get_content_pointer(&s),
+                                    s.get_length(), pgp_.get_value(&s)));
             }
             pgp_.set_page_group(resize_type, new_pgp.get_page_group(resize_type));
         }
@@ -1268,7 +1268,7 @@ class htrie_map {
             const char* ret_key_pointer = nullptr;
             unsigned int common_prefix_len = INT_MAX;
             for (int i = 0; i != elems_.size() && common_prefix_len != 0; i++){
-                    char* key = pgp_.get_tail_pointer(&(elems_[i]));
+                    char* key = pgp_.get_content_pointer(&(elems_[i]));
                     if (ret_key_pointer == nullptr) ret_key_pointer = key;
 
                     // update the common_prefix_len
@@ -1321,9 +1321,9 @@ class htrie_map {
         while (bp.size() != 0) {
                 slot s = bp.top();
 
-                char* new_key = bp.get_pgp().get_tail_pointer(&s) + common_prefix_keysize;
+                char* new_key = bp.get_pgp().get_content_pointer(&s) + common_prefix_keysize;
                 size_t length_left = s.get_length() - common_prefix_keysize;
-                T v = bp.get_pgp().get_tail_v(&s);
+                T v = bp.get_pgp().get_value(&s);
 
                 hm->access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
 
@@ -1389,13 +1389,13 @@ class htrie_map {
             }
 
             // get function
-            inline char* get_tail_pointer_in_page(slot* s) {
+            inline char* get_content_pointer_in_page(slot* s) {
                 return pages[s->get_page_id()].content + s->get_pos();
             }
 
-            inline T get_tail_v_in_page(slot* s) {
+            inline T get_value_in_page(slot* s) {
                 T v;
-                std::memcpy(&v, get_tail_pointer_in_page(s) + s->get_length(),
+                std::memcpy(&v, get_content_pointer_in_page(s) + s->get_length(),
                             sizeof(T));
                 return v;
             }
@@ -1534,17 +1534,17 @@ class htrie_map {
             return least_page_page_group_id;
         }
 
-        inline char* get_tail_pointer_in_pm(size_t page_group_id,
+        inline char* get_content_pointer_in_pm(size_t page_group_id,
                                             slot* s) {
             return get_group_type(s) == group_type::SPECIAL_GROUP
-                       ? special_pg[page_group_id].get_tail_pointer_in_page(s)
-                       : normal_pg[page_group_id].get_tail_pointer_in_page(s);
+                       ? special_pg[page_group_id].get_content_pointer_in_page(s)
+                       : normal_pg[page_group_id].get_content_pointer_in_page(s);
         }
 
-        inline T get_tail_v_in_pm(size_t page_group_id, slot* s) {
+        inline T get_value_in_pm(size_t page_group_id, slot* s) {
             return get_group_type(s) == group_type::SPECIAL_GROUP
-                       ? special_pg[page_group_id].get_tail_v_in_page(s)
-                       : normal_pg[page_group_id].get_tail_v_in_page(s);
+                       ? special_pg[page_group_id].get_value_in_page(s)
+                       : normal_pg[page_group_id].get_value_in_page(s);
         }
 
         inline page_group_package get_page_group_package(size_t n_pg,
@@ -1679,12 +1679,12 @@ class htrie_map {
         return pm->require_group_id(group_type::SPECIAL_GROUP);
     }
 
-    inline char* get_tail_pointer(size_t page_group_id, slot* s) {
-        return pm->get_tail_pointer_in_pm(page_group_id, s);
+    inline char* get_content_pointer(size_t page_group_id, slot* s) {
+        return pm->get_content_pointer_in_pm(page_group_id, s);
     }
 
-    inline T get_tail_v(size_t page_group_id, slot* s) {
-        return pm->get_tail_v_in_pm(page_group_id, s);
+    inline T get_value(size_t page_group_id, slot* s) {
+        return pm->get_value_in_pm(page_group_id, s);
     }
 
     inline slot write_kv(size_t page_group_id, const CharT* key, size_t keysize,
@@ -1712,7 +1712,7 @@ class htrie_map {
             if (index != -1) {
                 hash_node* hnode = (hash_node*)node;
                 slot* sl = hnode->get_column_store_slot(index);
-                res = res + string(pm->get_tail_pointer_in_pm(
+                res = res + string(pm->get_content_pointer_in_pm(
                                        hnode->get_page_group_id(sl), sl),
                                    sl->get_length());
             }
@@ -1864,8 +1864,8 @@ class htrie_map {
         void print_slot(page_group_package &pgp) {
             cout << get_special() << "," << get_length() << "," << get_pos()
                 << "," << get_page_id() << ","
-                << string(pgp.get_tail_pointer(this), get_length()) << ","
-                << pgp.get_tail_v(this) << endl;
+                << string(pgp.get_content_pointer(this), get_length()) << ","
+                << pgp.get_value(this) << endl;
         }
     };
 
@@ -1892,6 +1892,7 @@ class htrie_map {
         }
     };
 
+    // TODO: divided into find and insert mode
     std::pair<bool, T> access_kv_in_htrie_map(anode* start_node,
                                               const CharT* key, size_t key_size,
                                               T v, bool findMode,
