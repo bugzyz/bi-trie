@@ -10,36 +10,29 @@
 #include <boost/unordered_map.hpp>
 
 /*---- Default configuration ---*/
-#define DEFAULT_Associativity (8)
-#define DEFAULT_Bucket_num (59)
-#define DEFAULT_NORMAL_PAGE_SIZE (4096)
-#define DEFAULT_SPECIAL_PAGE_SIZE (4 * 4096)
-#define DEFAULT_CUCKOO_HASH_RATIO (0.5)
+static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
+static const unsigned int DEFAULT_BUCKET_NUM = 59;
+static const unsigned int DEFAULT_NORMAL_PAGE_SIZE = 4096;
+static const unsigned int DEFAULT_SPECIAL_PAGE_SIZE = 16384;
+static const double DEFAULT_CUCKOO_HASH_RATIO = 0.5;
 
 /*---- Slot use bits configuration ---*/
-// normal slot
-#define NBITS_SPECIAL 1
-#define NBITS_LEN 7   // 128 length
-#define NBITS_POS 12  // 4096(1 align) pos
-#define NBITS_PID 12  // 4096 page
-// special slot
-#define NBITS_SPECIAL_S 1
-#define NBITS_LEN_S 13  // 8192 length
-#define NBITS_POS_S 9   // 512(32 align) pos
-#define NBITS_PID_S 9   // 512 page
+enum { NBITS_SPECIAL = 1, NBITS_SPECIAL_S = 1 };  // is special
+enum { NBITS_LEN = 7, NBITS_LEN_S = 13 };         // length
+enum { NBITS_PID = 12, NBITS_PID_S = 8 };         // page id
+enum { NBITS_POS = 12, NBITS_POS_S = 9 };         // position in page
+
 // normal/special bound
-#define MAX_NORMAL_LEN (1 << NBITS_LEN)
+static const unsigned int MAX_NORMAL_LEN = (1 << NBITS_LEN);
 
 /*---- page manager configuration ---*/
-#define MAX_NORMAL_PAGE (1 << NBITS_PID)
-#define MAX_SPECIAL_PAGE (1 << NBITS_PID_S)
-#define DEFAULT_SPECIAL_ALIGNMENT 32
-#define DEFAULT_NORMAL_ALIGNMENT 1
+static const unsigned int DEFAULT_NORMAL_PAGE_NUMBER = (1 << NBITS_PID);
+static const unsigned int DEFAULT_SPECIAL_PAGE_NUMBER = (1 << NBITS_PID_S);
+static const unsigned int DEFAULT_SPECIAL_ALIGNMENT = 32;
+static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
 
 /*---- fast path configuration ---*/
-#define FAST_PATH_NODE_NUM (20)
-
-static uint32_t longest_string_size;
+static const unsigned int FAST_PATH_NODE_NUM = 20;
 
 /*---- For information ---*/
 // todo: wait to be deleted, just for recording the time that expand() cost
@@ -55,13 +48,12 @@ uint64_t cuckoohash_cost_time = 0;
 uint64_t cuckoohash_total_num = 0;
 
 // fast path establish
-
+uint64_t establish_fastpath_cost_time = 0;
 
 namespace myTrie {
 using namespace std;
-// charT = char, T = value type, keysizeT = the type describe keysize
-template <class CharT, class T, size_t Bucket_num = DEFAULT_Bucket_num, 
-            size_t Associativity = DEFAULT_Associativity, class KeySizeT = std::uint16_t>
+// charT = char, T = value type
+template <class CharT, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class htrie_map {
    private:
     static bool key_equal(const CharT* key_lhs, std::size_t key_size_lhs,
@@ -150,10 +142,7 @@ class htrie_map {
     class page;
 
     /* group type divided by the keysize */
-    enum class group_type : unsigned char {
-        NORMAL_GROUP,
-        SPECIAL_GROUP,
-    };
+    enum class group_type : unsigned char { NORMAL_GROUP, SPECIAL_GROUP };
 
     /* node type definition */
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
@@ -170,7 +159,6 @@ class htrie_map {
     }
 
    private:
-    // Slot
     class slot {
        public:
         uint32_t encode;
@@ -205,11 +193,11 @@ class htrie_map {
 
         bool is_special() { return get_special(); }
 
-        slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
+        slot(bool is_special, size_t l, size_t p, size_t pi) {
             encode = encode_slot(is_special, l, p, pi);
         }
 
-        void set_slot(bool is_special, KeySizeT l, size_t p, size_t pi) {
+        void set_slot(bool is_special, size_t l, size_t p, size_t pi) {
             encode = encode_slot(is_special, l, p, pi);
         }
 
@@ -700,7 +688,7 @@ class htrie_map {
 
         void print_key_metas(htrie_map<CharT, T>* hm) {
             page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
-            for (int i = 0; i != Bucket_num; i++) {
+            for (int i = 0; i != BUCKET_NUM; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
                     print_slot(i, j, pm_agent);
                 }
@@ -713,15 +701,15 @@ class htrie_map {
         explicit hash_node(trie_node* p,const string &prefix, page_manager* pm,
                            size_t need_associativity = 1)
             : anode(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
-              cur_associativity(need_associativity > Associativity
-                                    ? Associativity
+              cur_associativity(need_associativity > ASSOCIATIVITY
+                                    ? ASSOCIATIVITY
                                     : need_associativity),
               elem_num(0),
               normal_pgid(pm->require_group_id(group_type::NORMAL_GROUP)),
               special_pgid(pm->require_group_id(group_type::SPECIAL_GROUP)) {
             anode::set_prefix(prefix);
 
-            key_metas = new slot[cur_associativity * Bucket_num]();
+            key_metas = new slot[cur_associativity * BUCKET_NUM]();
         }
 
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
@@ -744,7 +732,7 @@ class htrie_map {
                 resize_type == group_type::SPECIAL_GROUP ? 
                 new_pm->get_page_manager_agent(-1, new_pgid) : new_pm->get_page_manager_agent(new_pgid, -1);
 
-            for (int i = 0; i != Bucket_num; i++) {
+            for (int i = 0; i != BUCKET_NUM; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
                     slot* s = get_slot(i, j);
 
@@ -790,12 +778,12 @@ class htrie_map {
          */
         inline slot* get_column_store_slot(int column_store_index) {
             return key_metas +
-                   (cur_associativity * (column_store_index % Bucket_num)) +
-                   column_store_index / Bucket_num;
+                   (cur_associativity * (column_store_index % BUCKET_NUM)) +
+                   column_store_index / BUCKET_NUM;
         }
 
         inline int get_column_store_index(slot* s) {
-            return Bucket_num * (get_index(s) % cur_associativity) +
+            return BUCKET_NUM * (get_index(s) % cur_associativity) +
                    (get_index(s) / cur_associativity);
         }
 
@@ -806,18 +794,18 @@ class htrie_map {
 
             // Already max associativity
             // We cannot expand anymore, return -1
-            if (cur_associativity == Associativity) return -1;
+            if (cur_associativity == ASSOCIATIVITY) return -1;
 
             // Get the associativity we need, expand 2 times of cur_associativity
             unsigned int need_associativity = cur_associativity << 1;
-            if (need_associativity > Associativity) {
-                need_associativity = Associativity;
+            if (need_associativity > ASSOCIATIVITY) {
+                need_associativity = ASSOCIATIVITY;
             }
 
             // Allocate a bigger memory for new key_metas
-            slot* new_key_metas = new slot[need_associativity * Bucket_num]();
+            slot* new_key_metas = new slot[need_associativity * BUCKET_NUM]();
 
-            for (int i = 0; i != Bucket_num; i++) {
+            for (int i = 0; i != BUCKET_NUM; i++) {
                 for (int j = 0; j != need_associativity; j++) {
                     slot* cur_new_slot =
                         new_key_metas + i * need_associativity + j;
@@ -865,8 +853,8 @@ class htrie_map {
         inline size_t get_another_bucketid(page_manager_agent& pm_agent, slot* s,
                                            size_t current_bucketid) {
             const char* key = pm_agent.get_content_pointer(s);
-            size_t bucketid1 = hash(key, s->get_length(), 1) % Bucket_num;
-            size_t bucketid2 = hash(key, s->get_length(), 2) % Bucket_num;
+            size_t bucketid1 = hash(key, s->get_length(), 1) % BUCKET_NUM;
+            size_t bucketid2 = hash(key, s->get_length(), 2) % BUCKET_NUM;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
@@ -876,9 +864,9 @@ class htrie_map {
             uint64_t sta = get_time();
 
             // Set up the backup for recovery if the cuckoo hash fail
-            slot* key_metas_backup = new slot[Bucket_num * cur_associativity]();
+            slot* key_metas_backup = new slot[BUCKET_NUM * cur_associativity]();
             memcpy(key_metas_backup, key_metas,
-                   Bucket_num * cur_associativity * sizeof(slot));
+                   BUCKET_NUM * cur_associativity * sizeof(slot));
 
             int ret_index = -1;
 
@@ -898,7 +886,7 @@ class htrie_map {
                 hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
 
             map<T, int> searchPoint_wait_2_be_update;
-            for (int cuckoo_hash_time = 0; cuckoo_hash_time != Bucket_num * Associativity * DEFAULT_CUCKOO_HASH_RATIO;
+            for (int cuckoo_hash_time = 0; cuckoo_hash_time != BUCKET_NUM * ASSOCIATIVITY * DEFAULT_CUCKOO_HASH_RATIO;
                  cuckoo_hash_time++) {
                 /*
                  * The get_previous_slotid_in_same_bucket() will cause the -1 if
@@ -963,7 +951,7 @@ class htrie_map {
 
             // Recover the key_metas
             memcpy(key_metas, key_metas_backup,
-                   Bucket_num * cur_associativity * sizeof(slot));
+                   BUCKET_NUM * cur_associativity * sizeof(slot));
 
             delete[] key_metas_backup;
             delete extra_slot;
@@ -1000,14 +988,14 @@ class htrie_map {
                     pm->get_page_manager_agent(normal_pgid, special_pgid);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
-            size_t bucketId1 = hash(key, keysize, 1) % Bucket_num;
-            found_result res1 = find_in_bucket(bucketId1, key, keysize, pm_agent);
+            size_t bucket_id1 = hash(key, keysize, 1) % BUCKET_NUM;
+            found_result res1 = find_in_bucket(bucket_id1, key, keysize, pm_agent);
             if (res1.is_founded()) {
                 return res1;
             }
 
-            size_t bucketId2 = hash(key, keysize, 2) % Bucket_num;
-            found_result res2 = find_in_bucket(bucketId2, key, keysize, pm_agent);
+            size_t bucket_id2 = hash(key, keysize, 2) % BUCKET_NUM;
+            found_result res2 = find_in_bucket(bucket_id2, key, keysize, pm_agent);
             if (res2.is_founded()) {
                 return res2;
             }
@@ -1034,7 +1022,7 @@ class htrie_map {
                 const string& prefix = this->anode::get_prefix();
 
                 trie_node* new_parent =
-                    hm->burst(burst_package(this, key_metas, Bucket_num,
+                    hm->burst(burst_package(this, key_metas, BUCKET_NUM,
                                             cur_associativity, pm_agent),
                               this->anode::get_parent(), prefix);
 
@@ -1045,7 +1033,7 @@ class htrie_map {
             }
 
             // now the slotid cannot be -1 and slotid is lower than
-            // Associativity
+            // ASSOCIATIVITY
             assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity);
 
             slot* target_slot = get_slot(bucketid, slotid);
@@ -1258,11 +1246,9 @@ class htrie_map {
                     // append the string
                     std::memcpy(content + cur_pos, key,
                                 keysize * sizeof(CharT));
-
                     // append the value
                     std::memcpy(content + cur_pos + keysize * sizeof(CharT),
                                 &value, sizeof(T));
-
                     cur_pos += calc_align(keysize * sizeof(CharT) + sizeof(T),
                                           alignment);
                 }
@@ -1280,7 +1266,7 @@ class htrie_map {
             void init_pg(int page_number, bool spe) {
                 is_special = spe;
                 cur_page_id = 0;
-                pages = new page[spe ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE]();
+                pages = new page[spe ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER]();
                 pages[0].init_page(spe ? DEFAULT_SPECIAL_PAGE_SIZE
                                        : DEFAULT_NORMAL_PAGE_SIZE);
             }
@@ -1331,7 +1317,7 @@ class htrie_map {
             }
 
             inline size_t get_max_page_id(){
-                return is_special ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE;
+                return is_special ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER;
             }
 
             inline size_t get_max_per_page_size() {
@@ -1455,11 +1441,11 @@ class htrie_map {
         void init_a_new_page_group(group_type type, size_t page_group_index) {
             if (type == group_type::SPECIAL_GROUP) {
                 s_size++;
-                special_pg[page_group_index].init_pg(MAX_SPECIAL_PAGE, true);
+                special_pg[page_group_index].init_pg(DEFAULT_SPECIAL_PAGE_NUMBER, true);
                 return;
             } else if (type == group_type::NORMAL_GROUP) {
                 n_size++;
-                normal_pg[page_group_index].init_pg(MAX_NORMAL_PAGE, false);
+                normal_pg[page_group_index].init_pg(DEFAULT_NORMAL_PAGE_NUMBER, false);
                 return;
             } else {
                 cout << "undefined type!" << endl;
@@ -1565,6 +1551,7 @@ class htrie_map {
         bool is_bucket_full() { return slotid == -1; }
     };
 
+    uint32_t longest_string_size;
     // TODO: divided into find and insert mode
     std::pair<bool, T> access_kv_in_htrie_map(anode* start_node,
                                               const CharT* key, size_t key_size,
@@ -1652,12 +1639,12 @@ class htrie_map {
 
    public:
     htrie_map()
-        : t_root(nullptr), pm(new page_manager()) {
+        : t_root(nullptr), pm(new page_manager()), longest_string_size(0) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
         cout << "PM\n";
 
-        t_root = new hash_node(nullptr, string(), pm, Associativity);
+        t_root = new hash_node(nullptr, string(), pm, ASSOCIATIVITY);
     }
 
     // TODO deconstructor
