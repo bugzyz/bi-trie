@@ -136,15 +136,15 @@ class htrie_map {
     class page_group;
     class page;
 
-    /* group type divided by the keysize */
+    /* group type divided by the key_size */
     enum class group_type : unsigned char { NORMAL_GROUP, SPECIAL_GROUP };
 
     /* node type definition */
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
 
     /* helper function */
-    static inline group_type get_group_type(size_t keysize) {
-        return keysize < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
+    static inline group_type get_group_type(size_t key_size) {
+        return key_size < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                         : group_type::SPECIAL_GROUP;
     }
 
@@ -281,17 +281,17 @@ class htrie_map {
         }
 
         // Try to insert element to its right group and return availability
-        inline bool try_insert(size_t keysize) {
-            return get_group_type(keysize) == group_type::SPECIAL_GROUP
-                       ? s_group->try_insert(keysize)
-                       : n_group->try_insert(keysize);
+        inline bool try_insert(size_t key_size) {
+            return get_group_type(key_size) == group_type::SPECIAL_GROUP
+                       ? s_group->try_insert(key_size)
+                       : n_group->try_insert(key_size);
         }
 
         // Insert element to its right group and return the slot(position)
-        inline slot insert_element(const K_unit* key, size_t keysize, T v) {
-            return get_group_type(keysize) == group_type::SPECIAL_GROUP
-                       ? s_group->write_kv_to_page(key, keysize, v)
-                       : n_group->write_kv_to_page(key, keysize, v);
+        inline slot insert_element(const K_unit* key, size_t key_size, T v) {
+            return get_group_type(key_size) == group_type::SPECIAL_GROUP
+                       ? s_group->write_kv_to_page(key, key_size, v)
+                       : n_group->write_kv_to_page(key, key_size, v);
         }
     };
 
@@ -963,34 +963,34 @@ class htrie_map {
         // iterator:    if slotid==-1, bucket is full
         //              if slotid!=-1, slotid is the insert position
         found_result find_in_bucket(size_t bucketid, const K_unit* key,
-                                    size_t keysize, page_manager_agent& pm_agent) {
+                                    size_t key_size, page_manager_agent& pm_agent) {
             // find the hitted slot in hashnode
             for (int i = 0; i != cur_associativity; i++) {
                 slot* target_slot = get_slot(bucketid, i);
                 if (target_slot->is_empty())
                     return found_result(false, T(), bucketid, i);
 
-                if (key_equal(key, keysize, pm_agent.get_content_pointer(target_slot),
+                if (key_equal(key, key_size, pm_agent.get_content_pointer(target_slot),
                             target_slot->get_length()))
                     return found_result(true, pm_agent.get_value(target_slot), bucketid, i);
             }
             return found_result(false, T(), bucketid, -1);
         }
 
-        found_result search_kv_in_hashnode(const K_unit* key, size_t keysize,
+        found_result search_kv_in_hashnode(const K_unit* key, size_t key_size,
                                        page_manager* pm) {
             page_manager_agent pm_agent = 
                     pm->get_page_manager_agent(normal_pgid, special_pgid);
             // if found the existed target in bucket1 or bucket2, just
             // return the iterator for being modified or read
-            size_t bucket_id1 = hash(key, keysize, 1) % BUCKET_NUM;
-            found_result res1 = find_in_bucket(bucket_id1, key, keysize, pm_agent);
+            size_t bucket_id1 = hash(key, key_size, 1) % BUCKET_NUM;
+            found_result res1 = find_in_bucket(bucket_id1, key, key_size, pm_agent);
             if (res1.is_founded()) {
                 return res1;
             }
 
-            size_t bucket_id2 = hash(key, keysize, 2) % BUCKET_NUM;
-            found_result res2 = find_in_bucket(bucket_id2, key, keysize, pm_agent);
+            size_t bucket_id2 = hash(key, key_size, 2) % BUCKET_NUM;
+            found_result res2 = find_in_bucket(bucket_id2, key, key_size, pm_agent);
             if (res2.is_founded()) {
                 return res2;
             }
@@ -1004,7 +1004,7 @@ class htrie_map {
         }
 
         void insert_kv_in_hashnode(const K_unit* key,
-                                                 size_t keysize, htrie_map* hm,
+                                                 size_t key_size, htrie_map* hm,
                                                  T v, found_result fr) {
             size_t bucketid = fr.bucketid;
             int slotid = fr.slotid;
@@ -1021,7 +1021,7 @@ class htrie_map {
                                             cur_associativity, pm_agent),
                               this->anode::get_parent(), prefix);
 
-                hm->access_kv_in_htrie_map(new_parent, key, keysize, v, false,
+                hm->access_kv_in_htrie_map(new_parent, key, key_size, v, false,
                                             prefix.data(), prefix.size());
                 delete this;
                 return;
@@ -1044,14 +1044,14 @@ class htrie_map {
              * write the content to original page group
              */
 
-            if(!pm_agent.try_insert(keysize)) {
-                hm->pm->resize(get_group_type(keysize), hm);
+            if(!pm_agent.try_insert(key_size)) {
+                hm->pm->resize(get_group_type(key_size), hm);
                 pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
             }
 
             // call htrie-map function: write_kv_to_page ()
             // return a slot with position that element been written
-            target_slot->set_slot(pm_agent.insert_element(key, keysize, v));
+            target_slot->set_slot(pm_agent.insert_element(key, key_size, v));
 
             // set v2k
             hm->set_v2k(v, this, get_column_store_index(target_slot));
@@ -1181,17 +1181,17 @@ class htrie_map {
         // Get the common_prefix to eliminate the redundant burst
         string common_prefix = bp.get_common_prefix();
         const char* common_prefix_key = common_prefix.data();
-        unsigned int common_prefix_keysize = common_prefix.size();
+        unsigned int common_prefix_key_size = common_prefix.size();
 
         // New prefix = prior prefix + common chain prefix
         string prefix = orig_prefix + common_prefix;
 
         // Create the common prefix trie chain with several single trie_node
-        // The number of node is common_prefix_keysize
-        for (int i = 0; i != common_prefix_keysize; i++) {
+        // The number of node is common_prefix_key_size
+        for (int i = 0; i != common_prefix_key_size; i++) {
             trie_node* cur_trie_node =
                 new trie_node(parent, prefix.data(),
-                                prefix.size() - common_prefix_keysize + i + 1);
+                                prefix.size() - common_prefix_key_size + i + 1);
             parent->add_child(common_prefix_key[i], cur_trie_node);
             parent = cur_trie_node;
         }
@@ -1200,8 +1200,8 @@ class htrie_map {
         while (bp.size() != 0) {
                 slot s = bp.top();
 
-                char* new_key = bp.get_agent().get_content_pointer(&s) + common_prefix_keysize;
-                size_t length_left = s.get_length() - common_prefix_keysize;
+                char* new_key = bp.get_agent().get_content_pointer(&s) + common_prefix_key_size;
+                size_t length_left = s.get_length() - common_prefix_key_size;
                 T v = bp.get_agent().get_value(&s);
 
                 access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
@@ -1234,15 +1234,15 @@ class htrie_map {
                     content = (char*)malloc(size_per_page);
                 }
 
-                void append_impl(const K_unit* key, size_t keysize, T& value,
+                void append_impl(const K_unit* key, size_t key_size, T& value,
                                  unsigned int alignment = 1) {
                     // append the string
                     std::memcpy(content + cur_pos, key,
-                                keysize * sizeof(K_unit));
+                                key_size * sizeof(K_unit));
                     // append the value
-                    std::memcpy(content + cur_pos + keysize * sizeof(K_unit),
+                    std::memcpy(content + cur_pos + key_size * sizeof(K_unit),
                                 &value, sizeof(T));
-                    cur_pos += calc_align(keysize * sizeof(K_unit) + sizeof(T),
+                    cur_pos += calc_align(key_size * sizeof(K_unit) + sizeof(T),
                                           alignment);
                 }
 
@@ -1277,9 +1277,9 @@ class htrie_map {
             }
 
             // set function
-            slot write_kv_to_page(const K_unit* key, size_t keysize, T v) {
+            slot write_kv_to_page(const K_unit* key, size_t key_size, T v) {
                 // allocate space
-                size_t need_size = keysize * sizeof(K_unit) + sizeof(T);
+                size_t need_size = key_size * sizeof(K_unit) + sizeof(T);
 
                 if (pages[cur_page_id].cur_pos + need_size >
                     (is_special ? DEFAULT_SPECIAL_PAGE_SIZE
@@ -1295,10 +1295,10 @@ class htrie_map {
 
                 // record position before updating and status modify
                 slot ret_slot =
-                    slot(is_special, keysize, target_page.cur_pos, cur_page_id);
+                    slot(is_special, key_size, target_page.cur_pos, cur_page_id);
 
                 // write content
-                target_page.append_impl(key, keysize, v,
+                target_page.append_impl(key, key_size, v,
                                         is_special ? DEFAULT_SPECIAL_ALIGNMENT
                                                    : DEFAULT_NORMAL_ALIGNMENT);
 
@@ -1317,10 +1317,10 @@ class htrie_map {
                 return is_special ? DEFAULT_SPECIAL_PAGE_SIZE : DEFAULT_NORMAL_PAGE_SIZE;
             }
 
-            bool try_insert(size_t try_insert_keysize) {
+            bool try_insert(size_t try_insert_key_size) {
                 if (cur_page_id + 1 < get_max_page_id()) return true;
                 if ((pages[cur_page_id].cur_pos +
-                     try_insert_keysize * sizeof(K_unit) + sizeof(T)) <=
+                     try_insert_key_size * sizeof(K_unit) + sizeof(T)) <=
                     get_max_per_page_size())
                     return true;
                 return false;
