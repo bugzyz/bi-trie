@@ -43,6 +43,8 @@ uint64_t cuckoohash_total_num = 0;
 // fast path establish
 uint64_t establish_fastpath_cost_time = 0;
 
+// TODO: myTrie, htrie_map rename: 
+// myTrie: zyz_trie, htrie_map: bi_trie
 namespace myTrie {
 using namespace std;
 // charT = char, T = value type
