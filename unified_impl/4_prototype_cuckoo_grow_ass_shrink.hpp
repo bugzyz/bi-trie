@@ -13,24 +13,20 @@
 static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
 static const unsigned int DEFAULT_BUCKET_NUM = 59;
 static const unsigned int DEFAULT_NORMAL_PAGE_SIZE = 4096;
-static const unsigned int DEFAULT_SPECIAL_PAGE_SIZE = 16384;
+static const unsigned int DEFAULT_SPECIAL_PAGE_SIZE = (4096 * 4);
 static const double DEFAULT_CUCKOO_HASH_RATIO = 0.5;
-
-/*---- Slot use bits configuration ---*/
+/*---- slot use bits configuration ---*/
 enum { NBITS_SPECIAL = 1, NBITS_SPECIAL_S = 1 };  // is special
 enum { NBITS_LEN = 7, NBITS_LEN_S = 13 };         // length
 enum { NBITS_PID = 12, NBITS_PID_S = 8 };         // page id
 enum { NBITS_POS = 12, NBITS_POS_S = 9 };         // position in page
-
 // normal/special bound
 static const unsigned int MAX_NORMAL_LEN = (1 << NBITS_LEN);
-
 /*---- page manager configuration ---*/
 static const unsigned int DEFAULT_NORMAL_PAGE_NUMBER = (1 << NBITS_PID);
 static const unsigned int DEFAULT_SPECIAL_PAGE_NUMBER = (1 << NBITS_PID_S);
 static const unsigned int DEFAULT_SPECIAL_ALIGNMENT = 32;
 static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
-
 /*---- fast path configuration ---*/
 static const unsigned int FAST_PATH_NODE_NUM = 20;
 
@@ -39,14 +35,11 @@ static const unsigned int FAST_PATH_NODE_NUM = 20;
 // burst
 uint32_t burst_total_counter = 0;
 uint64_t burst_total_time = 0;
-
 // expand
 uint64_t expand_cost_time = 0;
-
 // cuckoo hash
 uint64_t cuckoohash_cost_time = 0;
 uint64_t cuckoohash_total_num = 0;
-
 // fast path establish
 uint64_t establish_fastpath_cost_time = 0;
 
