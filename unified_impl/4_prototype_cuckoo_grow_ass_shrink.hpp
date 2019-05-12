@@ -1022,7 +1022,7 @@ class htrie_map {
                 const string& prefix = this->anode::get_prefix();
 
                 trie_node* new_parent =
-                    hm->burst(burst_package(this, key_metas, BUCKET_NUM,
+                    hm->burst(burst_package(key_metas, BUCKET_NUM,
                                             cur_associativity, pm_agent),
                               this->anode::get_parent(), prefix);
 
@@ -1084,14 +1084,13 @@ class htrie_map {
     */
     class burst_package {
        private:
-        hash_node* bursting_node_;
         page_manager_agent pm_agent_;
         vector<slot> elems_;
 
        public:
-        burst_package(hash_node* bursting_node, slot* elems, size_t bucket_num,
+        burst_package(slot* elems, size_t bucket_num,
                       size_t associativity, page_manager_agent pm_agent)
-            : bursting_node_(bursting_node), pm_agent_(pm_agent) {
+            : pm_agent_(pm_agent) {
           for (int i = 0; i != bucket_num; i++)
             for (int j = 0; j != associativity; j++) {
               slot* s = elems + i * associativity + j;
@@ -1124,7 +1123,6 @@ class htrie_map {
 
         size_t size() {return elems_.size(); }
         page_manager_agent get_agent() const { return pm_agent_; }
-        const hash_node* get_bursting_node() const {return bursting_node_; }
 
         void print_bp() {
             cout << "-----------------\n";
@@ -1397,9 +1395,9 @@ class htrie_map {
 
         void remove_burst_package(const burst_package *const rm_bp_ptr){
             for(auto it = notify_list.begin(); it!=notify_list.end(); it++) {
-                if( (*it)->get_bursting_node() == rm_bp_ptr->get_bursting_node()){ 
+                if( *it == rm_bp_ptr){ 
                     notify_list.erase(it);
-                    break;
+                    return;
                 }
             }
         }
@@ -1438,12 +1436,12 @@ class htrie_map {
         }
 
        private:
-        void init_a_new_page_group(group_type type, size_t page_group_index) {
-            if (type == group_type::SPECIAL_GROUP) {
+        void init_a_new_page_group(group_type init_type, size_t page_group_index) {
+            if (init_type == group_type::SPECIAL_GROUP) {
                 s_size++;
                 special_pg[page_group_index].init_pg(DEFAULT_SPECIAL_PAGE_NUMBER, true);
                 return;
-            } else if (type == group_type::NORMAL_GROUP) {
+            } else if (init_type == group_type::NORMAL_GROUP) {
                 n_size++;
                 normal_pg[page_group_index].init_pg(DEFAULT_NORMAL_PAGE_NUMBER, false);
                 return;
@@ -1650,7 +1648,7 @@ class htrie_map {
     // TODO deconstructor
 
     /*---------------external accessing interface-------------------*/
-
+    // TODO: adapt to wukong's interface
     // search operation
     T searchByKey(std::string key) {
         return access_kv_in_htrie_map(t_root, key.data(), key.size(), T(), true).second;
