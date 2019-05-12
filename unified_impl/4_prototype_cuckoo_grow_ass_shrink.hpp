@@ -1,24 +1,11 @@
-#include <stddef.h>
-#include <climits>
-#include <cstdint>
-
-#include <cstdlib>
-#include <vector>
-
-#include <iostream>
-#include <queue>
-#include <sstream>
 #include "../util/my_timer.hpp"
 
-#include <fstream>
-#include <ios>
 #include <iostream>
+#include <vector>
+#include <queue>
 #include <string>
 
 #include <assert.h>
-
-//for min(x,y)
-#include <algorithm>
 
 #include <boost/unordered_map.hpp>
 
