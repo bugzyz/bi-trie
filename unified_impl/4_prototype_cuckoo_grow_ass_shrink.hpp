@@ -47,19 +47,19 @@ uint64_t establish_fastpath_cost_time = 0;
 // myTrie: zyz_trie, htrie_map: bi_trie
 namespace myTrie {
 using namespace std;
-// charT = char, T = value type
-template <class CharT, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
+// K_unit = char, T = value type
+template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class htrie_map {
    private:
-    static bool key_equal(const CharT* key_lhs, std::size_t key_size_lhs,
-                const CharT* key_rhs, std::size_t key_size_rhs) {
+    static bool key_equal(const K_unit* key_lhs, std::size_t key_size_lhs,
+                const K_unit* key_rhs, std::size_t key_size_rhs) {
         if (key_size_lhs == 0 && key_size_rhs == 0) {
             return true;
         }
         if (key_size_lhs != key_size_rhs) {
             return false;
         } else {
-            return std::memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(CharT)) ==
+            return std::memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(K_unit)) ==
                 0;
         }
     }
@@ -112,7 +112,7 @@ class htrie_map {
         return mix(h);
     }
 
-    static size_t hash(const CharT* key, std::size_t key_size, size_t hashType = 1) {
+    static size_t hash(const K_unit* key, std::size_t key_size, size_t hashType = 1) {
         uint64_t hash;
         if (hashType == 1) {
             hash = fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
@@ -288,7 +288,7 @@ class htrie_map {
         }
 
         // Insert element to its right group and return the slot(position)
-        inline slot insert_element(const CharT* key, size_t keysize, T v) {
+        inline slot insert_element(const K_unit* key, size_t keysize, T v) {
             return get_group_type(keysize) == group_type::SPECIAL_GROUP
                        ? s_group->write_kv_to_page(key, keysize, v)
                        : n_group->write_kv_to_page(key, keysize, v);
@@ -309,7 +309,7 @@ class htrie_map {
         string prefix_;
 
        public:
-        anode(node_type n_type, trie_node* parent, const CharT *key, size_t key_size)
+        anode(node_type n_type, trie_node* parent, const K_unit *key, size_t key_size)
             : n_type_(n_type),
               parent_(parent),
               have_value_(false),
@@ -339,7 +339,7 @@ class htrie_map {
         virtual vector<anode*> print_node_info() = 0;
 
         found_result insert_value_in_node(const string &prefix, T v,
-                                      htrie_map<CharT, T>* hm) {
+                                      htrie_map<K_unit, T>* hm) {
             value_ = v;
             have_value_ = true;
             hm->set_v2k(v, this, -1);
@@ -542,12 +542,12 @@ class htrie_map {
             
             // TODO
             /* for shrink node */
-            inline void get_childs_with_char(vector<pair<CharT, anode*>>& res) {
+            inline void get_childs_with_char(vector<pair<K_unit, anode*>>& res) {
                 child_node* current_child_node = first_child_;
 
                 while (current_child_node) {
                     res.push_back(
-                        pair<CharT, anode*>(current_child_node->child_node_char,
+                        pair<K_unit, anode*>(current_child_node->child_node_char,
                                                 current_child_node->current));
 
                     current_child_node = current_child_node->next;
@@ -606,7 +606,7 @@ class htrie_map {
             get_childs_vector(res);
             cout << "t:" << (void*)this << " ";
 
-            vector<pair<CharT, anode*>> res2;
+            vector<pair<K_unit, anode*>> res2;
             childs_.get_childs_with_char(res2);
             for (auto c : res2)
                 cout << ((c.second)->is_hash_node() ? "h:" : "t:") << c.first
@@ -621,12 +621,12 @@ class htrie_map {
         }
 
         // add node in child representation
-        void add_child(const CharT c, anode* node) { childs_[c] = node; }
+        void add_child(const K_unit c, anode* node) { childs_[c] = node; }
 
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
-        anode* find_trie_node_child(bool findMode, const CharT* key, size_t &pos,
-                                    size_t key_size, htrie_map<CharT, T>* hm) {
+        anode* find_trie_node_child(bool findMode, const K_unit* key, size_t &pos,
+                                    size_t key_size, htrie_map<K_unit, T>* hm) {
             // Find in fast path
             // If find the target anode in fpm(fast path manager), we return the
             // fast_path_node
@@ -681,7 +681,7 @@ class htrie_map {
                  << s->get_pos() << "," << s->get_page_id() << "," << endl;
         }
 
-        void print_key_metas(htrie_map<CharT, T>* hm) {
+        void print_key_metas(htrie_map<K_unit, T>* hm) {
             page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
             for (int i = 0; i != BUCKET_NUM; i++) {
                 for (int j = 0; j != cur_associativity; j++) {
@@ -854,7 +854,7 @@ class htrie_map {
         }
 
         // Return a empty slot_id in bucketid
-        int cuckoo_hash(size_t bucketid, htrie_map<CharT, T>* hm) {
+        int cuckoo_hash(size_t bucketid, htrie_map<K_unit, T>* hm) {
             cuckoohash_total_num++;
             uint64_t sta = get_time();
 
@@ -962,7 +962,7 @@ class htrie_map {
         // return <found?, iterator>
         // iterator:    if slotid==-1, bucket is full
         //              if slotid!=-1, slotid is the insert position
-        found_result find_in_bucket(size_t bucketid, const CharT* key,
+        found_result find_in_bucket(size_t bucketid, const K_unit* key,
                                     size_t keysize, page_manager_agent& pm_agent) {
             // find the hitted slot in hashnode
             for (int i = 0; i != cur_associativity; i++) {
@@ -977,7 +977,7 @@ class htrie_map {
             return found_result(false, T(), bucketid, -1);
         }
 
-        found_result search_kv_in_hashnode(const CharT* key, size_t keysize,
+        found_result search_kv_in_hashnode(const K_unit* key, size_t keysize,
                                        page_manager* pm) {
             page_manager_agent pm_agent = 
                     pm->get_page_manager_agent(normal_pgid, special_pgid);
@@ -1003,7 +1003,7 @@ class htrie_map {
                 return res1;
         }
 
-        void insert_kv_in_hashnode(const CharT* key,
+        void insert_kv_in_hashnode(const K_unit* key,
                                                  size_t keysize, htrie_map* hm,
                                                  T v, found_result fr) {
             size_t bucketid = fr.bucketid;
@@ -1234,15 +1234,15 @@ class htrie_map {
                     content = (char*)malloc(size_per_page);
                 }
 
-                void append_impl(const CharT* key, size_t keysize, T& value,
+                void append_impl(const K_unit* key, size_t keysize, T& value,
                                  unsigned int alignment = 1) {
                     // append the string
                     std::memcpy(content + cur_pos, key,
-                                keysize * sizeof(CharT));
+                                keysize * sizeof(K_unit));
                     // append the value
-                    std::memcpy(content + cur_pos + keysize * sizeof(CharT),
+                    std::memcpy(content + cur_pos + keysize * sizeof(K_unit),
                                 &value, sizeof(T));
-                    cur_pos += calc_align(keysize * sizeof(CharT) + sizeof(T),
+                    cur_pos += calc_align(keysize * sizeof(K_unit) + sizeof(T),
                                           alignment);
                 }
 
@@ -1277,9 +1277,9 @@ class htrie_map {
             }
 
             // set function
-            slot write_kv_to_page(const CharT* key, size_t keysize, T v) {
+            slot write_kv_to_page(const K_unit* key, size_t keysize, T v) {
                 // allocate space
-                size_t need_size = keysize * sizeof(CharT) + sizeof(T);
+                size_t need_size = keysize * sizeof(K_unit) + sizeof(T);
 
                 if (pages[cur_page_id].cur_pos + need_size >
                     (is_special ? DEFAULT_SPECIAL_PAGE_SIZE
@@ -1320,7 +1320,7 @@ class htrie_map {
             bool try_insert(size_t try_insert_keysize) {
                 if (cur_page_id + 1 < get_max_page_id()) return true;
                 if ((pages[cur_page_id].cur_pos +
-                     try_insert_keysize * sizeof(CharT) + sizeof(T)) <=
+                     try_insert_keysize * sizeof(K_unit) + sizeof(T)) <=
                     get_max_per_page_size())
                     return true;
                 return false;
@@ -1398,7 +1398,7 @@ class htrie_map {
         }
 
         void resize(group_type resize_type,
-                                 htrie_map<CharT, T>* hm,
+                                 htrie_map<K_unit, T>* hm,
                                  size_t expand_ratio = 1) {
             uint64_t sta = get_time();
 
@@ -1547,9 +1547,9 @@ class htrie_map {
     uint32_t longest_string_size;
     // TODO: divided into find and insert mode
     std::pair<bool, T> access_kv_in_htrie_map(anode* start_node,
-                                              const CharT* key, size_t key_size,
+                                              const K_unit* key, size_t key_size,
                                               T v, bool findMode,
-                                              const CharT* prefix_key = nullptr,
+                                              const K_unit* prefix_key = nullptr,
                                               size_t prefix_key_size = 0) {
       // update longest_string_size
       longest_string_size =
