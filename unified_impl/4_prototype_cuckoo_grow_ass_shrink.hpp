@@ -625,7 +625,7 @@ class htrie_map {
 
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
-        anode* find_trie_node_child(bool findMode, const K_unit* key, size_t &pos,
+        anode* find_trie_node_child(const K_unit* key, size_t &pos,
                                     size_t key_size, htrie_map<K_unit, T>* hm) {
             // Find in fast path
             // If find the target anode in fpm(fast path manager), we return the
@@ -642,11 +642,7 @@ class htrie_map {
             // Find in normal path
             anode* target_node = childs_.find(key[pos]);
             pos++;
-            if (findMode) {
-                return target_node;
-            } else {
-                return target_node;
-            }
+            return target_node;
         }
     };
 
@@ -1562,29 +1558,27 @@ class htrie_map {
       // non-fast-path way) while the pos increment
       for (size_t ref_pos = 0; ref_pos < key_size;) {
         switch (current_node->get_node_type()) {
-          case node_type::TRIE_NODE: {
-              trie_node* orig_tnode = (trie_node*)current_node;
-            // return the hitted trie_node* or create a new
-            // trie_node with a hash_node son
-            current_node = ((trie_node*)current_node)
-                               ->find_trie_node_child(findMode, key, ref_pos,
-                                                      key_size, this);
+            case node_type::TRIE_NODE: {
+                trie_node* orig_tnode = (trie_node*)current_node;
+                // return the hitted trie_node* or create a new
+                // trie_node with a hash_node son
+                current_node = orig_tnode->find_trie_node_child(key, ref_pos, key_size, this);
 
-            if(current_node == nullptr){
-                if (findMode) {
-                    return std::pair<bool, T>(false, T());
-                } else {
-                    string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
-                    // Create a corresponding hash_node and add it to current
-                    // trie_node's child representation
-                    current_node =
-                        new hash_node(orig_tnode, new_prefix, pm);
-                    orig_tnode->add_child(key[ref_pos - 1], current_node);
-              }
-            } 
+                if(current_node == nullptr){
+                    if (findMode) {
+                        return std::pair<bool, T>(false, T());
+                    } else {
+                        string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
+                        // Create a corresponding hash_node and add it to current
+                        // trie_node's child representation
+                        current_node =
+                            new hash_node(orig_tnode, new_prefix, pm);
+                        orig_tnode->add_child(key[ref_pos - 1], current_node);
+                    }
+                } 
 
-          } break;
-          case node_type::HASH_NODE: {
+            } break;
+            case node_type::HASH_NODE: {
                 hash_node* hnode = (hash_node*)current_node;
                 found_result res = hnode->search_kv_in_hashnode(key + ref_pos,
                                                         key_size - ref_pos, pm);
@@ -1594,10 +1588,10 @@ class htrie_map {
                     hnode->insert_kv_in_hashnode(key + ref_pos, key_size - ref_pos, this, v, res);
                     return std::pair<bool, T>(res.found, res.v);
                 }
-          } break;
-          default:
-            cout << "wrong type!";
-            exit(0);
+            } break;
+            default:
+                cout << "wrong type!";
+                exit(0);
         }
       }
 
