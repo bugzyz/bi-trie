@@ -8,13 +8,11 @@
 #include <iostream>
 #include <queue>
 #include <sstream>
-#include <stack>
 #include "../util/my_timer.hpp"
 
 #include <fstream>
 #include <ios>
 #include <iostream>
-#include <set>
 #include <string>
 
 #include <assert.h>
@@ -24,81 +22,59 @@
 
 #include <boost/unordered_map.hpp>
 
-/* 
- * DEFAULT_Associativity * DEFAULT_Bucket_num should be set to be greater
- * than 26 for 26 alaphbet and ", @ .etc.(the test in lubm40 shows that it
- * has 50 char species)
- */
-#define DEFAULT_Associativity 8
-#define DEFAULT_Bucket_num 10
-#define DEFAULT_Max_bytes_per_kv 4096
-#define DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO 4
-#define DEFAULT_Burst_ratio 0.75
+/*---- Default configuration ---*/
+#define DEFAULT_Associativity (8)
+#define DEFAULT_Bucket_num (59)
+#define DEFAULT_NORMAL_PAGE_SIZE (4096)
+#define DEFAULT_SPECIAL_PAGE_SIZE (4 * 4096)
+#define DEFAULT_CUCKOO_HASH_RATIO (0.5)
 
-#define ALPHABET 256
-
-#define DEFAULT_SPECIAL_Max_bytes_per_kv \
-    DEFAULT_Max_bytes_per_kv* DEFAULT_SPECIAL_Max_bytes_per_kv_RATIO
-
+/*---- Slot use bits configuration ---*/
+// normal slot
 #define NBITS_SPECIAL 1
 #define NBITS_LEN 7   // 128 length
 #define NBITS_POS 12  // 4096(1 align) pos
 #define NBITS_PID 12  // 4096 page
-
+// special slot
 #define NBITS_SPECIAL_S 1
 #define NBITS_LEN_S 13  // 8192 length
 #define NBITS_POS_S 9   // 512(32 align) pos
 #define NBITS_PID_S 9   // 512 page
-
-#define MAX_NORMAL_PAGE (1 << NBITS_PID)
-#define MAX_SPECIAL_PAGE (1 << NBITS_PID_S)
-
+// normal/special bound
 #define MAX_NORMAL_LEN (1 << NBITS_LEN)
 
-// #define DEFAULT_SPECIAL_ALIGNMENT \
-//     DEFAULT_SPECIAL_Max_bytes_per_kv / (1 << NBITS_POS_S)
+/*---- page manager configuration ---*/
+#define MAX_NORMAL_PAGE (1 << NBITS_PID)
+#define MAX_SPECIAL_PAGE (1 << NBITS_PID_S)
 #define DEFAULT_SPECIAL_ALIGNMENT 32
 #define DEFAULT_NORMAL_ALIGNMENT 1
 
+/*---- fast path configuration ---*/
 #define FAST_PATH_NODE_NUM (20)
 
 static uint32_t longest_string_size;
 
-uint32_t recal_element_num_of_1st_char_counter = 0;
-uint32_t burst_total_counter = 0;
-
-uint64_t burst_total_time = 0;
-uint64_t cal_prefix_total_time = 0;
-uint64_t write_page_total_time = 0;
-
+/*---- For information ---*/
 // todo: wait to be deleted, just for recording the time that expand() cost
+// burst
+uint32_t burst_total_counter = 0;
+uint64_t burst_total_time = 0;
+
+// expand
 uint64_t expand_cost_time = 0;
-uint64_t rehash_cost_time = 0;
-uint64_t rehash_total_num = 0;
 
-uint64_t shrink_total_time = 0;
-uint64_t clean_prefix_total_time = 0;
+// cuckoo hash
+uint64_t cuckoohash_cost_time = 0;
+uint64_t cuckoohash_total_num = 0;
 
-// configuration
-// static size_t Associativity;
-// static size_t Bucket_num;
-// static size_t Max_bytes_per_kv;
-// static double Burst_ratio;
-// static size_t Max_slot_num;
-// static size_t Max_loop;
+// fast path establish
 
-size_t Associativity;
-size_t Bucket_num;
-size_t Max_bytes_per_kv;
-double Burst_ratio;
-size_t Max_slot_num;
-size_t Max_loop;
-
-using namespace std;
 
 namespace myTrie {
+using namespace std;
 // charT = char, T = value type, keysizeT = the type describe keysize
-template <class CharT, class T, class KeySizeT = std::uint16_t>
+template <class CharT, class T, size_t Bucket_num = DEFAULT_Bucket_num, 
+            size_t Associativity = DEFAULT_Associativity, class KeySizeT = std::uint16_t>
 class htrie_map {
    private:
     static bool key_equal(const CharT* key_lhs, std::size_t key_size_lhs,
@@ -909,7 +885,7 @@ class htrie_map {
 
         // Return a empty slot_id in bucketid
         int cuckoo_hash(size_t bucketid, htrie_map<CharT, T>* hm) {
-            rehash_total_num++;
+            cuckoohash_total_num++;
             uint64_t sta = get_time();
 
             // Set up the backup for recovery if the cuckoo hash fail
@@ -935,7 +911,7 @@ class htrie_map {
                 hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
 
             map<T, int> searchPoint_wait_2_be_update;
-            for (int cuckoo_hash_time = 0; cuckoo_hash_time != Max_loop;
+            for (int cuckoo_hash_time = 0; cuckoo_hash_time != Bucket_num * Associativity * DEFAULT_CUCKOO_HASH_RATIO;
                  cuckoo_hash_time++) {
                 /*
                  * The get_previous_slotid_in_same_bucket() will cause the -1 if
@@ -985,7 +961,7 @@ class htrie_map {
                     hm->apply_the_changed_searchPoint(
                         searchPoint_wait_2_be_update);
 
-                    rehash_cost_time += get_time() - sta;
+                    cuckoohash_cost_time += get_time() - sta;
 
                     // return slot_id
                     return ret_index % cur_associativity;
@@ -1005,7 +981,7 @@ class htrie_map {
             delete[] key_metas_backup;
             delete extra_slot;
 
-            rehash_cost_time += get_time() - sta;
+            cuckoohash_cost_time += get_time() - sta;
 
             // The cuckoo hash time exceeds Max_loop return -1 as slotid to
             // indicate cuckoo hash failed
@@ -1318,8 +1294,8 @@ class htrie_map {
                 is_special = spe;
                 cur_page_id = 0;
                 pages = new page[spe ? MAX_SPECIAL_PAGE : MAX_NORMAL_PAGE]();
-                pages[0].init_page(spe ? DEFAULT_SPECIAL_Max_bytes_per_kv
-                                       : DEFAULT_Max_bytes_per_kv);
+                pages[0].init_page(spe ? DEFAULT_SPECIAL_PAGE_SIZE
+                                       : DEFAULT_NORMAL_PAGE_SIZE);
             }
 
             // get function
@@ -1340,12 +1316,12 @@ class htrie_map {
                 size_t need_size = keysize * sizeof(CharT) + sizeof(T);
 
                 if (pages[cur_page_id].cur_pos + need_size >
-                    (is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
-                                : Max_bytes_per_kv)) {
+                    (is_special ? DEFAULT_SPECIAL_PAGE_SIZE
+                                : DEFAULT_NORMAL_PAGE_SIZE)) {
                     cur_page_id++;
                     pages[cur_page_id].init_page(
-                        is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv
-                                   : DEFAULT_Max_bytes_per_kv);
+                        is_special ? DEFAULT_SPECIAL_PAGE_SIZE
+                                   : DEFAULT_NORMAL_PAGE_SIZE);
                 }
 
                 // get page being written
@@ -1372,7 +1348,7 @@ class htrie_map {
             }
 
             inline size_t get_max_per_page_size() {
-                return is_special ? DEFAULT_SPECIAL_Max_bytes_per_kv : DEFAULT_Max_bytes_per_kv;
+                return is_special ? DEFAULT_SPECIAL_PAGE_SIZE : DEFAULT_NORMAL_PAGE_SIZE;
             }
 
             bool try_insert(size_t try_insert_keysize) {
@@ -1688,40 +1664,11 @@ class htrie_map {
     page_manager *pm;
 
    public:
-    htrie_map(size_t customized_associativity = DEFAULT_Associativity,
-              size_t customized_bucket_count = DEFAULT_Bucket_num,
-              size_t customized_byte_per_kv = DEFAULT_Max_bytes_per_kv,
-              double customized_burst_ratio = DEFAULT_Burst_ratio)
+    htrie_map()
         : t_root(nullptr), pm(new page_manager()) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
         cout << "PM\n";
-
-#ifdef REHASH_BEFORE_EXPAND
-        std::cout << "REHASH_BEFORE_EXPAND\n";
-
-#else
-        std::cout << "EXPAND_BEFORE_REHASH\n";
-
-#endif
-
-#ifdef MAP_REP
-        cout << "MAP REPRESENTATION\n";
-#endif
-#ifdef ARRAY_REP
-        cout << "ARRAY REPRESENTATION\n";
-#endif
-#ifdef LIST_REP
-        cout << "LIST REPRESENTATION\n";
-#endif
-
-        Associativity = customized_associativity;
-        Bucket_num = customized_bucket_count;
-        Max_bytes_per_kv = customized_byte_per_kv;
-        Burst_ratio = customized_burst_ratio;
-
-        Max_slot_num = Associativity * Bucket_num;
-        Max_loop = Max_slot_num * 0.5;
 
         t_root = new hash_node(nullptr, string(), pm, Associativity);
     }
