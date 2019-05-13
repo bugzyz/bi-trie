@@ -622,22 +622,22 @@ class htrie_map {
      * element, the value, in hashtable searching way.
      */
     class hash_node : public node {
-       public:
-        slot* key_metas;
-        size_t elem_num;
+       private:
+        slot* key_metas_;
+        size_t elem_num_;
 
-        size_t cur_associativity = 1;
+        size_t cur_associativity_;
 
         // normal page_group id
-        uint8_t normal_pgid;
+        uint8_t normal_pgid_;
         // special page_group id
-        uint8_t special_pgid;
+        uint8_t special_pgid_;
 
        public:
-        // debug function
+        /* Debug helper function */
         void print_slot(int i, int j, page_manager_agent &pm_agent) {
-            slot* s = key_metas + i * cur_associativity + j;
-            cout << i * cur_associativity + j << ":" << s->get_special() << ","
+            slot* s = get_slot(i, j);
+            cout << i * cur_associativity_ + j << ":" << s->get_special() << ","
                  << s->get_length() << "," << s->get_pos() << ","
                  << s->get_page_id() << ",";
             string str = string(pm_agent.get_content_pointer(s),
@@ -647,15 +647,10 @@ class htrie_map {
             cout << "=" << v << "\n";
         }
 
-        static void print_slot(slot* s) {
-            cout << s->get_special() << "," << s->get_length() << ","
-                 << s->get_pos() << "," << s->get_page_id() << "," << endl;
-        }
-
-        void print_key_metas(htrie_map<K_unit, T>* hm) {
-            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
+        // Print the element in current node in above print_slot() format
+        void print_key_metas(page_manager_agent &pm_agent) {
             for (int i = 0; i != BUCKET_NUM; i++) {
-                for (int j = 0; j != cur_associativity; j++) {
+                for (int j = 0; j != cur_associativity_; j++) {
                     print_slot(i, j, pm_agent);
                 }
                 cout << "---\n";
@@ -664,99 +659,107 @@ class htrie_map {
         }
 
        public:
-        explicit hash_node(trie_node* p,const string &prefix, page_manager* pm,
-                           size_t need_associativity = 1)
+        hash_node(trie_node* p, const string& prefix, page_manager* pm,
+                  size_t need_associativity = 1)
             : node(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
-              cur_associativity(need_associativity > ASSOCIATIVITY
+              cur_associativity_(need_associativity > ASSOCIATIVITY
                                     ? ASSOCIATIVITY
                                     : need_associativity),
-              elem_num(0),
-              normal_pgid(pm->require_group_id(group_type::NORMAL_GROUP)),
-              special_pgid(pm->require_group_id(group_type::SPECIAL_GROUP)) {
+              elem_num_(0),
+              normal_pgid_(pm->require_group_id(group_type::NORMAL_GROUP)),
+              special_pgid_(pm->require_group_id(group_type::SPECIAL_GROUP)) {
+            // Hash node must have the prefix for element string concat        
             node::set_prefix(prefix);
 
-            key_metas = new slot[cur_associativity * BUCKET_NUM]();
+            key_metas_ = new slot[cur_associativity_ * BUCKET_NUM]();
         }
 
+        // Page_manager resize: Move the elements from old page_manager into new page_manager
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
-            size_t old_normal_pgid = normal_pgid;
-            size_t old_special_pgid = special_pgid;
-            size_t new_pgid = -1;
+            int old_normal_pgid = normal_pgid_;
+            int old_special_pgid = special_pgid_;
+            int new_normal_pgid = new_pm->require_group_id(group_type::NORMAL_GROUP);
+            int new_special_pgid = new_pm->require_group_id(group_type::SPECIAL_GROUP);
 
             if (resize_type == group_type::SPECIAL_GROUP) {
-                new_pgid = new_pm->require_group_id(group_type::SPECIAL_GROUP);
-                set_special_pgid(new_pgid);
-            } else {
-                new_pgid = new_pm->require_group_id(group_type::NORMAL_GROUP);
-                set_normal_pgid(new_pgid);
+                set_special_pgid(new_special_pgid);
+            } else if (resize_type == group_type::NORMAL_GROUP) {
+                set_normal_pgid(new_normal_pgid);
             }
 
             page_manager_agent old_pm_agent = old_pm->get_page_manager_agent(old_normal_pgid, old_special_pgid);
-
-            page_manager_agent new_pm_agent = 
-                resize_type == group_type::SPECIAL_GROUP ? 
-                new_pm->get_page_manager_agent(-1, new_pgid) : new_pm->get_page_manager_agent(new_pgid, -1);
+            page_manager_agent new_pm_agent = new_pm->get_page_manager_agent(new_normal_pgid, new_special_pgid);
 
             for (int i = 0; i != BUCKET_NUM; i++) {
-                for (int j = 0; j != cur_associativity; j++) {
+                for (int j = 0; j != cur_associativity_; j++) {
                     slot* s = get_slot(i, j);
 
-                    // ignore the slot that not belong to current resize group
-                    // type
-                    if (s->is_empty() || get_group_type(s) != resize_type)
-                        continue;
+                    // Ignore the slot that not belong to current resize group_type
+                    if (s->is_empty() || get_group_type(s) != resize_type) continue;
 
-                    // get the content from old page_manager and write it to the
+                    // Get the content from old page_manager and write it to the
                     // new page_manager
-                    s->set_slot(new_pm_agent.insert_element(old_pm_agent.get_content_pointer(s),
-                                                        s->get_length(),
-                                                        old_pm_agent.get_value(s)));
+                    s->set_slot(new_pm_agent.insert_element(
+                        old_pm_agent.get_content_pointer(s), s->get_length(),
+                        old_pm_agent.get_value(s)));
                 }
             }
         }
 
-        ~hash_node() { delete[] key_metas; }
+        ~hash_node() { delete[] key_metas_; }
 
-        inline slot* get_slot(size_t bucketid, size_t slotid) {
-            return key_metas + bucketid * cur_associativity + slotid;
+        /*---- Get function ---*/
+        inline slot* get_slot(size_t bucketid, size_t slotid) const {
+            return key_metas_ + bucketid * cur_associativity_ + slotid;
         }
-
-        inline int get_index(slot* s) { return s - key_metas; }
-
-        inline int get_index(int bucketid, int slotid) {
-            return bucketid * cur_associativity + slotid;
-        }
-
-        inline void set_normal_pgid (size_t new_normal_pgid) { normal_pgid = new_normal_pgid; }
-        inline void set_special_pgid (size_t new_special_pgid) { special_pgid = new_special_pgid; }
 
         /* 
          * For eliminating the index update in expand_key_metas_space
          * we store the column-store-index in v2k instead of row-store-index
          */
         inline slot* get_column_store_slot(int column_store_index) {
-            return key_metas +
-                   (cur_associativity * (column_store_index % BUCKET_NUM)) +
-                   column_store_index / BUCKET_NUM;
+            return key_metas_ +
+                    (cur_associativity_ * (column_store_index % BUCKET_NUM)) +
+                    column_store_index / BUCKET_NUM;
         }
 
         inline int get_column_store_index(slot* s) {
-            return BUCKET_NUM * (get_index(s) % cur_associativity) +
-                   (get_index(s) / cur_associativity);
+            return BUCKET_NUM * (get_index(s) % cur_associativity_) +
+                    (get_index(s) / cur_associativity_);
         }
 
-        /*---------function that changed key_metas layout---------*/
-        /*------------------ 1. expand function------------------*/
+        inline int get_index(slot* s) const { return s - key_metas_; }
+
+        inline int get_index(const size_t bucketid, const size_t slotid) const {
+            return bucketid * cur_associativity_ + slotid;
+        }
+
+        size_t get_normal_pgid() const { return normal_pgid_; }
+
+        size_t get_special_pgid() const { return special_pgid_; }
+
+        /*---- Set function ---*/
+        inline void set_normal_pgid(size_t new_normal_pgid) { normal_pgid_ = new_normal_pgid; }
+
+        inline void set_special_pgid(size_t new_special_pgid) { special_pgid_ = new_special_pgid; }
+
+        /*---- Reduce memory foot-print mechanism ---*/
+        /* 
+         * We use 2 mechanisms for reducing burst's trie memory foot-print:
+         *      1. Dynamic expand: Reduce unnecessary memory allocation
+         *      2. Cuckoo hash: Increase slot utilization rate
+         */
+        /*---- 1. Dynamic expand function ---*/
         int expand_key_metas_space() {
             uint64_t sta = get_time();
 
             // Already max associativity
             // We cannot expand anymore, return -1
-            if (cur_associativity == ASSOCIATIVITY) return -1;
+            if (cur_associativity_ == ASSOCIATIVITY) return -1;
 
             // Get the associativity we need, expand 2 times of cur_associativity
-            unsigned int need_associativity = cur_associativity << 1;
+            unsigned int need_associativity = cur_associativity_ << 1;
             if (need_associativity > ASSOCIATIVITY) {
                 need_associativity = ASSOCIATIVITY;
             }
@@ -768,8 +771,8 @@ class htrie_map {
                 for (int j = 0; j != need_associativity; j++) {
                     slot* cur_new_slot =
                         new_key_metas + i * need_associativity + j;
-                    if (j < cur_associativity) {
-                        slot* cur_slot = key_metas + i * cur_associativity + j;
+                    if (j < cur_associativity_) {
+                        slot* cur_slot = key_metas_ + i * cur_associativity_ + j;
                         cur_new_slot->set_slot(*cur_slot);
                     } else {
                         cur_new_slot->set_slot(0, 0, 0, 0);
@@ -779,12 +782,12 @@ class htrie_map {
 
             // Switch the old key_metas to the new key_metas and release the old
             // key_metas
-            delete[] key_metas;
-            key_metas = new_key_metas;
+            delete[] key_metas_;
+            key_metas_ = new_key_metas;
 
-            int ret_slotid = cur_associativity;
+            int ret_slotid = cur_associativity_;
             // update current associativity
-            cur_associativity = need_associativity;
+            cur_associativity_ = need_associativity;
             uint64_t end = get_time();
 
             expand_cost_time += end - sta;
@@ -792,57 +795,57 @@ class htrie_map {
             return ret_slotid;
         }
 
-        /*------------------ 2. cuckoo hash function------------------*/
-        /*  cuckoo hash helper function  */
-        // Return previous slotid in current bucket
-        // If current slotid is 0, return -1
-        inline int get_previous_slotid_in_same_bucket(int slotid) {
+        /*---- 2. Cuckoo hash function ---*/
+        /*---- 2.1 Helper function ---*/
+        // Return previous slotid in current bucket. 
+        inline int get_previous_slotid_in_same_bucket(int slotid) const {
             return slotid == 0 ? -1 : slotid - 1;
         }
 
-        // Return the first empty slot or last slot in current bucket
-        inline int get_last_slotid_in_bucket(int bucketid) {
-            for (int i = 0; i != cur_associativity; i++)
+        // Return the first empty slotid or last slotid in current bucket
+        inline int get_kick_2_slotid_in_bucket(int bucketid) const {
+            for (int i = 0; i != cur_associativity_; i++)
                 if (get_slot(bucketid, i)->is_empty()) return i;
 
-            return cur_associativity - 1;
+            return cur_associativity_ - 1;
         }
 
         // Return another possible bucketid that the slot *s can be at
         inline size_t get_another_bucketid(page_manager_agent& pm_agent, slot* s,
-                                           size_t current_bucketid) {
+                                           size_t current_bucketid) const {
             const char* key = pm_agent.get_content_pointer(s);
             size_t bucketid1 = hash(key, s->get_length(), 1) % BUCKET_NUM;
             size_t bucketid2 = hash(key, s->get_length(), 2) % BUCKET_NUM;
             return current_bucketid == bucketid1 ? bucketid2 : bucketid1;
         }
 
+        /*---- 2.2 Cuckoo hash function ---*/
         // Return a empty slot_id in bucketid
         int cuckoo_hash(size_t bucketid, htrie_map<K_unit, T>* hm) {
             cuckoohash_total_num++;
             uint64_t sta = get_time();
 
             // Set up the backup for recovery if the cuckoo hash fail
-            slot* key_metas_backup = new slot[BUCKET_NUM * cur_associativity]();
-            memcpy(key_metas_backup, key_metas,
-                   BUCKET_NUM * cur_associativity * sizeof(slot));
+            slot* key_metas_backup = new slot[BUCKET_NUM * cur_associativity_]();
+            memcpy(key_metas_backup, key_metas_,
+                   BUCKET_NUM * cur_associativity_ * sizeof(slot));
 
+            // Slot index that prepare for returned
             int ret_index = -1;
 
             /*
              * key_metas:   | x | x | x | x |   extra_slot: | y |
-             *              | x | x | x | x |   slot wait to be exchange
+             *              | x | x | x | x |   slot wait to be cuckoo-hashed
              *              | x | x | x | x |
              */
             slot* extra_slot = new slot(0, 0, 0, 0);
 
-            // cur_process_bucketid, cur_process_slotid indicate the
-            // extra_slot's destination
+            /* cur_process_bucketid, cur_process_slotid indicate the extra_slot's destination */
             int cur_process_bucketid = bucketid;
-            int cur_process_slotid = cur_associativity - 1;
+            int cur_process_slotid = cur_associativity_ - 1;
 
             page_manager_agent pm_agent =
-                hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
+                hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
 
             map<T, int> searchPoint_wait_2_be_update;
             for (int cuckoo_hash_time = 0; cuckoo_hash_time != BUCKET_NUM * ASSOCIATIVITY * DEFAULT_CUCKOO_HASH_RATIO;
@@ -882,12 +885,12 @@ class htrie_map {
                     get_column_store_index(cur_process_slot);
 
                 // The first time swap the extra_slot indicate the
-                // cur_process_slotid is ret_index
+                // cur_process_index is ret_index
                 if (ret_index == -1) {
                     ret_index = cur_process_index;
                 }
 
-                // cur_process_slot is a empty slot, cuckoo hash is done
+                // Cur_process_slot is a empty slot, cuckoo hash is done
                 if (extra_slot->is_empty()) {
                     delete[] key_metas_backup;
                     delete extra_slot;
@@ -897,20 +900,19 @@ class htrie_map {
 
                     cuckoohash_cost_time += get_time() - sta;
 
-                    // return slot_id
-                    return ret_index % cur_associativity;
+                    // Return slot_id
+                    return ret_index % cur_associativity_;
                 }
 
-                // update the current bucketid and slotid which are the
+                // Update the current bucketid and slotid which are the
                 // replacing destination in next iteration
                 cur_process_bucketid = cur_kick_to_bucketid;
-                cur_process_slotid =
-                    get_last_slotid_in_bucket(cur_kick_to_bucketid);
+                cur_process_slotid = get_kick_2_slotid_in_bucket(cur_kick_to_bucketid);
             }
 
             // Recover the key_metas
-            memcpy(key_metas, key_metas_backup,
-                   BUCKET_NUM * cur_associativity * sizeof(slot));
+            memcpy(key_metas_, key_metas_backup,
+                   BUCKET_NUM * cur_associativity_ * sizeof(slot));
 
             delete[] key_metas_backup;
             delete extra_slot;
@@ -922,14 +924,11 @@ class htrie_map {
             return -1;
         }
 
-        /*----------------searching in hash_node----------------*/
-        // return <found?, iterator>
-        // iterator:    if slotid==-1, bucket is full
-        //              if slotid!=-1, slotid is the insert position
+        /*---- Searching function ---*/
+        // Return the found result of matching string(key, key_size) in current bucket 
         found_result find_in_bucket(size_t bucketid, const K_unit* key,
                                     size_t key_size, page_manager_agent& pm_agent) {
-            // find the hitted slot in hashnode
-            for (int i = 0; i != cur_associativity; i++) {
+            for (int i = 0; i != cur_associativity_; i++) {
                 slot* target_slot = get_slot(bucketid, i);
                 if (target_slot->is_empty())
                     return found_result(false, T(), bucketid, i);
@@ -941,39 +940,44 @@ class htrie_map {
             return found_result(false, T(), bucketid, -1);
         }
 
+        // Return the found result of matching string(key, key_size) in current hash_node 
         found_result search_kv_in_hashnode(const K_unit* key, size_t key_size,
                                        page_manager* pm) {
             page_manager_agent pm_agent = 
-                    pm->get_page_manager_agent(normal_pgid, special_pgid);
-            // if found the existed target in bucket1 or bucket2, just
+                    pm->get_page_manager_agent(normal_pgid_, special_pgid_);
+            // If found the existed target in bucket_id1 or bucket_id2, just
             // return the iterator for being modified or read
             size_t bucket_id1 = hash(key, key_size, 1) % BUCKET_NUM;
             found_result res1 = find_in_bucket(bucket_id1, key, key_size, pm_agent);
-            if (res1.is_founded()) {
-                return res1;
-            }
+            if (res1.is_founded()) return res1;
 
             size_t bucket_id2 = hash(key, key_size, 2) % BUCKET_NUM;
             found_result res2 = find_in_bucket(bucket_id2, key, key_size, pm_agent);
-            if (res2.is_founded()) {
-                return res2;
-            }
+            if (res2.is_founded()) return res2;
 
-            // if the code reach here it means the target doesn't exist
-            // we try our best return the iterator with empty slot
-            if (res1.is_bucket_full()) {
+            // If the code reach here it means the target doesn't exist
+            // We try to return the result that locating at a un-full bucket
+            if (res1.is_bucket_full())
                 return res2;
-            } else
+            else
                 return res1;
         }
 
-        void insert_kv_in_hashnode(const K_unit* key,
-                                                 size_t key_size, htrie_map* hm,
+        void insert_kv_in_hashnode(const K_unit* key, size_t key_size, htrie_map* hm,
                                                  T v, found_result fr) {
             size_t bucketid = fr.bucketid;
             int slotid = fr.slotid;
-            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
+            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
 
+            /* 
+             * If the slotid == -1, it means that we need extra empty slot in current bucketid
+             * Our current strategy:    =(if slotid == -1)=>    1.dynamic expand 
+             *                          =(if slotid == -1)=>    2.cuckoo hash 
+             *                          =(if slotid == -1)=>    3.burst and re-insert
+             * Also we can use cuckoo hash => dynamic expand => 
+             * burst and re-insert alternatively for a better slot utilization rate 
+             * but in-efficient(cuckoo hash too much)
+             */
             if (slotid == -1 && 
                 (slotid = expand_key_metas_space()) == -1 &&
                 (slotid = cuckoo_hash(bucketid, hm)) == -1) {
@@ -981,8 +985,8 @@ class htrie_map {
                 const string& prefix = this->node::get_prefix();
 
                 trie_node* new_parent =
-                    hm->burst(burst_package(key_metas, BUCKET_NUM,
-                                            cur_associativity, pm_agent),
+                    hm->burst(burst_package(key_metas_, BUCKET_NUM,
+                                            cur_associativity_, pm_agent),
                               this->node::get_parent(), prefix);
 
                 hm->access_kv_in_htrie_map(new_parent, key, key_size, v, false,
@@ -991,36 +995,34 @@ class htrie_map {
                 return;
             }
 
-            // now the slotid cannot be -1 and slotid is lower than
-            // ASSOCIATIVITY
-            assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity);
+            assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity_);
 
             slot* target_slot = get_slot(bucketid, slotid);
 
             // Ask page_manager that whether there is a place for new element
             /*
              * if page_manager pm don't have enough memory, pm will take charge
-             * of the page group allocation, and update all hash_nodes'
-             * normal_pgid, special_pgid. And so the hm->write_kv() can write
+             * of the resizeing, and update all hash_nodes' normal_pgid, special_pgid. 
+             * And so the pm_agent.insert_element() below can write
              * the content to a updated page group*/
             /*
-             * if page_manager pm have enough memory, the hm->write_kv() will
-             * write the content to original page group
+             * if page_manager pm have enough memory, the pm_agent.insert_element()
+             *  will write the content to original page group
              */
 
             if(!pm_agent.try_insert(key_size)) {
                 hm->pm->resize(get_group_type(key_size), hm);
-                pm_agent = hm->pm->get_page_manager_agent(normal_pgid, special_pgid);
+                pm_agent = hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
             }
 
-            // call htrie-map function: write_kv_to_page ()
-            // return a slot with position that element been written
+            // Page manager agent will take charge of the element writing work
+            // And return a slot with position that element been written
             target_slot->set_slot(pm_agent.insert_element(key, key_size, v));
 
-            // set v2k
+            // Set v2k
             hm->set_v2k(v, this, get_column_store_index(target_slot));
 
-            elem_num++;
+            elem_num_++;
             
             return;
         }
@@ -1303,8 +1305,7 @@ class htrie_map {
         size_t s_size;
 
        public:
-        page_manager(size_t normal_page_group_number = 1,
-                     size_t special_page_group_number = 1)
+        page_manager(size_t normal_page_group_number, size_t special_page_group_number)
             : normal_pg(new page_group[128]),
               special_pg(new page_group[128]),
               n_size(0),
@@ -1322,12 +1323,17 @@ class htrie_map {
         }
 
         inline size_t require_group_id(group_type gt) {
-            size_t least_page_page_group_id = 0;
-            size_t least_page = SIZE_MAX;
-            page_group* pgs =
+            // Processing page_group
+            size_t cur_size =
+                (gt == group_type::NORMAL_GROUP ? n_size : s_size);
+            page_group* cur_pgs =
                 (gt == group_type::NORMAL_GROUP ? normal_pg : special_pg);
-            for (int i = 0; i != n_size; i++) {
-                size_t cur_least_page = pgs[i].get_cur_page_id();
+
+            size_t least_page_page_group_id = -1;
+            size_t least_page = SIZE_MAX;
+
+            for (int i = 0; i != cur_size; i++) {
+                size_t cur_least_page = cur_pgs[i].get_cur_page_id();
                 if (least_page > cur_least_page) {
                     least_page = cur_least_page;
                     least_page_page_group_id = i;
@@ -1485,7 +1491,8 @@ class htrie_map {
             if (index_ != -1) {
                 hash_node* hnode = (hash_node*)target_node_;
                 slot* sl = hnode->get_column_store_slot(index_);
-                page_manager_agent pm_agent = pm->get_page_manager_agent(hnode->normal_pgid, hnode->special_pgid);
+                page_manager_agent pm_agent = pm->get_page_manager_agent(
+                    hnode->get_normal_pgid(), hnode->get_special_pgid());
                 res = res + string(pm_agent.get_content_pointer(sl),
                                    sl->get_length());
             }
@@ -1594,7 +1601,7 @@ class htrie_map {
 
    public:
     htrie_map()
-        : t_root(nullptr), pm(new page_manager()), longest_string_size(0) {
+        : t_root(nullptr), pm(new page_manager(1, 1)), longest_string_size(0) {
         std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
         cout << "GROW_ASSOCIATIVITY\n";
         cout << "PM\n";
