@@ -51,8 +51,8 @@ using namespace std;
 template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class htrie_map {
    private:
-    static bool key_equal(const K_unit* key_lhs, std::size_t key_size_lhs,
-                const K_unit* key_rhs, std::size_t key_size_rhs) {
+    static bool key_equal(const K_unit* key_lhs, const std::size_t key_size_lhs,
+                const K_unit* key_rhs, const std::size_t key_size_rhs) {
         if (key_size_lhs == 0 && key_size_rhs == 0) {
             return true;
         }
@@ -112,15 +112,11 @@ class htrie_map {
         return mix(h);
     }
 
-    static size_t hash(const K_unit* key, std::size_t key_size, size_t hashType = 1) {
-        uint64_t hash;
-        if (hashType == 1) {
-            hash = fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
-            return hash;
-        } else {
-            hash = fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
-            return hash;
-        }
+    static size_t hash(const K_unit* key, const size_t key_size, const size_t hashType = 1) {
+        if (hashType == 1) 
+            return fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
+        else
+            return fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
     }
 
     class trie_node;
@@ -143,66 +139,65 @@ class htrie_map {
     enum class node_type : unsigned char { HASH_NODE, TRIE_NODE };
 
     /* helper function */
-    static inline group_type get_group_type(size_t key_size) {
+    static inline const group_type get_group_type(const size_t key_size) {
         return key_size < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                         : group_type::SPECIAL_GROUP;
     }
 
-    static inline group_type get_group_type(slot* s) {
+    static inline const group_type get_group_type(const slot* s) {
         return s->get_length() < MAX_NORMAL_LEN ? group_type::NORMAL_GROUP
                                                 : group_type::SPECIAL_GROUP;
     }
 
    private:
     class slot {
-       public:
+       private:
         uint32_t encode;
 
+       public:
         slot() : encode(0) {}
+        slot(bool is_special, uint64_t length, uint64_t pos, uint64_t page_id) : 
+            encode(encode_slot(is_special, length, pos, page_id)) {}
 
         // encode slot as | special | length | position | page_id |
-        uint64_t encode_slot(bool spe, uint64_t len, uint64_t po, uint64_t pd) {
-            encode = pd;
-            if (spe) {
-                assert(len < 1 << NBITS_LEN_S &&
-                       (po / DEFAULT_SPECIAL_ALIGNMENT) < 1 << NBITS_POS_S &&
-                       pd < 1 << NBITS_PID_S);
-                encode += ((po / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
-                encode += len << (NBITS_PID_S + NBITS_POS_S);
+        uint64_t encode_slot(bool is_special, uint64_t length, uint64_t pos, uint64_t page_id) {
+            encode = page_id;
+            if (is_special) {
+                assert(length < 1 << NBITS_LEN_S &&
+                       (pos / DEFAULT_SPECIAL_ALIGNMENT) < 1 << NBITS_POS_S &&
+                       page_id < 1 << NBITS_PID_S);
+                encode += ((pos / DEFAULT_SPECIAL_ALIGNMENT) << NBITS_PID_S);
+                encode += length << (NBITS_PID_S + NBITS_POS_S);
                 encode += ((uint64_t)1)
                           << (NBITS_PID_S + NBITS_LEN_S + NBITS_POS_S);
             } else {
-                assert(len < 1 << NBITS_LEN &&
-                       (po / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
-                       pd < 1 << NBITS_PID);
+                assert(length < 1 << NBITS_LEN &&
+                       (pos / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
+                       page_id < 1 << NBITS_PID);
                 // encode into a 64bit data
-                encode += (po / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
-                encode += len << (NBITS_PID + NBITS_POS);
+                encode += (pos / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
+                encode += length << (NBITS_PID + NBITS_POS);
                 encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
             }
 
             return encode;
         }
 
-        bool is_empty() { return get_length() == 0; }
+        bool is_empty() const { return get_length() == 0; }
 
-        bool is_special() { return get_special(); }
+        bool is_special() const { return get_special(); }
 
-        slot(bool is_special, size_t l, size_t p, size_t pi) {
-            encode = encode_slot(is_special, l, p, pi);
-        }
-
-        void set_slot(bool is_special, size_t l, size_t p, size_t pi) {
-            encode = encode_slot(is_special, l, p, pi);
+        void set_slot(bool is_special, uint64_t length, uint64_t pos, uint64_t page_id) {
+            encode = encode_slot(is_special, length, pos, page_id);
         }
 
         void set_slot(slot s) { encode = s.encode; }
 
-        bool get_special() {
+        bool get_special() const {
             return (encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)) == 1;
         }
 
-        size_t get_length() {
+        const size_t get_length() const {
             return encode >> (NBITS_LEN + NBITS_POS + NBITS_PID)
                        ? ((encode >> (NBITS_PID_S + NBITS_POS_S)) %
                           (1 << NBITS_LEN_S))
@@ -210,7 +205,7 @@ class htrie_map {
                           (1 << NBITS_LEN));
         }
 
-        size_t get_pos() {
+        const size_t get_pos() const {
             return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
                        ? ((encode >> NBITS_PID_S) % (1 << NBITS_POS_S) *
                           DEFAULT_SPECIAL_ALIGNMENT)
@@ -218,7 +213,7 @@ class htrie_map {
                           DEFAULT_NORMAL_ALIGNMENT);
         }
 
-        size_t get_page_id() {
+        const size_t get_page_id() const {
             return encode >> (NBITS_PID + NBITS_LEN + NBITS_POS)
                        ? encode % (1 << NBITS_PID_S)
                        : encode % (1 << NBITS_PID);
