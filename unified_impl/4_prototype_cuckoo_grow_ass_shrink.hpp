@@ -287,7 +287,7 @@ class htrie_map {
 
     /* Node's base class */
     /* 
-     * We divide the node into two type: trie node and hash node that descriped above its class
+     * We divide the node into two type, trie node and hash node that descriped above its class
      */
     class node {
        private:
@@ -363,9 +363,6 @@ class htrie_map {
         found_result search_kv_in_node() const {
             return found_result(have_value_, value_, -1, -1);
         }
-
-        // For level traverse
-        virtual vector<node*> print_node_info() = 0;
     };
 
     /* Burst-trie's trie node class */
@@ -376,97 +373,108 @@ class htrie_map {
      */
     class trie_node : public node {
        private:
-        /*-------------fast_path_manager-------------*/
+        /* Fast-path manager class */
+        /*
+         * Provide the trie_node a fast way to skip several trie traverse.
+         * Using the original way only traverse burst-trie char by char, but
+         * using the fast path traverse burst-trie string by string.
+         * Fast-path manager store the strings in hash value order, so that the
+         * searching can by transform to binary search
+         */
         class fast_path_manager {
-        private:
+           private:
             struct fast_path {
                 unsigned int hash_val_;
-                // TODO: store in page_manager
                 string fast_path_string_;
                 node* dest_node_;
 
             public:
-                fast_path(unsigned int hash_val, const string &fast_path_string, node* dest_node)
+                fast_path(const unsigned int hash_val, const string &fast_path_string, node* dest_node)
                     : hash_val_(hash_val),
                     fast_path_string_(fast_path_string),
                     dest_node_(dest_node) {}
 
                 inline void set_dest_node(node *dest_node) { dest_node_ = dest_node; }
 
-                inline unsigned int get_hash_val() { return hash_val_; }
-                inline string& get_string() { return fast_path_string_; }
-                inline node* get_dest_node() { return dest_node_; }
+                inline const unsigned int get_hash_val() const { return hash_val_; }
+                inline const string& get_string() const { return fast_path_string_; }
+                inline node* get_dest_node() const { return dest_node_; }
             };
 
-            vector<fast_path> fast_paths;
+            vector<fast_path> fast_paths_;
 
-        public:
+           public:
             fast_path_manager() {}
 
-            inline void insert_fast_path(const char* key, size_t key_size, node* node_ptr) {
-                //Insert new element
+            // Insert new fast-path into the fast_path_manager in hash value order
+            void insert_fast_path(const char* key, size_t key_size, node* node_ptr) {
                 fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
 
-                for (auto it = fast_paths.begin(); it != fast_paths.end();
+                for (auto it = fast_paths_.begin(); it != fast_paths_.end();
                     it++) {
-                if (it->get_hash_val() > new_fast_path.get_hash_val()) {
-                    fast_paths.insert(it, new_fast_path);
-                    return;
-                } else if (it->get_hash_val() == new_fast_path.get_hash_val()) {
-                    // TODO: FIXME: the hash value may be the same
-                    // Maybe the list to solve the same hash_val, different string problem(collision)
-                    it->set_dest_node(node_ptr);
-                    return;
+                    if (it->get_hash_val() >= new_fast_path.get_hash_val()) {
+                        fast_paths_.insert(it, new_fast_path);
+                        return;
+                    }
                 }
-                }
-                fast_paths.push_back(new_fast_path);
+                fast_paths_.push_back(new_fast_path);
+                return;
             }
 
-            // TODO: FIXME: consider the same hash value situation: consider the list
-            // | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
-            inline node* lookup_fast_path(const char* key,
-                                                    size_t key_size) {
-                // binary search
+            // Lookup the target node in binary search
+            inline node* lookup_fast_path(const char* key, size_t key_size) const {
                 unsigned int target_hash_val = hash(key, key_size);
 
-                size_t node_size = fast_paths.size();
+                size_t node_size = fast_paths_.size();
                 int low = 0;
                 int high = node_size - 1;
+                // The binary will deal with the same hash value fast-path
+                // situation by skiping the "return mid" when
+                // fast_paths_[mid].get_hash_val() == target_hash_val
                 while (low < high) {
                     int mid = (low + high) >> 1;
-                    if (fast_paths[mid].get_hash_val() < target_hash_val) {
+                    if (fast_paths_[mid].get_hash_val() < target_hash_val)
                         low = mid + 1;
-                    } else
+                    else
                         high = mid;
                 }
 
-                // check the same hash value situation
+                // Check the same hash value fast-path
                 for (int i = low;
                     low != node_size &&
-                    fast_paths[i].get_hash_val() == target_hash_val;
+                    fast_paths_[i].get_hash_val() == target_hash_val;
                     i++) {
                     if (key_equal(
-                            fast_paths[i].get_string().data(),
-                            fast_paths[i].get_string().size(), key,
+                            fast_paths_[i].get_string().data(),
+                            fast_paths_[i].get_string().size(), key,
                             key_size)) {
-                        return fast_paths[i].get_dest_node();
+                        return fast_paths_[i].get_dest_node();
                     }
                 }
                 return nullptr;
             }
 
-            inline size_t size() { return fast_paths.size(); }
+            inline size_t size() const { return fast_paths_.size(); }
 
-            unsigned int get_fpm_memory() {
+            unsigned int get_fpm_memory() const {
                 return size() * (sizeof(fast_path) + FAST_PATH_NODE_NUM);
             }
         };
 
-        /*-----------------list child_representation-----------------*/
+        /* Child_representation class */
+        /*
+         * The child representation is used to save the relationship of nodes in a trie.
+         * Child representation can be implemented in several way: Current version are implemented in list
+         *      Implementation: | memory-efficiency | effectiveness |
+         *      List:           |         10        |       8       |
+         *      Array:          |          1        |      10       |
+         *      std::map:       |          8        |       5       |
+         */
         class child_representation {
-        private:
-            class child_node {
-            public:
+           public:
+            /* List node class */
+            struct child_node {
+               public:
                 char child_node_char;
                 node* current;
                 child_node* next;
@@ -474,26 +482,25 @@ class htrie_map {
                 child_node(char cnc, node* cur)
                     : child_node_char(cnc), current(cur), next(nullptr) {}
 
-                child_node()
-                    : child_node_char(0), current(nullptr), next(nullptr) {}
+                inline bool have_next() const { return next != nullptr; }
 
-                inline bool have_next() { return next != nullptr; }
+                inline node* get_node() const { return current; }
 
-                inline child_node* next_child() { return next; }
+                inline child_node* next_child() const { return next; }
 
-                inline void add_next_child(char c) {
-                    next = new child_node(c, nullptr);
-                }
+                inline void add_next_child(char c) { next = new child_node(c, nullptr); }
             };
 
-            child_node* first_child_;
-            int size_;
+           private:
+            child_node* first_child_;  // List header
+            int size_;                 // List node number
 
-        public:
+           public:
             child_representation() : size_(0), first_child_(nullptr) {}
 
-            inline node*& operator[](char c) {
-                //find the ok node
+            // If find one, return the reference
+            // If not, add one and return the reference
+            node*& operator[](const char c) {
                 child_node* current_child_node = first_child_;
                 child_node* last_child_node = nullptr;
 
@@ -505,7 +512,7 @@ class htrie_map {
                     current_child_node = current_child_node->next;
                 }
 
-                // find no target node, add one
+                // List is empty, add one
                 if (first_child_ == nullptr) {
                     first_child_ = new child_node(c, nullptr);
 
@@ -513,12 +520,15 @@ class htrie_map {
                     return first_child_->current;
                 }
 
+                // Find no target node, add one
                 last_child_node->add_next_child(c);
                 size_++;
                 return last_child_node->next_child()->current;
             }
 
-            inline node* find(char c) {
+            // If find one, return the node*
+            // If not, return nullptr
+            node* find(const char c) const {
                 child_node* current_child_node = first_child_;
                 while(current_child_node != nullptr) {
                     if (current_child_node->child_node_char == c)
@@ -529,34 +539,12 @@ class htrie_map {
                 return nullptr;
             }
 
-            inline size_t size() { return size_; }
+            inline size_t size() const { return size_; }
 
-            /* for traverse_for_pgm_resize() */
-            inline void get_childs(vector<node*>& res) {
-                child_node* current_child_node = first_child_;
-
-                while (current_child_node) {
-                    res.push_back(current_child_node->current);
-                    current_child_node = current_child_node->next;
-                }
-            }
-            
-            // TODO
-            /* for shrink node */
-            inline void get_childs_with_char(vector<pair<K_unit, node*>>& res) {
-                child_node* current_child_node = first_child_;
-
-                while (current_child_node) {
-                    res.push_back(
-                        pair<K_unit, node*>(current_child_node->child_node_char,
-                                                current_child_node->current));
-
-                    current_child_node = current_child_node->next;
-                }
-            }
+            inline child_node* get_first_node() const { return first_child_; }
 
             ~child_representation() {
-                // release the list
+                // Release the list
                 child_node* current_child_node = first_child_;
                 child_node* previous_current_child_node = nullptr;
 
@@ -568,21 +556,20 @@ class htrie_map {
             }
 
             /* helper function: memory evaluation */
-            size_t get_childs_representation_mem() {
+            size_t get_childs_representation_mem() const {
                 return sizeof(child_representation) + size_ * sizeof(child_node);
             }
         };
 
        private:
-        friend void htrie_map::traverse_level();
-        fast_path_manager *fpm_;
-        child_representation childs_;  // store the suffix of hash_node or trie_node
+        fast_path_manager *fpm_;       // Manage the fast-paths
+        child_representation childs_;  // Store the suffix node of hash_node or trie_node
 
        public:
         trie_node(trie_node* p, const char* key, size_t key_size)
             : node(node_type::TRIE_NODE, p, key, key_size), fpm_(nullptr) {}
 
-        // add a fast path of string(key, key_size) in fast path manager
+        // Add a fast path of string(key, key_size) in fast path manager
         void add_fast_path(const char* key, size_t key_size, node* node) {
             if (fpm_ == nullptr)
                 fpm_ = new fast_path_manager();
@@ -592,57 +579,38 @@ class htrie_map {
 
         ~trie_node() { if (fpm_ != nullptr) delete fpm_; }
 
-        // the virtual function for page_manager page resize
+        // The virtual function implementing for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
-            vector<node*> childs;
-            get_childs_vector(childs);
-            for (auto it : childs) {
-                it->traverse_for_pgm_resize(old_pm, new_pm, resize_type);
+            typename child_representation::child_node* cur_child = childs_.get_first_node();
+            while(cur_child != nullptr) {
+                node* cur_node = cur_child->get_node();
+                cur_node->traverse_for_pgm_resize(old_pm, new_pm, resize_type);
+                cur_child = cur_child->next_child();
             }
         }
 
-        vector<node*> print_node_info(){
-            vector<node*> res;
-            get_childs_vector(res);
-            cout << "t:" << (void*)this << " ";
-
-            vector<pair<K_unit, node*>> res2;
-            childs_.get_childs_with_char(res2);
-            for (auto c : res2)
-                cout << ((c.second)->is_hash_node() ? "h:" : "t:") << c.first
-                     << " " << c.second << "  ";
-            return res;
-        }
-
-        /*---helper function for traverse_for_pgm_resize----*/
-        void get_childs_vector(vector<node*> &res) {
-            //get all trie_node childs from child_representation
-            childs_.get_childs(res);
-        }
-
-        // add node in child representation
+        // Add node in child representation
         void add_child(const K_unit c, node* adding_node) { childs_[c] = adding_node; }
 
-        // finding target, if target doesn't exist, create new trie_node with
-        // hash_node son and return new trie_node
-        node* find_trie_node_child(const K_unit* key, size_t &pos,
-                                    size_t key_size, htrie_map<K_unit, T>* hm) {
+        // Finding target node
+        node* find_trie_node_child(const K_unit* key, size_t &ref_pos,
+                                    size_t key_size, htrie_map<K_unit, T>* hm) const {
             // Find in fast path
             // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
-            if (fpm_ != nullptr && (pos + FAST_PATH_NODE_NUM < key_size)) {
+            if (fpm_ != nullptr && (ref_pos + FAST_PATH_NODE_NUM < key_size)) {
               node *fast_path_node =
-                  fpm_->lookup_fast_path(key + pos, FAST_PATH_NODE_NUM);
+                  fpm_->lookup_fast_path(key + ref_pos, FAST_PATH_NODE_NUM);
               if (fast_path_node != nullptr) {
-                pos += FAST_PATH_NODE_NUM;
+                ref_pos += FAST_PATH_NODE_NUM;
                 return fast_path_node;
               }
             }
 
             // Find in normal path
-            node* target_node = childs_.find(key[pos]);
-            pos++;
+            node* target_node = childs_.find(key[ref_pos]);
+            ref_pos++;
             return target_node;
         }
     };
@@ -746,13 +714,6 @@ class htrie_map {
                                                         old_pm_agent.get_value(s)));
                 }
             }
-
-            
-        }
-
-        vector<node*> print_node_info(){
-            cout << "h:" << elem_num << " " << (void*)this << "  ";
-            return vector<node*>();
         }
 
         ~hash_node() { delete[] key_metas; }
@@ -1675,29 +1636,6 @@ class htrie_map {
         // zero at last means that we don't need to expand the page_manager
         pm->resize(group_type ::NORMAL_GROUP, this, 0);
         pm->resize(group_type ::SPECIAL_GROUP, this, 0);
-    }
-
-    void traverse_level() {
-        cout << endl;
-        queue<node*> q;
-        q.push(t_root);
-        unsigned int fpm_memory = 0;
-        while (!q.empty()) {
-            node* cur_node = q.front();
-            q.pop();
-            if (cur_node->is_hash_node()) continue;
-
-            unsigned int cur_fpm_mem =
-                ((trie_node *)cur_node)->fpm_ == nullptr
-                    ? 0
-                    : ((trie_node *)cur_node)->fpm_->get_fpm_memory();
-            fpm_memory += cur_fpm_mem;
-            
-            vector<node*> childs;
-            ((trie_node*)cur_node)->get_childs_vector(childs);
-            for (auto c : childs) q.push(c);
-        }
-        cout << "fast path memory: " << fpm_memory << endl;
     }
 };  // namespace myTrie
 
