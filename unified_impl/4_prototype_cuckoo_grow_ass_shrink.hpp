@@ -285,67 +285,54 @@ class htrie_map {
         }
     };
 
-    /* node's base class */
+    /* Node's base class */
     class anode {
        private:
         node_type n_type_;
         trie_node* parent_;
 
+        // The value of key that terminates in current node
         bool have_value_;
         T value_;
 
-       public:
-       // TODO: adopt a more save-memory way 
         string prefix_;
 
        public:
-        anode(node_type n_type, trie_node* parent, const K_unit *key, size_t key_size)
+        anode(const node_type n_type, trie_node* parent, const K_unit *key, const size_t key_size)
             : n_type_(n_type),
               parent_(parent),
               have_value_(false),
               value_(T()),
               prefix_("") {
-            // If current node's layer equals to multiple of FAST_PATH_NODE_NUM,
-            // we set up a fast path in its x-nd grandparent
-            if (key_size % FAST_PATH_NODE_NUM == 0 && key_size != 0)
-                set_up_fast_path(key + key_size - FAST_PATH_NODE_NUM,
-                                        FAST_PATH_NODE_NUM);
+            // If current node's layer level equals to multiple of FAST_PATH_NODE_NUM,
+            // Set up a fast path in its fast-path parent
+            if (key_size % FAST_PATH_NODE_NUM == 0 && key_size != 0) {              
+                // Get the target parent who is going to add a fast path for destination node(this)
+                trie_node* add_fast_path_parent = get_fast_path_parent();
+                assert(add_fast_path_parent != nullptr);
+                add_fast_path_parent->add_fast_path(key + key_size - FAST_PATH_NODE_NUM, FAST_PATH_NODE_NUM, this);
+            }
         }
 
-        bool is_hash_node() { return n_type_ == node_type::HASH_NODE; }
-        bool is_trie_node() { return n_type_ == node_type::TRIE_NODE; }
+        /*---- Type predicate function ---*/
+        bool is_hash_node() const { return n_type_ == node_type::HASH_NODE; }
 
+        bool is_trie_node() const { return n_type_ == node_type::TRIE_NODE; }
+
+        /*---- Set function ---*/
         void set_parent(trie_node* p) { parent_ = p; }
-        trie_node* get_parent() { return parent_; }
-
-        node_type get_node_type() { return n_type_; }
-
-        // virtual function for page_manager resize
-        virtual void traverse_for_pgm_resize(page_manager* old_pm,
-                                             page_manager* new_pm,
-                                             group_type resize_type) = 0;
-
-        // for level traverse
-        virtual vector<anode*> print_node_info() = 0;
-
-        found_result insert_value_in_node(const string &prefix, T v,
-                                      htrie_map<K_unit, T>* hm) {
-            value_ = v;
-            have_value_ = true;
-            hm->set_v2k(v, this, -1);
-            prefix_ = prefix;
-            return found_result(have_value_, value_, -1, -1);
-        }
-
-        found_result search_kv_in_node() {
-            return found_result(have_value_, value_, -1, -1);
-        }
 
         void set_prefix(const string& prefix) { prefix_ = prefix; }
-        const string& get_prefix() { return prefix_; }
 
-        // Get the x-nd grand parent for adding a fast path
-        inline trie_node* get_fast_path_parent() {
+        /*---- Get function ---*/
+        trie_node* get_parent() const { return parent_; }
+
+        const string& get_prefix() const { return prefix_; }
+
+        node_type get_node_type() const { return n_type_; }
+
+        // Get the fast-path parent for adding a fast path
+        trie_node* get_fast_path_parent() const {
             trie_node* cur_parent = (trie_node*)this;
             for (int i = 0; i != FAST_PATH_NODE_NUM; i++) {
                 cur_parent = cur_parent->anode::get_parent();
@@ -354,13 +341,28 @@ class htrie_map {
             return cur_parent;
         }
 
-        // Set up a fast path in its target grandparent
-        void set_up_fast_path(const char* key, size_t key_size) {
-            // Get the target parent who is going to add a fast path for destination node(this)
-            trie_node* add_fast_path_parent = get_fast_path_parent();
-            assert(add_fast_path_parent != nullptr);
-            add_fast_path_parent->add_fast_path(key, key_size, this);
+        // Virtual function for page_manager resize
+        virtual void traverse_for_pgm_resize(page_manager* old_pm,
+                                             page_manager* new_pm,
+                                             group_type resize_type) = 0;
+
+        // Insert element that terminates in current node
+        found_result insert_value_in_node(const string &prefix, const T v,
+                                      htrie_map<K_unit, T>* const hm) {
+            value_ = v;
+            have_value_ = true;
+            hm->set_v2k(v, this, -1);
+            prefix_ = prefix;
+            return found_result(have_value_, value_, -1, -1);
         }
+
+        // Search element that terminates in current node
+        found_result search_kv_in_node() const {
+            return found_result(have_value_, value_, -1, -1);
+        }
+
+        // for level traverse
+        virtual vector<anode*> print_node_info() = 0;
     };
 
 
