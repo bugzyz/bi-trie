@@ -286,7 +286,10 @@ class htrie_map {
     };
 
     /* Node's base class */
-    class anode {
+    /* 
+     * We divide the node into two type: trie node and hash node that descriped above its class
+     */
+    class node {
        private:
         node_type n_type_;
         trie_node* parent_;
@@ -298,7 +301,7 @@ class htrie_map {
         string prefix_;
 
        public:
-        anode(const node_type n_type, trie_node* parent, const K_unit *key, const size_t key_size)
+        node(const node_type n_type, trie_node* parent, const K_unit *key, const size_t key_size)
             : n_type_(n_type),
               parent_(parent),
               have_value_(false),
@@ -335,7 +338,7 @@ class htrie_map {
         trie_node* get_fast_path_parent() const {
             trie_node* cur_parent = (trie_node*)this;
             for (int i = 0; i != FAST_PATH_NODE_NUM; i++) {
-                cur_parent = cur_parent->anode::get_parent();
+                cur_parent = cur_parent->node::get_parent();
                 if (cur_parent == nullptr) return nullptr;
             }
             return cur_parent;
@@ -361,12 +364,18 @@ class htrie_map {
             return found_result(have_value_, value_, -1, -1);
         }
 
-        // for level traverse
-        virtual vector<anode*> print_node_info() = 0;
+        // For level traverse
+        virtual vector<node*> print_node_info() = 0;
     };
 
-
-    class trie_node : public anode {
+    /* Burst-trie's trie node class */
+    /*
+     * Non-leaf node in burst trie,
+     * Take in charge of leading the lookup function to reach the target hash
+     * node, the leaf node, in normal trie searching way.
+     */
+    class trie_node : public node {
+       private:
         /*-------------fast_path_manager-------------*/
         class fast_path_manager {
         private:
@@ -374,19 +383,19 @@ class htrie_map {
                 unsigned int hash_val_;
                 // TODO: store in page_manager
                 string fast_path_string_;
-                anode* dest_node_;
+                node* dest_node_;
 
             public:
-                fast_path(unsigned int hash_val, const string &fast_path_string, anode* dest_node)
+                fast_path(unsigned int hash_val, const string &fast_path_string, node* dest_node)
                     : hash_val_(hash_val),
                     fast_path_string_(fast_path_string),
                     dest_node_(dest_node) {}
 
-                inline void set_dest_node(anode *node) { dest_node_ = node; }
+                inline void set_dest_node(node *dest_node) { dest_node_ = dest_node; }
 
                 inline unsigned int get_hash_val() { return hash_val_; }
                 inline string& get_string() { return fast_path_string_; }
-                inline anode* get_dest_node() { return dest_node_; }
+                inline node* get_dest_node() { return dest_node_; }
             };
 
             vector<fast_path> fast_paths;
@@ -394,7 +403,7 @@ class htrie_map {
         public:
             fast_path_manager() {}
 
-            inline void insert_fast_path(const char* key, size_t key_size, anode* node_ptr) {
+            inline void insert_fast_path(const char* key, size_t key_size, node* node_ptr) {
                 //Insert new element
                 fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
 
@@ -415,7 +424,7 @@ class htrie_map {
 
             // TODO: FIXME: consider the same hash value situation: consider the list
             // | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
-            inline anode* lookup_fast_path(const char* key,
+            inline node* lookup_fast_path(const char* key,
                                                     size_t key_size) {
                 // binary search
                 unsigned int target_hash_val = hash(key, key_size);
@@ -459,10 +468,10 @@ class htrie_map {
             class child_node {
             public:
                 char child_node_char;
-                anode* current;
+                node* current;
                 child_node* next;
 
-                child_node(char cnc, anode* cur)
+                child_node(char cnc, node* cur)
                     : child_node_char(cnc), current(cur), next(nullptr) {}
 
                 child_node()
@@ -483,7 +492,7 @@ class htrie_map {
         public:
             child_representation() : size_(0), first_child_(nullptr) {}
 
-            inline anode*& operator[](char c) {
+            inline node*& operator[](char c) {
                 //find the ok node
                 child_node* current_child_node = first_child_;
                 child_node* last_child_node = nullptr;
@@ -509,7 +518,7 @@ class htrie_map {
                 return last_child_node->next_child()->current;
             }
 
-            inline anode* find(char c) {
+            inline node* find(char c) {
                 child_node* current_child_node = first_child_;
                 while(current_child_node != nullptr) {
                     if (current_child_node->child_node_char == c)
@@ -523,7 +532,7 @@ class htrie_map {
             inline size_t size() { return size_; }
 
             /* for traverse_for_pgm_resize() */
-            inline void get_childs(vector<anode*>& res) {
+            inline void get_childs(vector<node*>& res) {
                 child_node* current_child_node = first_child_;
 
                 while (current_child_node) {
@@ -534,12 +543,12 @@ class htrie_map {
             
             // TODO
             /* for shrink node */
-            inline void get_childs_with_char(vector<pair<K_unit, anode*>>& res) {
+            inline void get_childs_with_char(vector<pair<K_unit, node*>>& res) {
                 child_node* current_child_node = first_child_;
 
                 while (current_child_node) {
                     res.push_back(
-                        pair<K_unit, anode*>(current_child_node->child_node_char,
+                        pair<K_unit, node*>(current_child_node->child_node_char,
                                                 current_child_node->current));
 
                     current_child_node = current_child_node->next;
@@ -571,10 +580,10 @@ class htrie_map {
 
        public:
         trie_node(trie_node* p, const char* key, size_t key_size)
-            : anode(node_type::TRIE_NODE, p, key, key_size), fpm_(nullptr) {}
+            : node(node_type::TRIE_NODE, p, key, key_size), fpm_(nullptr) {}
 
         // add a fast path of string(key, key_size) in fast path manager
-        void add_fast_path(const char* key, size_t key_size, anode* node) {
+        void add_fast_path(const char* key, size_t key_size, node* node) {
             if (fpm_ == nullptr)
                 fpm_ = new fast_path_manager();
             fpm_->insert_fast_path(key, key_size, node);
@@ -586,19 +595,19 @@ class htrie_map {
         // the virtual function for page_manager page resize
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
-            vector<anode*> childs;
+            vector<node*> childs;
             get_childs_vector(childs);
             for (auto it : childs) {
                 it->traverse_for_pgm_resize(old_pm, new_pm, resize_type);
             }
         }
 
-        vector<anode*> print_node_info(){
-            vector<anode*> res;
+        vector<node*> print_node_info(){
+            vector<node*> res;
             get_childs_vector(res);
             cout << "t:" << (void*)this << " ";
 
-            vector<pair<K_unit, anode*>> res2;
+            vector<pair<K_unit, node*>> res2;
             childs_.get_childs_with_char(res2);
             for (auto c : res2)
                 cout << ((c.second)->is_hash_node() ? "h:" : "t:") << c.first
@@ -607,23 +616,23 @@ class htrie_map {
         }
 
         /*---helper function for traverse_for_pgm_resize----*/
-        void get_childs_vector(vector<anode*> &res) {
+        void get_childs_vector(vector<node*> &res) {
             //get all trie_node childs from child_representation
             childs_.get_childs(res);
         }
 
         // add node in child representation
-        void add_child(const K_unit c, anode* node) { childs_[c] = node; }
+        void add_child(const K_unit c, node* adding_node) { childs_[c] = adding_node; }
 
         // finding target, if target doesn't exist, create new trie_node with
         // hash_node son and return new trie_node
-        anode* find_trie_node_child(const K_unit* key, size_t &pos,
+        node* find_trie_node_child(const K_unit* key, size_t &pos,
                                     size_t key_size, htrie_map<K_unit, T>* hm) {
             // Find in fast path
-            // If find the target anode in fpm(fast path manager), we return the
+            // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
             if (fpm_ != nullptr && (pos + FAST_PATH_NODE_NUM < key_size)) {
-              anode *fast_path_node =
+              node *fast_path_node =
                   fpm_->lookup_fast_path(key + pos, FAST_PATH_NODE_NUM);
               if (fast_path_node != nullptr) {
                 pos += FAST_PATH_NODE_NUM;
@@ -632,13 +641,19 @@ class htrie_map {
             }
 
             // Find in normal path
-            anode* target_node = childs_.find(key[pos]);
+            node* target_node = childs_.find(key[pos]);
             pos++;
             return target_node;
         }
     };
 
-    class hash_node : public anode {
+    /* Burst-trie's hash node class */
+    /*
+     * Leaf node in burst trie,
+     * Take in charge of leading the lookup function to find the lookuping
+     * element, the value, in hashtable searching way.
+     */
+    class hash_node : public node {
        public:
         slot* key_metas;
         size_t elem_num;
@@ -683,14 +698,14 @@ class htrie_map {
        public:
         explicit hash_node(trie_node* p,const string &prefix, page_manager* pm,
                            size_t need_associativity = 1)
-            : anode(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
+            : node(node_type::HASH_NODE, p, prefix.data(), prefix.size()),
               cur_associativity(need_associativity > ASSOCIATIVITY
                                     ? ASSOCIATIVITY
                                     : need_associativity),
               elem_num(0),
               normal_pgid(pm->require_group_id(group_type::NORMAL_GROUP)),
               special_pgid(pm->require_group_id(group_type::SPECIAL_GROUP)) {
-            anode::set_prefix(prefix);
+            node::set_prefix(prefix);
 
             key_metas = new slot[cur_associativity * BUCKET_NUM]();
         }
@@ -735,9 +750,9 @@ class htrie_map {
             
         }
 
-        vector<anode*> print_node_info(){
+        vector<node*> print_node_info(){
             cout << "h:" << elem_num << " " << (void*)this << "  ";
-            return vector<anode*>();
+            return vector<node*>();
         }
 
         ~hash_node() { delete[] key_metas; }
@@ -1002,12 +1017,12 @@ class htrie_map {
                 (slotid = expand_key_metas_space()) == -1 &&
                 (slotid = cuckoo_hash(bucketid, hm)) == -1) {
 
-                const string& prefix = this->anode::get_prefix();
+                const string& prefix = this->node::get_prefix();
 
                 trie_node* new_parent =
                     hm->burst(burst_package(key_metas, BUCKET_NUM,
                                             cur_associativity, pm_agent),
-                              this->anode::get_parent(), prefix);
+                              this->node::get_parent(), prefix);
 
                 hm->access_kv_in_htrie_map(new_parent, key, key_size, v, false,
                                             prefix.data(), prefix.size());
@@ -1400,7 +1415,7 @@ class htrie_map {
 
             // try insert, if failed, we reallocate the page groups,
             // update the pgid in hashnodes and return
-            anode* root = hm->t_root;
+            node* root = hm->t_root;
             root->traverse_for_pgm_resize(this, pm, resize_type);
 
             // notify the bursting hash node that your keymetas have been change
@@ -1490,25 +1505,25 @@ class htrie_map {
 
     class SearchPoint {
        private:
-        anode* node;
-        int index;
+        node* target_node_;
+        int index_;
 
        public:
-        SearchPoint() : node(nullptr), index(-1) {}
-        SearchPoint(anode* n, int i) : node(n), index(i) {}
+        SearchPoint() : target_node_(nullptr), index_(-1) {}
+        SearchPoint(node* n, int i) : target_node_(n), index_(i) {}
 
-        void set_index(int i) { index = i; }
+        void set_index(int i) { index_ = i; }
 
         std::string get_string(page_manager* pm) {
-            if (node == nullptr) return string();
-            // if the node is trie_node, just return the prefix on node
-            if (node->is_trie_node()) {
-                return node->get_prefix();
+            if (target_node_ == nullptr) return string();
+            // if the target_node_ is trie_node, just return the prefix on target_node_
+            if (target_node_->is_trie_node()) {
+                return target_node_->get_prefix();
             }
-            string res = node->get_prefix();
-            if (index != -1) {
-                hash_node* hnode = (hash_node*)node;
-                slot* sl = hnode->get_column_store_slot(index);
+            string res = target_node_->get_prefix();
+            if (index_ != -1) {
+                hash_node* hnode = (hash_node*)target_node_;
+                slot* sl = hnode->get_column_store_slot(index_);
                 page_manager_agent pm_agent = pm->get_page_manager_agent(hnode->normal_pgid, hnode->special_pgid);
                 res = res + string(pm_agent.get_content_pointer(sl),
                                    sl->get_length());
@@ -1534,7 +1549,7 @@ class htrie_map {
 
     uint32_t longest_string_size;
     // TODO: divided into find and insert mode
-    std::pair<bool, T> access_kv_in_htrie_map(anode* start_node,
+    std::pair<bool, T> access_kv_in_htrie_map(node* start_node,
                                               const K_unit* key, size_t key_size,
                                               T v, bool findMode,
                                               const K_unit* prefix_key = nullptr,
@@ -1543,7 +1558,7 @@ class htrie_map {
       longest_string_size =
           longest_string_size > key_size ? longest_string_size : key_size;
 
-      anode* current_node = start_node;
+      node* current_node = start_node;
 
       // TODO: pos updating need refine?
       // The pos update is moved to find_trie_node_child(fast-path or
@@ -1598,11 +1613,11 @@ class htrie_map {
       }
     }
 
-    void set_t_root(anode* node) { t_root = node; }
+    void set_t_root(node* node) { t_root = node; }
 
     void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
 
-    void set_v2k(T v, anode* node, int index) {
+    void set_v2k(T v, node* node, int index) {
         v2k[v] = SearchPoint(node, index);
     }
 
@@ -1613,7 +1628,7 @@ class htrie_map {
     }
 
     boost::unordered_map<T, SearchPoint> v2k;
-    anode* t_root;
+    node* t_root;
     page_manager *pm;
 
    public:
@@ -1664,11 +1679,11 @@ class htrie_map {
 
     void traverse_level() {
         cout << endl;
-        queue<anode*> q;
+        queue<node*> q;
         q.push(t_root);
         unsigned int fpm_memory = 0;
         while (!q.empty()) {
-            anode* cur_node = q.front();
+            node* cur_node = q.front();
             q.pop();
             if (cur_node->is_hash_node()) continue;
 
@@ -1678,7 +1693,7 @@ class htrie_map {
                     : ((trie_node *)cur_node)->fpm_->get_fpm_memory();
             fpm_memory += cur_fpm_mem;
             
-            vector<anode*> childs;
+            vector<node*> childs;
             ((trie_node*)cur_node)->get_childs_vector(childs);
             for (auto c : childs) q.push(c);
         }
