@@ -243,47 +243,42 @@ class htrie_map {
                            typename page_manager::page_group* sg)
             : n_group(ng), s_group(sg) {}
 
-        inline typename page_manager::page_group* get_page_group(slot* s) {
+        inline typename page_manager::page_group* get_page_group(slot* s) const {
             return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP
                        ? s_group
                        : n_group;
         }
 
-        inline typename page_manager::page_group* get_page_group(group_type get_type) {
+        inline typename page_manager::page_group* get_page_group(const group_type get_type) const {
             return get_type == group_type::SPECIAL_GROUP ? s_group : n_group;
         }
 
-        inline void set_page_group(
-            group_type get_type,
-                typename page_manager::page_group* update_page_group) {
-          get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
-                                                : (n_group = update_page_group);
-        }
-
-        inline bool is_special(slot* s) {
-            return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP;
+        inline void set_page_group(const group_type get_type,
+                typename page_manager::page_group *const update_page_group) {
+            get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
+                                                  : (n_group = update_page_group);
         }
 
         // get function
-        inline char* get_content_pointer(slot* s) {
-            return is_special(s) ? s_group->get_content_pointer_in_page(s)
-                                 : n_group->get_content_pointer_in_page(s);
+        inline char* get_content_pointer(slot* s) const {
+            return s->is_special() ? s_group->get_content_pointer_in_page(s)
+                                   : n_group->get_content_pointer_in_page(s);
         }
 
-        inline T get_value(slot* s) {
-            return is_special(s) ? s_group->get_value_in_page(s)
-                                 : n_group->get_value_in_page(s);
+        inline T get_value(slot* s) const {
+            return s->is_special() ? s_group->get_value_in_page(s)
+                                   : n_group->get_value_in_page(s);
         }
 
         // Try to insert element to its right group and return availability
-        inline bool try_insert(size_t key_size) {
+        inline bool try_insert(const size_t key_size) const {
             return get_group_type(key_size) == group_type::SPECIAL_GROUP
                        ? s_group->try_insert(key_size)
                        : n_group->try_insert(key_size);
         }
 
         // Insert element to its right group and return the slot(position)
-        inline slot insert_element(const K_unit* key, size_t key_size, T v) {
+        inline slot insert_element(const K_unit* key, const size_t key_size, const T v) {
             return get_group_type(key_size) == group_type::SPECIAL_GROUP
                        ? s_group->write_kv_to_page(key, key_size, v)
                        : n_group->write_kv_to_page(key, key_size, v);
