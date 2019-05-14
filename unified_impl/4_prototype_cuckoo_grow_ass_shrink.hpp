@@ -1561,6 +1561,11 @@ class htrie_map {
         }
     };
 
+    /* String recovery class */
+    /*
+     * A search point contains a node and a index, denoting the location that a
+     * element been stored
+     */
     class search_point {
        private:
         node* target_node_;
@@ -1574,16 +1579,21 @@ class htrie_map {
 
         std::string get_string(page_manager* pm) {
             if (target_node_ == nullptr) return string();
-            // if the target_node_ is trie_node, just return the prefix on target_node_
-            if (target_node_->is_trie_node()) {
-                return target_node_->get_prefix();
-            }
+
+            // Get the prefix string
             string res = target_node_->get_prefix();
+
+            // Get the suffix string
             if (index_ != -1) {
+                // Get the page_manager_agent
                 hash_node* hnode = (hash_node*)target_node_;
-                slot* sl = hnode->get_column_store_slot(index_);
                 page_manager_agent pm_agent = pm->get_page_manager_agent(
                     hnode->get_normal_pgid(), hnode->get_special_pgid());
+                    
+                // Get stored location(slot)
+                slot* sl = hnode->get_column_store_slot(index_);
+
+                // Concat prefix and suffix
                 res = res + string(pm_agent.get_content_pointer(sl),
                                    sl->get_length());
             }
