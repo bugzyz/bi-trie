@@ -121,6 +121,8 @@ class htrie_map {
             return fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
     }
 
+    /* node */
+    class node;
     class trie_node;
     class hash_node;
 
@@ -152,6 +154,7 @@ class htrie_map {
     }
 
    private:
+    /* Storing location recording class */
     class slot {
        private:
         uint32_t encode;
@@ -235,7 +238,7 @@ class htrie_map {
         }
     };
 
-    /* helper class for hash_node get its page_groups */
+    /* Helper class for hash_node get its page_groups */
     class page_manager_agent {
         typename page_manager::page_group* n_group;
         typename page_manager::page_group* s_group;
@@ -599,7 +602,7 @@ class htrie_map {
 
         // Finding target node
         node* find_trie_node_child(const K_unit* key, size_t &ref_pos,
-                                    size_t key_size, htrie_map<K_unit, T>* hm) const {
+                                    size_t key_size, const htrie_map<K_unit, T>* hm) const {
             // Find in fast path
             // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
@@ -901,7 +904,7 @@ class htrie_map {
                     delete[] key_metas_backup;
                     delete extra_slot;
 
-                    hm->apply_the_changed_searchPoint(
+                    hm->apply_the_changed_search_point(
                         searchPoint_wait_2_be_update);
 
                     cuckoohash_cost_time += get_time() - sta;
@@ -955,11 +958,11 @@ class htrie_map {
             // return the iterator for being modified or read
             size_t bucket_id1 = hash(key, key_size, 1) % BUCKET_NUM;
             found_result res1 = find_in_bucket(bucket_id1, key, key_size, pm_agent);
-            if (res1.is_founded()) return res1;
+            if (res1.exist()) return res1;
 
             size_t bucket_id2 = hash(key, key_size, 2) % BUCKET_NUM;
             found_result res2 = find_in_bucket(bucket_id2, key, key_size, pm_agent);
-            if (res2.is_founded()) return res2;
+            if (res2.exist()) return res2;
 
             // If the code reach here it means the target doesn't exist
             // We try to return the result that locating at a un-full bucket
@@ -971,8 +974,8 @@ class htrie_map {
 
         void insert_kv_in_hashnode(const K_unit* key, size_t key_size, htrie_map* hm,
                                                  T v, found_result fr) {
-            size_t bucketid = fr.bucketid;
-            int slotid = fr.slotid;
+            size_t bucketid = fr.get_bucketid();
+            int slotid = fr.get_slotid();
             page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
 
             /* 
@@ -995,8 +998,7 @@ class htrie_map {
                                             cur_associativity_, pm_agent),
                               this->node::get_parent(), prefix);
 
-                hm->access_kv_in_htrie_map(new_parent, key, key_size, v, false,
-                                            prefix.data(), prefix.size());
+                hm->insert_kv_in_bitrie(new_parent, key, key_size, v, prefix.data(), prefix.size());
                 delete this;
                 return;
             }
@@ -1211,8 +1213,7 @@ class htrie_map {
                 size_t length_left = s.get_length() - common_prefix_key_size;
                 T v = bp.get_agent().get_value(&s);
 
-                access_kv_in_htrie_map(parent, new_key, length_left, v, false, prefix.data(), prefix.size());
-
+                insert_kv_in_bitrie(parent, new_key, length_left, v, prefix.data(), prefix.size());
                 bp.pop();
         }
 
@@ -1577,7 +1578,7 @@ class htrie_map {
 
         void set_index(int index) { index_ = index; }
 
-        std::string get_string(page_manager* pm) {
+        std::string get_string(page_manager* pm) const {
             if (target_node_ == nullptr) return string();
 
             // Get the prefix string
@@ -1601,146 +1602,169 @@ class htrie_map {
         }
     };
 
+    /* Found result recording class */
+    /*
+     * Record the information that a element existence, location(bucketid,
+     * slotid), value
+     */
     class found_result {
-       public:
         bool found;
-        const T v;
+        T v;
         size_t bucketid;
         int slotid;
 
+       public:
         found_result(bool f, T vv, size_t bid, int sid)
             : found(f), v(vv), bucketid(bid), slotid(sid) {}
 
-        bool is_founded() { return found; }
+        bool exist() const { return found; }
 
-        bool is_bucket_full() { return slotid == -1; }
+        bool is_bucket_full() const { return slotid == -1; }
+
+        T get_value() const { return v; }
+
+        size_t get_bucketid() const { return bucketid; }
+
+        int get_slotid() const { return slotid; }
     };
 
+    /* Insert kv function */
+    /*
+     * Element: key:string(key, key_size) and value:v will be inserted into bitrie
+     */
     uint32_t longest_string_size;
-    // TODO: divided into find and insert mode
-    std::pair<bool, T> access_kv_in_htrie_map(node* start_node,
-                                              const K_unit* key, size_t key_size,
-                                              T v, bool findMode,
-                                              const K_unit* prefix_key = nullptr,
-                                              size_t prefix_key_size = 0) {
-      // update longest_string_size
-      longest_string_size =
-          longest_string_size > key_size ? longest_string_size : key_size;
+    void insert_kv_in_bitrie(node* start_node, const K_unit* key,
+                             size_t key_size, T v,
+                             const K_unit* prefix_key = nullptr,
+                             size_t prefix_key_size = 0) {
+        // Update longest_string_size
+        longest_string_size =
+            longest_string_size > key_size ? longest_string_size : key_size;
 
-      node* current_node = start_node;
+        node* current_node = start_node;
 
-      // TODO: pos updating need refine?
-      // The pos update is moved to find_trie_node_child(fast-path or
-      // non-fast-path way) while the pos increment
-      for (size_t ref_pos = 0; ref_pos < key_size;) {
-        switch (current_node->get_node_type()) {
-            case node_type::TRIE_NODE: {
-                trie_node* orig_tnode = (trie_node*)current_node;
-                // return the hitted trie_node* or create a new
-                // trie_node with a hash_node son
-                current_node = orig_tnode->find_trie_node_child(key, ref_pos, key_size, this);
+        // The pos update is moved to find_trie_node_child(fast-path or
+        // non-fast-path way) while the pos increment
+        for (size_t ref_pos = 0; ref_pos < key_size;) {
+            switch (current_node->get_node_type()) {
+                case node_type::TRIE_NODE: {
+                    trie_node* orig_tnode = (trie_node*)current_node;
+                    // Return the hitted trie_node* or create a new
+                    // trie_node with a hash_node son
+                    current_node = orig_tnode->find_trie_node_child(key, ref_pos, key_size, this);
 
-                if(current_node == nullptr){
-                    if (findMode) {
-                        return std::pair<bool, T>(false, T());
-                    } else {
+                    if(current_node == nullptr){
                         string new_prefix = string(prefix_key, prefix_key_size) + string(key, ref_pos);
                         // Create a corresponding hash_node and add it to current
                         // trie_node's child representation
                         current_node =
                             new hash_node(orig_tnode, new_prefix, pm);
                         orig_tnode->add_child(key[ref_pos - 1], current_node);
-                    }
-                } 
+                    } 
 
-            } break;
-            case node_type::HASH_NODE: {
-                hash_node* hnode = (hash_node*)current_node;
-                found_result res = hnode->search_kv_in_hashnode(key + ref_pos,
-                                                        key_size - ref_pos, pm);
-                if (findMode) {
-                    return std::pair<bool, T>(res.found, res.v);
-                } else {
+                } break;
+                case node_type::HASH_NODE: {
+                    hash_node* hnode = (hash_node*)current_node;
+                    found_result res = hnode->search_kv_in_hashnode(key + ref_pos,
+                                                            key_size - ref_pos, pm);
                     hnode->insert_kv_in_hashnode(key + ref_pos, key_size - ref_pos, this, v, res);
-                    return std::pair<bool, T>(res.found, res.v);
+                    return;
+                } break;
+                default:{
+                    cout << "wrong type!";
+                    exit(0);
+                    return;
                 }
-            } break;
-            default:
-                cout << "wrong type!";
-                exit(0);
+            }
         }
-      }
 
-      // find a key in node's only value
-      found_result res = current_node->search_kv_in_node();
-
-      if (findMode) {
-        return std::pair<bool, T>(res.found, res.v);
-      } else {
         current_node->insert_value_in_node(string(prefix_key, prefix_key_size) + string(key, key_size), v, this);
-        return std::pair<bool, T>(true, v);
-      }
+        return;
     }
 
+    /* Insert kv function */
+    /*
+     * Find the element that key equals to string(key, key_size) in bitrie
+     */
+    found_result search_kv_in_bitrie(node* start_node, const K_unit* key, size_t key_size) const {
+        node* current_node = start_node;
+
+        // The pos update is moved to find_trie_node_child(fast-path or
+        // non-fast-path way) while the pos increment
+        for (size_t ref_pos = 0; ref_pos < key_size;) {
+            switch (current_node->get_node_type()) {
+                case node_type::TRIE_NODE: {
+                    // return the hitted trie_node* or create a new
+                    // trie_node with a hash_node son
+                    current_node = ((trie_node*)current_node)->find_trie_node_child(key, ref_pos, key_size, this);
+
+                    if(current_node == nullptr)
+                        return found_result(false, T(), -1, -1);
+                } break;
+                case node_type::HASH_NODE: {
+                    hash_node* hnode = (hash_node*)current_node;
+                    return hnode->search_kv_in_hashnode(key + ref_pos,
+                                                            key_size - ref_pos, pm);
+                } break;
+                default:
+                    cout << "wrong type!";
+                    exit(0);
+            }
+        }
+
+        // Find a key in node's only value
+        return current_node->search_kv_in_node();
+    }
+
+    /*---- Set function ---*/
     void set_t_root(node* node) { t_root = node; }
 
-    void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
+    void set_search_point_index(T v, int index) { v2k[v].set_index(index); }
 
     void set_v2k(T v, node* node, int index) {
         v2k[v] = search_point(node, index);
     }
 
-    // function for batch updating the searchPoints to v2k
-    void apply_the_changed_searchPoint(map<T, int>& searchPoints) {
+    // Function for batch updating the searchPoints to v2k
+    void apply_the_changed_search_point(map<T, int>& searchPoints) {
         for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
-            set_searchPoint_index(it->first, it->second);
+            set_search_point_index(it->first, it->second);
     }
 
     boost::unordered_map<T, search_point> v2k;
-    node* t_root;
     page_manager *pm;
+    node* t_root;
 
    public:
-    htrie_map()
-        : t_root(nullptr), pm(new page_manager(1, 1)), longest_string_size(0) {
-        std::cout << "SET UP GROWING-CUCKOOHASH-TRIE MAP\n";
-        cout << "GROW_ASSOCIATIVITY\n";
-        cout << "PM\n";
-
-        t_root = new hash_node(nullptr, string(), pm, ASSOCIATIVITY);
-    }
+    htrie_map():pm(new page_manager(1, 1)),
+                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)),
+                longest_string_size(0) {}
 
     // TODO deconstructor
 
-    /*---------------external accessing interface-------------------*/
-    // TODO: adapt to wukong's interface
-    // search operation
-    T searchByKey(std::string key) {
-        return access_kv_in_htrie_map(t_root, key.data(), key.size(), T(), true).second;
+    /*---- External accessing interface ---*/
+    string operator[](T v) { return v2k[v].get_string(pm); }
+
+    T operator[](const string& key_string) const {
+        return search_kv_in_bitrie(t_root, key_string.data(), key_string.size())
+            .get_value();
     }
 
-    std::string searchByValue(T v) { return v2k[v].get_string(pm); }
+    bool exist(T v) const { return v2k.find(v) == v2k.end(); }
 
-    // find operation
-    std::pair<bool, T> findByKey(std::string key) {
-        return access_kv_in_htrie_map(t_root, key.data(), key.size(), T(), true);
-    }
-
-    std::pair<bool, std::string> findByValue(T v) {
-        if (v2k.find(v) == v2k.end()) {
-            return std::pair<bool, T>(false, string());
-        } else {
-            return std::pair<bool, T>(true, v2k[v].get_string(this));
-        }
+    bool exist(const string& key_string) const {
+        return search_kv_in_bitrie(t_root, key_string.data(), key_string.size())
+            .exist();
     }
 
     // insert operation
-    std::pair<bool, T> insertKV(std::string key, T v) {
-        return access_kv_in_htrie_map(t_root, key.data(), key.size(), v, false);
+    void insert_kv(const string& key_string, T v) {
+        insert_kv_in_bitrie(t_root, key_string.data(), key_string.size(), v);
+        return;
     }
 
-    /*---------------external cleaning interface-------------------*/
-    void clean_useless() {
+    /*---- External cleaning interface ---*/
+    void storage_resize() {
         // zero at last means that we don't need to expand the page_manager
         pm->resize(group_type ::NORMAL_GROUP, this, 0);
         pm->resize(group_type ::SPECIAL_GROUP, this, 0);
