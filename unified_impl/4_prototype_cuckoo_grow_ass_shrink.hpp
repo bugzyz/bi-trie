@@ -45,13 +45,11 @@ uint64_t establish_fastpath_cost_time = 0;
 // page manager resize
 uint64_t page_manager_resize_cost_time = 0;
 
-// TODO: myTrie, htrie_map rename: 
-// myTrie: zyz_trie, htrie_map: bi_trie
-namespace myTrie {
+namespace zyz_trie {
 using namespace std;
 // K_unit = char, T = value type
 template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
-class htrie_map {
+class bi_trie {
    private:
     static bool key_equal(const K_unit* key_lhs, const std::size_t key_size_lhs,
                 const K_unit* key_rhs, const std::size_t key_size_rhs) {
@@ -358,10 +356,10 @@ class htrie_map {
 
         // Insert element that terminates in current node
         found_result insert_value_in_node(const string &prefix, const T v,
-                                      htrie_map<K_unit, T>* const hm) {
+                                      bi_trie<K_unit, T>* const bt) {
             value_ = v;
             have_value_ = true;
-            hm->set_v2k(v, this, -1);
+            bt->set_v2k(v, this, -1);
             prefix_ = prefix;
             return found_result(have_value_, value_, -1, -1);
         }
@@ -602,7 +600,7 @@ class htrie_map {
 
         // Finding target node
         node* find_trie_node_child(const K_unit* key, size_t &ref_pos,
-                                    size_t key_size, const htrie_map<K_unit, T>* hm) const {
+                                    size_t key_size, const bi_trie<K_unit, T>* bt) const {
             // Find in fast path
             // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
@@ -830,7 +828,7 @@ class htrie_map {
 
         /*---- 2.2 Cuckoo hash function ---*/
         // Return a empty slot_id in bucketid
-        int cuckoo_hash(size_t bucketid, htrie_map<K_unit, T>* hm) {
+        int cuckoo_hash(size_t bucketid, bi_trie<K_unit, T>* bt) {
             cuckoohash_total_num++;
             uint64_t sta = get_time();
 
@@ -854,7 +852,7 @@ class htrie_map {
             int cur_process_slotid = cur_associativity_ - 1;
 
             page_manager_agent pm_agent =
-                hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
+                bt->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
 
             map<T, int> searchPoint_wait_2_be_update;
             for (int cuckoo_hash_time = 0; cuckoo_hash_time != BUCKET_NUM * ASSOCIATIVITY * DEFAULT_CUCKOO_HASH_RATIO;
@@ -904,7 +902,7 @@ class htrie_map {
                     delete[] key_metas_backup;
                     delete extra_slot;
 
-                    hm->apply_the_changed_search_point(
+                    bt->apply_the_changed_search_point(
                         searchPoint_wait_2_be_update);
 
                     cuckoohash_cost_time += get_time() - sta;
@@ -972,11 +970,11 @@ class htrie_map {
                 return res1;
         }
 
-        void insert_kv_in_hashnode(const K_unit* key, size_t key_size, htrie_map* hm,
+        void insert_kv_in_hashnode(const K_unit* key, size_t key_size, bi_trie* bt,
                                                  T v, found_result fr) {
             size_t bucketid = fr.get_bucketid();
             int slotid = fr.get_slotid();
-            page_manager_agent pm_agent = hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
+            page_manager_agent pm_agent = bt->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
 
             /* 
              * If the slotid == -1, it means that we need extra empty slot in current bucketid
@@ -989,16 +987,16 @@ class htrie_map {
              */
             if (slotid == -1 && 
                 (slotid = expand_key_metas_space()) == -1 &&
-                (slotid = cuckoo_hash(bucketid, hm)) == -1) {
+                (slotid = cuckoo_hash(bucketid, bt)) == -1) {
 
                 const string& prefix = this->node::get_prefix();
 
                 trie_node* new_parent =
-                    hm->burst(burst_package(key_metas_, BUCKET_NUM,
+                    bt->burst(burst_package(key_metas_, BUCKET_NUM,
                                             cur_associativity_, pm_agent),
                               this->node::get_parent(), prefix);
 
-                hm->insert_kv_in_bitrie(new_parent, key, key_size, v, prefix.data(), prefix.size());
+                bt->insert_kv_in_bitrie(new_parent, key, key_size, v, prefix.data(), prefix.size());
                 delete this;
                 return;
             }
@@ -1019,8 +1017,8 @@ class htrie_map {
              */
 
             if(!pm_agent.try_insert(key_size)) {
-                hm->pm->resize(get_group_type(key_size), hm);
-                pm_agent = hm->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
+                bt->pm->resize(get_group_type(key_size), bt);
+                pm_agent = bt->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
             }
 
             // Page manager agent will take charge of the element writing work
@@ -1028,7 +1026,7 @@ class htrie_map {
             target_slot->set_slot(pm_agent.insert_element(key, key_size, v));
 
             // Set v2k
-            hm->set_v2k(v, this, get_column_store_index(target_slot));
+            bt->set_v2k(v, this, get_column_store_index(target_slot));
 
             elem_num_++;
             
@@ -1460,7 +1458,7 @@ class htrie_map {
         }
 
         void resize(group_type resize_type,
-                                 htrie_map<K_unit, T>* hm,
+                                 bi_trie<K_unit, T>* bt,
                                  size_t expand_ratio = 1) {
             uint64_t sta = get_time();
 
@@ -1473,7 +1471,7 @@ class htrie_map {
 
             // Try insert, if failed, we reallocate the page groups,
             // update the pgid in hashnodes and return
-            node* root = hm->t_root;
+            node* root = bt->t_root;
             root->traverse_for_pgm_resize(this, new_pm, resize_type);
 
             // Notify the bursting burst_package that your elements have been
@@ -1736,7 +1734,7 @@ class htrie_map {
     node* t_root;
 
    public:
-    htrie_map():pm(new page_manager(1, 1)),
+    bi_trie():pm(new page_manager(1, 1)),
                 t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)),
                 longest_string_size(0) {}
 
@@ -1769,6 +1767,6 @@ class htrie_map {
         pm->resize(group_type ::NORMAL_GROUP, this, 0);
         pm->resize(group_type ::SPECIAL_GROUP, this, 0);
     }
-};  // namespace myTrie
+};  // namespace zyz_trie
 
-}  // namespace myTrie
+}  // namespace zyz_trie
