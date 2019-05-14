@@ -1573,9 +1573,9 @@ class htrie_map {
 
        public:
         search_point() : target_node_(nullptr), index_(-1) {}
-        search_point(node* n, int i) : target_node_(n), index_(i) {}
+        search_point(node* target_node, int index) : target_node_(target_node), index_(index) {}
 
-        void set_index(int i) { index_ = i; }
+        void set_index(int index) { index_ = index; }
 
         std::string get_string(page_manager* pm) {
             if (target_node_ == nullptr) return string();
