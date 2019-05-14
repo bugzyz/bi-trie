@@ -1561,14 +1561,14 @@ class htrie_map {
         }
     };
 
-    class SearchPoint {
+    class search_point {
        private:
         node* target_node_;
         int index_;
 
        public:
-        SearchPoint() : target_node_(nullptr), index_(-1) {}
-        SearchPoint(node* n, int i) : target_node_(n), index_(i) {}
+        search_point() : target_node_(nullptr), index_(-1) {}
+        search_point(node* n, int i) : target_node_(n), index_(i) {}
 
         void set_index(int i) { index_ = i; }
 
@@ -1677,7 +1677,7 @@ class htrie_map {
     void set_searchPoint_index(T v, int index) { v2k[v].set_index(index); }
 
     void set_v2k(T v, node* node, int index) {
-        v2k[v] = SearchPoint(node, index);
+        v2k[v] = search_point(node, index);
     }
 
     // function for batch updating the searchPoints to v2k
@@ -1686,7 +1686,7 @@ class htrie_map {
             set_searchPoint_index(it->first, it->second);
     }
 
-    boost::unordered_map<T, SearchPoint> v2k;
+    boost::unordered_map<T, search_point> v2k;
     node* t_root;
     page_manager *pm;
 
