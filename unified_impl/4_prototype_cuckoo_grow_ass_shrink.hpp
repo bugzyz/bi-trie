@@ -42,6 +42,8 @@ uint64_t cuckoohash_cost_time = 0;
 uint64_t cuckoohash_total_num = 0;
 // fast path establish
 uint64_t establish_fastpath_cost_time = 0;
+// page manager resize
+uint64_t page_manager_resize_cost_time = 0;
 
 // TODO: myTrie, htrie_map rename: 
 // myTrie: zyz_trie, htrie_map: bi_trie
@@ -243,6 +245,14 @@ class htrie_map {
                            typename page_manager::page_group* sg)
             : n_group(ng), s_group(sg) {}
 
+        /*---- Set function ---*/
+        inline void set_page_group(const group_type get_type,
+                typename page_manager::page_group *const update_page_group) {
+            get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
+                                                  : (n_group = update_page_group);
+        }
+
+        /*---- Get function ---*/
         inline typename page_manager::page_group* get_page_group(slot* s) const {
             return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP
                        ? s_group
@@ -253,23 +263,17 @@ class htrie_map {
             return get_type == group_type::SPECIAL_GROUP ? s_group : n_group;
         }
 
-        inline void set_page_group(const group_type get_type,
-                typename page_manager::page_group *const update_page_group) {
-            get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
-                                                  : (n_group = update_page_group);
-        }
-
-        // get function
-        inline char* get_content_pointer(slot* s) const {
+        inline char* get_content_pointer(const slot* const s) const {
             return s->is_special() ? s_group->get_content_pointer_in_page(s)
                                    : n_group->get_content_pointer_in_page(s);
         }
 
-        inline T get_value(slot* s) const {
+        inline T get_value(const slot* const s) const {
             return s->is_special() ? s_group->get_value_in_page(s)
                                    : n_group->get_value_in_page(s);
         }
 
+        /*---- Insert element function ---*/
         // Try to insert element to its right group and return availability
         inline bool try_insert(const size_t key_size) const {
             return get_group_type(key_size) == group_type::SPECIAL_GROUP
@@ -718,18 +722,20 @@ class htrie_map {
          * For eliminating the index update in expand_key_metas_space
          * we store the column-store-index in v2k instead of row-store-index
          */
-        inline slot* get_column_store_slot(int column_store_index) {
+        inline slot* get_column_store_slot(int column_store_index) const {
             return key_metas_ +
                     (cur_associativity_ * (column_store_index % BUCKET_NUM)) +
                     column_store_index / BUCKET_NUM;
         }
 
-        inline int get_column_store_index(slot* s) {
+        inline int get_column_store_index(const slot* const s) const {
             return BUCKET_NUM * (get_index(s) % cur_associativity_) +
                     (get_index(s) / cur_associativity_);
         }
 
-        inline int get_index(slot* s) const { return s - key_metas_; }
+        inline int get_index(const slot* const s) const {
+            return s - key_metas_;
+        }
 
         inline int get_index(const size_t bucketid, const size_t slotid) const {
             return bucketid * cur_associativity_ + slotid;
@@ -1028,21 +1034,25 @@ class htrie_map {
         }
     };
 
+    /* Bursting element temporarily stored class */
     /*
-    * burst()
-    * when the hash_node's element reach the need_busrt() threshold, we
-    * burst this element into a tree with several small size of
-    * hash_node or trie_node linking with those hash_node
-    *
-    * hash_node(size:100)
-    *
-    *       burst()↓
-    *
-    * trie_node(size:0)
-    * childs: |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
-    *                              |
-    *                      hash_node(size:49)
-    */
+     * When a hash_node is about to burst, it will create a burst_package with
+     * all its elements. And the burst() function will receive a burst_package
+     * and do the burst work.
+     *
+     * This class provides helper function for burst():
+     *      1. Element(slot) traverse: is_empty(), top(), pop()
+     *      2. Elements' common prefix calculation
+     *      3. Updating function for page_manager to call when page_manager
+     *          resize is activated
+     *      
+     *
+     * Burst_package is treated like a stack from out side using is_empty(),
+     * pop(), top() to traverse its element. The way traverse burst_package like
+     * a stack will eliminate the element rewrites in page_manager resize()
+     * while the written elements are removed from elems_.
+     *
+     */
     class burst_package {
        private:
         page_manager_agent pm_agent_;
@@ -1052,14 +1062,20 @@ class htrie_map {
         burst_package(slot* elems, size_t bucket_num,
                       size_t associativity, page_manager_agent pm_agent)
             : pm_agent_(pm_agent) {
-          for (int i = 0; i != bucket_num; i++)
-            for (int j = 0; j != associativity; j++) {
-              slot* s = elems + i * associativity + j;
-              if (s->is_empty()) break;
-              elems_.push_back(*s);
+            for (int i = 0; i != bucket_num; i++) {
+                for (int j = 0; j != associativity; j++) {
+                    slot* s = elems + i * associativity + j;
+                    if (s->is_empty()) break;
+                    elems_.push_back(*s);
+                }
             }
         }
 
+        /*---- Element updating function ---*/
+        /*
+         * Invoked by page_manager's notify_burst_package() function when occur
+         * a page_manager resize()
+         */
         void update_burst_package(page_manager* new_pm, group_type resize_type) {
             size_t n_group_id = new_pm->require_group_id(group_type::NORMAL_GROUP);
             size_t s_group_id =new_pm->require_group_id(group_type::SPECIAL_GROUP);
@@ -1078,13 +1094,51 @@ class htrie_map {
             pm_agent_.set_page_group(resize_type, new_pm_agent.get_page_group(resize_type));
         }
 
-        slot operator[](int index) { return elems_[index]; }
+        /*---- Get function ---*/
+        inline page_manager_agent get_agent() const { return pm_agent_; }
+
+        /*---- Element traverse function ---*/
         const slot top() const { return elems_.back(); }
+
         void pop() { elems_.pop_back(); }
 
-        size_t size() {return elems_.size(); }
-        page_manager_agent get_agent() const { return pm_agent_; }
+        inline bool is_empty() const { return elems_.size() == 0; }
 
+        /*---- Element common prefix calculation function ---*/
+        inline unsigned int cal_common_prefix_len(
+            const char* s1, unsigned int cur_longest_prefix_len, const char* s2,
+            unsigned int new_key_size) const {
+            if (cur_longest_prefix_len > new_key_size) {
+                cur_longest_prefix_len = new_key_size;
+            }
+            for (int i = 0; i != cur_longest_prefix_len; i++) {
+                    if (s1[i] != s2[i]) {
+                    return i;
+                }
+            }
+            return cur_longest_prefix_len;
+        }
+
+        // Return the common prefix between elements
+        string get_common_prefix() const {
+          const char* ret_key_pointer = nullptr;
+          unsigned int common_prefix_len = INT_MAX;
+
+          for (int i = 0; i != elems_.size() && common_prefix_len != 0; i++) {
+                char* key = pm_agent_.get_content_pointer(&(elems_[i]));
+                if (ret_key_pointer == nullptr) ret_key_pointer = key;
+
+                // Update the common_prefix_len
+                unsigned int cur_com_prefix_len =
+                    cal_common_prefix_len(ret_key_pointer, common_prefix_len, key,
+                                        elems_[i].get_length());
+                if (common_prefix_len > cur_com_prefix_len)
+                    common_prefix_len = cur_com_prefix_len;
+          }
+          return string(ret_key_pointer, common_prefix_len);
+        }      
+
+        /*---- Debug function ---*/
         void print_bp() {
             cout << "-----------------\n";
             for(int i=0; i!= elems_.size(); i++){
@@ -1092,68 +1146,55 @@ class htrie_map {
             }
             cout << endl;
         }
-        
-        inline unsigned int cal_common_prefix_len(const char* s1,
-                                           unsigned int cur_longest_prefix_len,
-                                           const char* s2,
-                                           unsigned int new_key_size) {
-            if (cur_longest_prefix_len > new_key_size) {
-                cur_longest_prefix_len = new_key_size;
-            }
-            for (int i = 0; i != cur_longest_prefix_len; i++) {
-                if (s1[i] != s2[i]) {
-                    return i;
-                }
-            }
-            return cur_longest_prefix_len;
-        }
-
-        string get_common_prefix() {
-            // calculate the capacity of hashnode we need
-            const char* ret_key_pointer = nullptr;
-            unsigned int common_prefix_len = INT_MAX;
-            for (int i = 0; i != elems_.size() && common_prefix_len != 0; i++){
-                    char* key = pm_agent_.get_content_pointer(&(elems_[i]));
-                    if (ret_key_pointer == nullptr) ret_key_pointer = key;
-
-                    // update the common_prefix_len
-                    unsigned int cur_com_prefix_len = cal_common_prefix_len(
-                        ret_key_pointer, common_prefix_len, key,
-                        elems_[i].get_length());
-                    if (common_prefix_len > cur_com_prefix_len) {
-                        common_prefix_len = cur_com_prefix_len;
-                }
-            }
-            return string(ret_key_pointer, common_prefix_len);
-        }
     };
 
-    // bursting function
+    /*
+     * burst()
+     * When the hash_node's element cannot dynamic-expand() and cuckoo-hash()
+     * anymore, we burst the element in current hash_node into a burst-trie with
+     * several small size of hash_node or trie_node linking with hash_nodes
+     * children and return the burst-trie's root to let the caller place current
+     * burst-trie in original burst-trie.
+     *
+     * Before:
+     * hash_node(size:100)
+     *
+     *       burst()↓
+     * 
+     * After:
+     *                  root: trie_node(size:0)
+     *                   |          |         |
+     *  |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
+     *                              |
+     *                      hash_node(size:49)
+     */
     trie_node* burst(burst_package bp, trie_node* orig_parent, const string &orig_prefix) {
         burst_total_counter++;
 
+        // Add bp to page_manager's notify_list in case occur a page_manager resize()
         pm->register_burst_package(&bp);
 
         // The return header
         trie_node* ret_trie_root = new trie_node(orig_parent, orig_prefix.data(), orig_prefix.size());
 
+        // Link the current node to trie: replace the orignal root or replace
+        // the node in original parent
         if (orig_parent == nullptr)
             set_t_root(ret_trie_root);
         else
             orig_parent->add_child(orig_prefix.back(), ret_trie_root);
 
-        trie_node* parent = ret_trie_root;
-
-        // Get the common_prefix to eliminate the redundant burst
+        // Get the common_prefix to eliminate the redundant-burst
         string common_prefix = bp.get_common_prefix();
         const char* common_prefix_key = common_prefix.data();
-        unsigned int common_prefix_key_size = common_prefix.size();
+        const unsigned int common_prefix_key_size = common_prefix.size();
 
         // New prefix = prior prefix + common chain prefix
         string prefix = orig_prefix + common_prefix;
 
         // Create the common prefix trie chain with several single trie_node
         // The number of node is common_prefix_key_size
+        trie_node* parent = ret_trie_root;
         for (int i = 0; i != common_prefix_key_size; i++) {
             trie_node* cur_trie_node =
                 new trie_node(parent, prefix.data(),
@@ -1162,8 +1203,8 @@ class htrie_map {
             parent = cur_trie_node;
         }
 
-        // Insert the elements with same first char after common_prefix_len
-        while (bp.size() != 0) {
+        // Insert the elements truncated after common_prefix_len
+        while (!bp.is_empty()) {
                 slot s = bp.top();
 
                 char* new_key = bp.get_agent().get_content_pointer(&s) + common_prefix_key_size;
@@ -1175,37 +1216,69 @@ class htrie_map {
                 bp.pop();
         }
 
-        // remove current hash_node in the notify list in page_manager
+        // Remove bp from notify list in page_manager while bp's element are done
         pm->remove_burst_package(&bp);
 
         return ret_trie_root;
     }
 
+    /* Storage manager class */
+    /*
+     * Page manager divides its storage into two part: Normal and Special
+     * Each part contains several page group. Each page group contains several
+     * page. Keys and values are placed in page like:
+     * key0value0key1value1key2value2 Each hash_node only store elements in ONE
+     * page group, denoted by normal_pgid and special_pgid in hash_node.
+     *
+     * Each element can be found by the slot's information:
+     *      The is_special, length, pg_id, pos variables in slot will lead to a
+     * location that store the element
+     *
+     * |=======================Page manager=======================|
+     * |                             |                            |
+     * | Normal page group:          | Special page group:        |
+     * |                             |                            |
+     * | |===Page group 0===|        | |===Page group 0===|       |
+     * | |                  |        | |                  |       |
+     * | | |=Page 0=|       |        | | |=Page 0=|       |       |
+     * | | |        |       |        | | |        |       |       |
+     * | | |  keys  | ...   | ...    | | |  keys  | ...   | ...   |
+     * | | | values |       |        | | | values |       |       |
+     * | | |========|       |        | | |========|       |       |
+     * | |                  |        | |                  |       |
+     * | |==================|        | |==================|       |
+     * |                             |                            |
+     * |==========================================================|
+     */
     class page_manager {
        public:
         class page_group {
             class page {
                private:
                 friend class page_group;
+
+                unsigned int cur_pos;
+                char* content;
+                
                 inline static unsigned int calc_align(unsigned int n, unsigned align) {
                     return ((n + align - 1) & (~(align - 1)));
                 }
-                unsigned int cur_pos;
-                char* content;
 
                public:
                 page() : cur_pos(0), content(nullptr) {}
 
+                // Only call this function the page will start to allocate memory in content
                 void init_page(size_t size_per_page) {
                     content = (char*)malloc(size_per_page);
                 }
 
+                // Alignment controls whether we place element in different alignment
                 void append_impl(const K_unit* key, size_t key_size, T& value,
                                  unsigned int alignment = 1) {
-                    // append the string
+                    // Write the string
                     std::memcpy(content + cur_pos, key,
                                 key_size * sizeof(K_unit));
-                    // append the value
+                    // Write the value
                     std::memcpy(content + cur_pos + key_size * sizeof(K_unit),
                                 &value, sizeof(T));
                     cur_pos += calc_align(key_size * sizeof(K_unit) + sizeof(T),
@@ -1222,6 +1295,7 @@ class htrie_map {
            public:
             page_group() : pages(nullptr), cur_page_id(-1), is_special(false) {}
 
+            // Only call this function the page group will start to allocate memory in pages
             void init_pg(int page_number, bool spe) {
                 is_special = spe;
                 cur_page_id = 0;
@@ -1230,21 +1304,47 @@ class htrie_map {
                                        : DEFAULT_NORMAL_PAGE_SIZE);
             }
 
-            // get function
-            inline char* get_content_pointer_in_page(slot* s) {
-                return pages[s->get_page_id()].content + s->get_pos();
+            /*---- Get function ---*/
+            inline char* get_content_pointer_in_page(const slot* const s) const {
+              return pages[s->get_page_id()].content + s->get_pos();
             }
 
-            inline T get_value_in_page(slot* s) {
+            inline T get_value_in_page(const slot* const s) const {
                 T v;
                 std::memcpy(&v, get_content_pointer_in_page(s) + s->get_length(),
                             sizeof(T));
                 return v;
             }
 
-            // set function
+            inline size_t get_cur_page_id() const {
+                return cur_page_id;
+            }
+
+            inline size_t get_max_page_id() const {
+                return is_special ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER;
+            }
+
+            inline size_t get_max_per_page_size() const {
+                return is_special ? DEFAULT_SPECIAL_PAGE_SIZE : DEFAULT_NORMAL_PAGE_SIZE;
+            }
+
+            /*---- Insert element function ---*/
+            // Try to insert element to current page group and return availability
+            bool try_insert(size_t try_insert_key_size) const {
+                if (cur_page_id + 1 < get_max_page_id()) return true;
+                if ((pages[cur_page_id].cur_pos +
+                     try_insert_key_size * sizeof(K_unit) + sizeof(T)) <=
+                    get_max_per_page_size())
+                    return true;
+                return false;
+            }
+
+            // Insert string(key, key_size) and value to page and return the
+            // slot(position)
             slot write_kv_to_page(const K_unit* key, size_t key_size, T v) {
-                // allocate space
+                // Test whether the need_size is more than the left space
+                // If yes, init new page, write key and value
+                // If no, write key and value
                 size_t need_size = key_size * sizeof(K_unit) + sizeof(T);
 
                 if (pages[cur_page_id].cur_pos + need_size >
@@ -1271,27 +1371,6 @@ class htrie_map {
                 return ret_slot;
             }
 
-            inline size_t get_cur_page_id(){
-                return cur_page_id;
-            }
-
-            inline size_t get_max_page_id(){
-                return is_special ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER;
-            }
-
-            inline size_t get_max_per_page_size() {
-                return is_special ? DEFAULT_SPECIAL_PAGE_SIZE : DEFAULT_NORMAL_PAGE_SIZE;
-            }
-
-            bool try_insert(size_t try_insert_key_size) {
-                if (cur_page_id + 1 < get_max_page_id()) return true;
-                if ((pages[cur_page_id].cur_pos +
-                     try_insert_key_size * sizeof(K_unit) + sizeof(T)) <=
-                    get_max_per_page_size())
-                    return true;
-                return false;
-            }
-
             ~page_group() {
                 delete []pages;
             }
@@ -1310,9 +1389,11 @@ class htrie_map {
               special_pg(new page_group[128]),
               n_size(0),
               s_size(0) {
+            // Init normal page group according to the normal_page_group_number
             for (int i = 0; i != normal_page_group_number; i++)
                 init_a_new_page_group(group_type::NORMAL_GROUP, i);
 
+            // Init special page group according to the special_page_group_number
             for (int i = 0; i != special_page_group_number; i++)
                 init_a_new_page_group(group_type::SPECIAL_GROUP, i);
         }
@@ -1322,6 +1403,7 @@ class htrie_map {
             delete []special_pg;
         }
 
+        // For hash_node to require a normal_pgid and special_pgid
         inline size_t require_group_id(group_type gt) {
             // Processing page_group
             size_t cur_size =
@@ -1332,6 +1414,8 @@ class htrie_map {
             size_t least_page_page_group_id = -1;
             size_t least_page = SIZE_MAX;
 
+            // Return a page_group with least page number for load-balance,
+            // reduce page_manager resize()
             for (int i = 0; i != cur_size; i++) {
                 size_t cur_least_page = cur_pgs[i].get_cur_page_id();
                 if (least_page > cur_least_page) {
@@ -1342,6 +1426,7 @@ class htrie_map {
             return least_page_page_group_id;
         }
 
+        // Return a page_manager agent to take charge of the element getting, writing
         inline page_manager_agent get_page_manager_agent(int n_pg,
                                                          int s_pg) {
             return page_manager_agent(n_pg == -1 ? nullptr : normal_pg + n_pg,
@@ -1367,36 +1452,41 @@ class htrie_map {
             }
         }
 
+        void notify_burst_package(page_manager *new_pm, group_type resize_type) {
+            for (auto bp_ptr : notify_list) {
+                bp_ptr->update_burst_package(new_pm, resize_type);
+            }
+        }
+
         void resize(group_type resize_type,
                                  htrie_map<K_unit, T>* hm,
                                  size_t expand_ratio = 1) {
             uint64_t sta = get_time();
 
-            page_manager* pm;
-            // cout << "resizing!!!\n";
+            page_manager* new_pm;
             if (resize_type == group_type::SPECIAL_GROUP) {
-                pm = new page_manager(0, s_size << expand_ratio);
+                new_pm = new page_manager(0, s_size << expand_ratio);
             } else {
-                pm = new page_manager(n_size << expand_ratio, 0);
+                new_pm = new page_manager(n_size << expand_ratio, 0);
             }
 
-            // try insert, if failed, we reallocate the page groups,
+            // Try insert, if failed, we reallocate the page groups,
             // update the pgid in hashnodes and return
             node* root = hm->t_root;
-            root->traverse_for_pgm_resize(this, pm, resize_type);
+            root->traverse_for_pgm_resize(this, new_pm, resize_type);
 
-            // notify the bursting hash node that your keymetas have been change
-            // because of the resize
-            notify_burst_package(pm, resize_type);
+            // Notify the bursting burst_package that your elements have been
+            // changed because of the resize
+            notify_burst_package(new_pm, resize_type);
 
-            // old page_manager <=swap=> new page_manager
-            swap(pm, resize_type);
+            // Old page_manager <=swap=> new page_manager
+            swap(new_pm, resize_type);
 
             uint64_t end = get_time();
-            // cout << "resizeing cost: " << (end - sta) / 1000 / (double)1000
-            //      << " s" << endl;
 
-            delete pm;
+            page_manager_resize_cost_time += end - sta;
+
+            delete new_pm;
             return;
         }
 
@@ -1411,13 +1501,14 @@ class htrie_map {
                 normal_pg[page_group_index].init_pg(DEFAULT_NORMAL_PAGE_NUMBER, false);
                 return;
             } else {
-                cout << "undefined type!" << endl;
+                cout << "initing a undefined group type page group!" << endl;
                 assert(false);
                 exit(0);
                 return;
             }
         }
 
+        /*---- Set function ---*/
         void set_n_size(size_t new_n_size) { n_size = new_n_size; }
 
         void set_s_size(size_t new_s_size) { s_size = new_s_size; }
@@ -1430,8 +1521,9 @@ class htrie_map {
             special_pg = temp_special_pg;
         }
 
+        /*---- Single swap function ---*/
         void swap(page_manager* pm, group_type gt) {
-            // swap the normal part
+            /*---- Normal part swap ---*/
             // swap the normal page group
             if (gt == group_type::NORMAL_GROUP) {
                 page_group* temp_normal_pg = normal_pg;
@@ -1443,30 +1535,29 @@ class htrie_map {
                 set_n_size(pm->n_size);
                 pm->set_n_size(temp_n_size);
                 return;
+            } else {
+                /*---- Special part swap ---*/
+                // swap the special page group
+                page_group* temp_special_pg = special_pg;
+                special_pg = pm->special_pg;
+                pm->set_special_pg(temp_special_pg);
+
+                // swap the s_size
+                int temp_s_size = s_size;
+                set_s_size(pm->s_size);
+                pm->set_s_size(temp_s_size);
+                return;
             }
-
-            // swap the special part
-            // swap the special page group
-            page_group* temp_special_pg = special_pg;
-            special_pg = pm->special_pg;
-            pm->set_special_pg(temp_special_pg);
-
-            // swap the s_size
-            int temp_s_size = s_size;
-            set_s_size(pm->s_size);
-            pm->set_s_size(temp_s_size);
+            cout << "swapping undefined group type!" << endl;
+            assert(false);
+            exit(0);
             return;
         }
 
+        /*---- Double swap function ---*/
         void swap(page_manager &pm){
             swap(pm, group_type::NORMAL_GROUP);
             swap(pm, group_type::SPECIAL_GROUP);
-        }
-
-        void notify_burst_package(page_manager *new_pm, group_type resize_type) {
-            for (auto bp_ptr : notify_list) {
-                bp_ptr->update_burst_package(new_pm, resize_type);
-            }
         }
     };
 
