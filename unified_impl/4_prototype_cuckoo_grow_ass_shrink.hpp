@@ -9,6 +9,9 @@
 
 #include <boost/unordered_map.hpp>
 
+// TODO: format
+// TODO: test the duplicate element insertion
+
 /*---- Default configuration ---*/
 static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
 static const unsigned int DEFAULT_BUCKET_NUM = 59;
