@@ -608,12 +608,12 @@ class bi_trie {
             // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
             if (fpm_ != nullptr && (ref_pos + FAST_PATH_NODE_NUM < key_size)) {
-              node *fast_path_node =
-                  fpm_->lookup_fast_path(key + ref_pos, FAST_PATH_NODE_NUM);
-              if (fast_path_node != nullptr) {
-                ref_pos += FAST_PATH_NODE_NUM;
-                return fast_path_node;
-              }
+                node *fast_path_node =
+                    fpm_->lookup_fast_path(key + ref_pos, FAST_PATH_NODE_NUM);
+                if (fast_path_node != nullptr) {
+                    ref_pos += FAST_PATH_NODE_NUM;
+                    return fast_path_node;
+                }
             }
 
             // Find in normal path
