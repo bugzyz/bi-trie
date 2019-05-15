@@ -723,7 +723,7 @@ class bi_trie {
         }
 
         /* 
-         * For eliminating the index update in expand_key_metas_space
+         * For eliminating the index update in dynamic_expand
          * we store the column-store-index in v2k instead of row-store-index
          */
         inline slot* get_column_store_slot(int column_store_index) const {
@@ -761,7 +761,7 @@ class bi_trie {
          *      2. Cuckoo hash: Increase slot utilization rate
          */
         /*---- 1. Dynamic expand function ---*/
-        int expand_key_metas_space() {
+        int dynamic_expand() {
             uint64_t sta = get_time();
 
             // Already max associativity
@@ -989,7 +989,7 @@ class bi_trie {
              * but in-efficient(cuckoo hash too much)
              */
             if (slotid == -1 && 
-                (slotid = expand_key_metas_space()) == -1 &&
+                (slotid = dynamic_expand()) == -1 &&
                 (slotid = cuckoo_hash(bucketid, bt)) == -1) {
 
                 const string& prefix = this->node::get_prefix();
