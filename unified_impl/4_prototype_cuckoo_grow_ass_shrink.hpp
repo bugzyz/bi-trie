@@ -1582,8 +1582,12 @@ class bi_trie {
         std::string get_string(page_manager* pm) const {
             if (target_node_ == nullptr) return string();
 
-            // Get the prefix string
-            string res = target_node_->get_prefix();
+            // Static buffer for content filling
+            static char * buffer = (char*)malloc(16384);
+
+            // Fill the prefix string content
+            size_t length = target_node_->get_prefix().size();
+            memcpy(buffer, target_node_->get_prefix().data(), length);
 
             // Get the suffix string
             if (index_ != -1) {
@@ -1595,11 +1599,11 @@ class bi_trie {
                 // Get stored location(slot)
                 slot* sl = hnode->get_column_store_slot(index_);
 
-                // Concat prefix and suffix
-                res = res + string(pm_agent.get_content_pointer(sl),
-                                   sl->get_length());
+                // Fill the suffix string content
+                memcpy(buffer + length, pm_agent.get_content_pointer(sl), sl->get_length());
+                length += sl->get_length();
             }
-            return res;
+            return string(buffer, length);
         }
     };
 
@@ -1633,15 +1637,10 @@ class bi_trie {
     /*
      * Element: key:string(key, key_size) and value:v will be inserted into bitrie
      */
-    uint32_t longest_string_size;
     void insert_kv_in_bitrie(node* start_node, const K_unit* key,
                              size_t key_size, T v,
                              const K_unit* prefix_key = nullptr,
                              size_t prefix_key_size = 0) {
-        // Update longest_string_size
-        longest_string_size =
-            longest_string_size > key_size ? longest_string_size : key_size;
-
         node* current_node = start_node;
 
         // The pos update is moved to find_trie_node_child(fast-path or
@@ -1738,8 +1737,7 @@ class bi_trie {
 
    public:
     bi_trie():pm(new page_manager(1, 1)),
-                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)),
-                longest_string_size(0) {}
+                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
 
     // TODO deconstructor
 
