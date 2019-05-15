@@ -1,4 +1,5 @@
 #include "../util/my_timer.hpp"
+#include "../test_switcher.hpp"
 
 #include <iostream>
 #include <vector>
@@ -308,6 +309,13 @@ class bi_trie {
 
         string prefix_;
 
+#ifdef ID_STR_NON_OPT
+
+        // ID-STR non-opt version
+        char current_char_;
+
+#endif
+
        public:
         node(const node_type n_type, trie_node* parent, const K_unit *key, const size_t key_size)
             : n_type_(n_type),
@@ -315,6 +323,13 @@ class bi_trie {
               have_value_(false),
               value_(T()),
               prefix_("") {
+
+#ifdef ID_STR_NON_OPT
+
+            if (key_size != 0) current_char_ = key[key_size - 1];
+
+#endif
+
             // If current node's layer level equals to multiple of FAST_PATH_NODE_NUM,
             // Set up a fast path in its fast-path parent
             if (key_size % FAST_PATH_NODE_NUM == 0 && key_size != 0) {              
@@ -324,6 +339,12 @@ class bi_trie {
                 add_fast_path_parent->add_fast_path(key + key_size - FAST_PATH_NODE_NUM, FAST_PATH_NODE_NUM, this);
             }
         }
+
+#ifdef ID_STR_NON_OPT
+
+        char get_char() const { return current_char_; }
+        
+#endif
 
         /*---- Type predicate function ---*/
         bool is_hash_node() const { return n_type_ == node_type::HASH_NODE; }
@@ -1585,6 +1606,35 @@ class bi_trie {
             // Static buffer for content filling
             static char * buffer = (char*)malloc(DEFAULT_SPECIAL_PAGE_SIZE);
 
+#ifdef ID_STR_NON_OPT
+            int mid = DEFAULT_SPECIAL_PAGE_SIZE / 2;
+            int prefix_length = 0;
+            for(node* cur_node = target_node_; cur_node->get_parent() != nullptr; cur_node = cur_node->get_parent()) {
+                buffer[mid - prefix_length++] = cur_node->get_char();
+            }
+
+            string temp = string(buffer + mid - prefix_length, prefix_length);
+
+            int suffix_length = 0;
+            // Get the suffix string
+            if (index_ != -1) {
+                // Get the page_manager_agent
+                hash_node* hnode = (hash_node*)target_node_;
+                page_manager_agent pm_agent = pm->get_page_manager_agent(
+                    hnode->get_normal_pgid(), hnode->get_special_pgid());
+                    
+                // Get stored location(slot)
+                slot* sl = hnode->get_column_store_slot(index_);
+
+                // Fill the suffix string content
+                memcpy(buffer + mid + 1, pm_agent.get_content_pointer(sl), sl->get_length());
+                suffix_length = sl->get_length();
+            }
+
+            return string(buffer + mid - prefix_length + 1, prefix_length + suffix_length);
+
+#else
+
             // Fill the prefix string content
             size_t length = target_node_->get_prefix().size();
             memcpy(buffer, target_node_->get_prefix().data(), length);
@@ -1604,6 +1654,7 @@ class bi_trie {
                 length += sl->get_length();
             }
             return string(buffer, length);
+#endif
         }
     };
 
