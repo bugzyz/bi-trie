@@ -54,15 +54,15 @@ using namespace std;
 template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class bi_trie {
    private:
-    static bool key_equal(const K_unit* key_lhs, const std::size_t key_size_lhs,
-                const K_unit* key_rhs, const std::size_t key_size_rhs) {
+    static bool key_equal(const K_unit* key_lhs, const size_t key_size_lhs,
+                const K_unit* key_rhs, const size_t key_size_rhs) {
         if (key_size_lhs == 0 && key_size_rhs == 0) {
             return true;
         }
         if (key_size_lhs != key_size_rhs) {
             return false;
         } else {
-            return std::memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(K_unit)) ==
+            return memcmp(key_lhs, key_rhs, key_size_lhs * sizeof(K_unit)) ==
                 0;
         }
     }
@@ -1278,10 +1278,10 @@ class bi_trie {
                 void append_impl(const K_unit* key, size_t key_size, T& value,
                                  unsigned int alignment = 1) {
                     // Write the string
-                    std::memcpy(content + cur_pos, key,
+                    memcpy(content + cur_pos, key,
                                 key_size * sizeof(K_unit));
                     // Write the value
-                    std::memcpy(content + cur_pos + key_size * sizeof(K_unit),
+                    memcpy(content + cur_pos + key_size * sizeof(K_unit),
                                 &value, sizeof(T));
                     cur_pos += calc_align(key_size * sizeof(K_unit) + sizeof(T),
                                           alignment);
@@ -1313,7 +1313,7 @@ class bi_trie {
 
             inline T get_value_in_page(const slot* const s) const {
                 T v;
-                std::memcpy(&v, get_content_pointer_in_page(s) + s->get_length(),
+                memcpy(&v, get_content_pointer_in_page(s) + s->get_length(),
                             sizeof(T));
                 return v;
             }
@@ -1579,11 +1579,11 @@ class bi_trie {
 
         void set_index(int index) { index_ = index; }
 
-        std::string get_string(page_manager* pm) const {
+        string get_string(page_manager* pm) const {
             if (target_node_ == nullptr) return string();
 
             // Static buffer for content filling
-            static char * buffer = (char*)malloc(16384);
+            static char * buffer = (char*)malloc(DEFAULT_SPECIAL_PAGE_SIZE);
 
             // Fill the prefix string content
             size_t length = target_node_->get_prefix().size();
