@@ -343,7 +343,7 @@ class bi_trie {
 #ifdef ID_STR_NON_OPT
 
         char get_char() const { return current_char_; }
-        
+
 #endif
 
         /*---- Type predicate function ---*/
@@ -1009,18 +1009,34 @@ class bi_trie {
              * burst and re-insert alternatively for a better slot utilization rate 
              * but in-efficient(cuckoo hash too much)
              */
-            if (slotid == -1 && 
-                (slotid = dynamic_expand()) == -1 &&
-                (slotid = cuckoo_hash(bucketid, bt)) == -1) {
 
-                const string& prefix = this->node::get_prefix();
+#ifndef CUCKOO_THEN_EXPAND
 
-                trie_node* new_parent =
+            bool must_burst = (slotid == -1) &&
+                              (slotid = dynamic_expand()) == -1 &&
+                              (slotid = cuckoo_hash(bucketid, bt)) == -1;
+
+#else
+
+            bool must_burst = (slotid == -1) &&
+                              (slotid = cuckoo_hash(bucketid, bt)) == -1 &&
+                              (slotid = dynamic_expand()) == -1;
+
+#endif
+
+            if (must_burst) {
+                const string& prefix = this->node::get_prefix();    
+
+                // The replacing_node_of_this(trie_node) is the node replacing
+                // this(hash_node) node after burst() in original trie. 
+                trie_node* replacing_node_of_this =
                     bt->burst(burst_package(key_metas_, BUCKET_NUM,
                                             cur_associativity_, pm_agent),
                               this->node::get_parent(), prefix);
 
-                bt->insert_kv_in_bitrie(new_parent, key, key_size, v, prefix.data(), prefix.size());
+                // We can continue to insert the original element from
+                // replacing_node_of_this after burst() instead of from t_root
+                bt->insert_kv_in_bitrie(replacing_node_of_this, key, key_size, v, prefix.data(), prefix.size());
                 delete this;
                 return;
             }
