@@ -399,6 +399,12 @@ class bi_trie {
         found_result search_kv_in_node() const {
             return found_result(have_value_, value_, -1, -1);
         }
+
+        // For bi_trie deconstructor
+        virtual void delete_me() = 0;
+
+        // Deconstructor
+        virtual ~node() {}
     };
 
     /* Burst-trie's trie node class */
@@ -613,6 +619,18 @@ class bi_trie {
             return;
         }
 
+        // For bi_trie deconstructor
+        virtual void delete_me() {
+            typename child_representation::child_node* cur_child = childs_.get_first_node();
+            while(cur_child != nullptr) {
+                node* cur_node = cur_child->get_node();
+                cur_node->delete_me();
+                cur_child = cur_child->next_child();
+            }
+            delete this;
+        }
+
+        // Deconstructor
         ~trie_node() { if (fpm_ != nullptr) delete fpm_; }
 
         // The virtual function implementing for page_manager page resize
@@ -743,6 +761,12 @@ class bi_trie {
             }
         }
 
+        // For bi_trie deconstructor
+        virtual void delete_me() {
+            delete this;
+        }
+
+        // Deconstructor
         ~hash_node() { delete[] key_metas_; }
 
         /*---- Get function ---*/
@@ -1819,7 +1843,11 @@ class bi_trie {
     bi_trie():pm(new page_manager(1, 1)),
                 t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
 
-    // TODO deconstructor
+    // Deconstructor
+    ~bi_trie() {
+        t_root->delete_me();
+        delete pm;
+    }
 
     /*---- External accessing interface ---*/
     string operator[](T v) { return v2k[v].get_string(pm); }
