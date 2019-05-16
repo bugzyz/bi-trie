@@ -12,6 +12,7 @@
 
 // TODO: format
 // TODO: test the duplicate element insertion
+// TODO: bucket grow
 
 /*---- Default configuration ---*/
 static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
