@@ -11,7 +11,6 @@
 #include <boost/unordered_map.hpp>
 
 // TODO: format
-// TODO: test the duplicate element insertion
 // TODO: bucket grow
 
 /*---- Default configuration ---*/
@@ -386,8 +385,8 @@ class bi_trie {
                                              group_type resize_type) = 0;
 
         // Insert element that terminates in current node
-        found_result insert_value_in_node(const string &prefix, const T v,
-                                      bi_trie<K_unit, T>* const bt) {
+        found_result insert_value_in_node(const string& prefix, const T v,
+                                          bi_trie* const bt) {
             value_ = v;
             have_value_ = true;
             bt->set_v2k(v, this, -1);
@@ -648,13 +647,13 @@ class bi_trie {
         void add_child(const K_unit c, node* adding_node) { childs_[c] = adding_node; }
 
         // Finding target node
-        node* find_trie_node_child(const K_unit* key, size_t &ref_pos,
-                                    size_t key_size, const bi_trie<K_unit, T>* bt) const {
+        node* find_trie_node_child(const K_unit* key, size_t& ref_pos,
+                                   size_t key_size, const bi_trie* bt) const {
             // Find in fast path
             // If find the target node in fpm(fast path manager), we return the
             // fast_path_node
             if (fpm_ != nullptr && (ref_pos + FAST_PATH_NODE_NUM < key_size)) {
-                node *fast_path_node =
+                node* fast_path_node =
                     fpm_->lookup_fast_path(key + ref_pos, FAST_PATH_NODE_NUM);
                 if (fast_path_node != nullptr) {
                     ref_pos += FAST_PATH_NODE_NUM;
@@ -884,7 +883,7 @@ class bi_trie {
 
         /*---- 2.2 Cuckoo hash function ---*/
         // Return a empty slot_id in bucketid
-        int cuckoo_hash(size_t bucketid, bi_trie<K_unit, T>* bt) {
+        int cuckoo_hash(size_t bucketid, bi_trie* bt) {
             cuckoohash_total_num++;
             uint64_t sta = get_time();
 
@@ -1073,6 +1072,20 @@ class bi_trie {
                 return;
             }
 
+            // Deal with the situation that current insert() is a element
+            // modification instead of a element insert
+            if (fr.exist()) {
+              // The STR-ID will be re-written later at
+              // pm_agent.insert_element()
+
+              // The ID-STR in v2k is modifying
+              bt->erase_element_in_v2k(fr.get_value());
+
+            } else {
+              // Only not modifying the element will the elem_num increase
+              elem_num_++;
+            }
+
             assert(slotid != -1 && slotid >= 0 && slotid < cur_associativity_);
 
             slot* target_slot = get_slot(bucketid, slotid);
@@ -1099,8 +1112,6 @@ class bi_trie {
 
             // Set v2k
             bt->set_v2k(v, this, get_column_store_index(target_slot));
-
-            elem_num_++;
             
             return;
         }
@@ -1534,9 +1545,8 @@ class bi_trie {
             }
         }
 
-        void resize(group_type resize_type,
-                                 bi_trie<K_unit, T>* bt,
-                                 size_t expand_ratio = 1) {
+        void resize(group_type resize_type, bi_trie* bt,
+                    size_t expand_ratio = 1) {
             uint64_t sta = get_time();
 
             page_manager* new_pm;
@@ -1827,6 +1837,10 @@ class bi_trie {
 
     void set_v2k(T v, node* node, int index) {
         v2k[v] = search_point(node, index);
+    }
+
+    void erase_element_in_v2k(T v) {
+        v2k.erase(v2k.find(v));
     }
 
     // Function for batch updating the searchPoints to v2k
