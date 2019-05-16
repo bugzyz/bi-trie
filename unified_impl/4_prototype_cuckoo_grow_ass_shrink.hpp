@@ -1225,7 +1225,12 @@ class bi_trie {
             orig_parent->add_child(orig_prefix.back(), ret_trie_root);
 
         // Get the common_prefix to eliminate the redundant-burst
+#ifndef BURST_NON_OPT
         string common_prefix = bp.get_common_prefix();
+#else
+        string common_prefix = "";
+#endif
+
         const char* common_prefix_key = common_prefix.data();
         const unsigned int common_prefix_key_size = common_prefix.size();
 
