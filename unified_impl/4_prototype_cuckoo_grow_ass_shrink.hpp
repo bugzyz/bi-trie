@@ -330,6 +330,11 @@ class bi_trie {
 
 #endif
 
+#ifdef STR_ID_NON_OPT
+            // Skip the fast path building
+            return;
+#endif
+
             // If current node's layer level equals to multiple of FAST_PATH_NODE_NUM,
             // Set up a fast path in its fast-path parent
             if (key_size % FAST_PATH_NODE_NUM == 0 && key_size != 0) {              
