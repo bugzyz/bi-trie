@@ -13,6 +13,31 @@
 // TODO: format
 // TODO: bucket grow
 
+// TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
+/*---- For evaluation ---*/
+/*---- 1. External time cost report interface ---*/
+uint32_t burst_counter = 0;
+uint64_t burst_total_time = 0;
+// expand
+uint64_t expand_counter = 0;
+uint64_t expand_cost_time = 0;
+// cuckoo hash
+uint64_t cuckoohash_counter = 0;
+uint64_t cuckoohash_cost_time = 0;
+// page manager resize
+uint64_t page_manager_resize_counter = 0;
+uint64_t page_manager_resize_cost_time = 0;
+
+/*---- 2. External memory report interface ---*/
+// page manager
+uint64_t page_manager_memory = 0;
+// trie_node
+uint64_t trie_node_memory = 0;
+uint64_t _fastpath_manager_memory = 0;
+// hash_node
+uint64_t hash_node_memory = 0;
+uint64_t _key_metas_memory = 0;
+
 /*---- Default configuration ---*/
 static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
 static const unsigned int DEFAULT_BUCKET_NUM = 59;
@@ -33,22 +58,6 @@ static const unsigned int DEFAULT_SPECIAL_ALIGNMENT = 32;
 static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
 /*---- Fast path configuration ---*/
 static const unsigned int FAST_PATH_NODE_NUM = 20;
-
-/*---- For information ---*/
-// todo: wait to be deleted, just for recording the time that expand() cost
-// burst
-uint32_t burst_total_counter = 0;
-uint64_t burst_total_time = 0;
-// expand
-uint64_t expand_cost_time = 0;
-uint64_t expand_total_time = 0;
-// cuckoo hash
-uint64_t cuckoohash_cost_time = 0;
-uint64_t cuckoohash_total_num = 0;
-// fast path establish
-uint64_t establish_fastpath_cost_time = 0;
-// page manager resize
-uint64_t page_manager_resize_cost_time = 0;
 
 namespace zyz_trie {
 using namespace std;
@@ -413,6 +422,8 @@ class bi_trie {
      * node, the leaf node, in normal trie searching way.
      */
     class trie_node : public node {
+        friend class bi_trie;
+
        private:
         /* Fast-path manager class */
         /*
@@ -675,6 +686,8 @@ class bi_trie {
      * element, the value, in hashtable searching way.
      */
     class hash_node : public node {
+        friend class bi_trie;
+
        private:
         slot* key_metas_;
         size_t elem_num_;
@@ -813,8 +826,8 @@ class bi_trie {
          */
         /*---- 1. Dynamic expand function ---*/
         int dynamic_expand() {
+            expand_counter++;
             uint64_t sta = get_time();
-            expand_total_time++;
 
             // Already max associativity
             // We cannot expand anymore, return -1
@@ -884,7 +897,7 @@ class bi_trie {
         /*---- 2.2 Cuckoo hash function ---*/
         // Return a empty slot_id in bucketid
         int cuckoo_hash(size_t bucketid, bi_trie* bt) {
-            cuckoohash_total_num++;
+            cuckoohash_counter++;
             uint64_t sta = get_time();
 
             // Set up the backup for recovery if the cuckoo hash fail
@@ -1252,7 +1265,8 @@ class bi_trie {
      *                      hash_node(size:49)
      */
     trie_node* burst(burst_package bp, trie_node* orig_parent, const string &orig_prefix) {
-        burst_total_counter++;
+        burst_counter++;
+        uint64_t sta = get_time();
 
         // Add bp to page_manager's notify_list in case occur a page_manager resize()
         pm->register_burst_package(&bp);
@@ -1305,6 +1319,8 @@ class bi_trie {
 
         // Remove bp from notify list in page_manager while bp's element are done
         pm->remove_burst_package(&bp);
+
+        burst_total_time += get_time() - sta;
 
         return ret_trie_root;
     }
@@ -1461,6 +1477,14 @@ class bi_trie {
             ~page_group() {
                 delete []pages;
             }
+
+            /*---- External memory report interface ---*/
+            uint64_t get_page_group_memory() {
+                return (get_cur_page_id() + 1) * (is_special
+                                                        ? DEFAULT_SPECIAL_PAGE_SIZE
+                                                        : DEFAULT_NORMAL_PAGE_SIZE);
+            }
+
         };
         
        private:
@@ -1571,9 +1595,22 @@ class bi_trie {
             uint64_t end = get_time();
 
             page_manager_resize_cost_time += end - sta;
+            page_manager_resize_counter++;
 
             delete new_pm;
             return;
+        }
+
+        /*---- External memory report interface ---*/
+        uint64_t get_page_manager_memory() {
+            uint64_t total_page_manager_memory = 0;
+            for (size_t i = 0; i != n_size; i++) {
+                total_page_manager_memory += normal_pg[i].get_page_group_memory();
+            }
+            for (size_t i = 0; i != s_size; i++) {
+                total_page_manager_memory += special_pg[i].get_page_group_memory();
+            }
+            return total_page_manager_memory;
         }
 
        private:
@@ -1889,6 +1926,89 @@ class bi_trie {
         // zero at last means that we don't need to expand the page_manager
         pm->resize(group_type ::NORMAL_GROUP, this, 0);
         pm->resize(group_type ::SPECIAL_GROUP, this, 0);
+    }
+
+    /*---- External memory report interface ---*/
+    void time_cost_report() {
+        cout << "==time cost report===" << endl;
+
+        // Time consuming printing
+        cout << "-bursto:\t" 
+             << (double)(burst_total_time / 1000) / (double)1000 << "\t"
+             << burst_counter << endl;
+        cout << "-expand:\t"
+             << (double)(expand_cost_time / 1000) / (double)1000 << "\t"
+             << expand_counter << endl;
+        cout << "-cuckoo:\t"
+             << (double)(cuckoohash_cost_time / 1000) / (double)1000 << "\t"
+             << cuckoohash_counter << endl;
+        cout << "-resize:\t"
+             << (double)(page_manager_resize_cost_time / 1000) / (double)1000 << "\t"
+             << page_manager_resize_counter << endl;
+
+        cout << "=====================" << endl << endl;
+    }
+
+    void memory_usage_report() {
+        // Page manager calculation
+        page_manager_memory = pm->get_page_manager_memory();
+
+        queue<node*> q;
+        q.push(t_root);
+        while (!q.empty()) {
+            node* cur_node = q.front();
+            q.pop();
+            if (cur_node->is_trie_node()) {
+                trie_node* tnode = (trie_node*)cur_node;
+                // Fastpath manager memory calculation
+                _fastpath_manager_memory +=
+                    tnode->fpm_ == nullptr ? 0 : tnode->fpm_->get_fpm_memory();
+
+                // Trie_node memory calculation
+                trie_node_memory += sizeof(trie_node) + tnode->get_prefix().size();
+
+                // Iterate its children
+                typename trie_node::child_representation::child_node* cur_child =
+                    tnode->childs_.get_first_node();
+                while (cur_child != nullptr) {
+                    node* cur_node = cur_child->get_node();
+                    q.push(cur_node);
+                    cur_child = cur_child->next_child();
+                }
+            } else if(cur_node->is_hash_node()) {
+                hash_node* hnode = (hash_node*)cur_node;
+
+                // Hash_node memory calculation
+                hash_node_memory +=
+                    sizeof(hash_node) + cur_node->get_prefix().size() +
+                    hnode->cur_associativity_ * BUCKET_NUM * sizeof(slot);
+
+                // Key meta memory calculation
+                _key_metas_memory += hnode->cur_associativity_ * BUCKET_NUM * sizeof(slot);
+
+            } else {
+                cout << "memory report get wrong type" << endl;
+            }
+        }
+
+        cout << "====memory report====" << endl;
+
+        cout << "page_manager_memory: "
+             << (double)page_manager_memory / (double)1024 / (double)1024
+             << endl;
+
+        cout << "trie_node_memory: "
+             << (double)trie_node_memory / (double)1024 / (double)1024 << endl;
+        cout << "_fastpath_manager_memory: "
+             << (double)_fastpath_manager_memory / (double)1024 / (double)1024
+             << endl;
+
+        cout << "hash_node_memory: "
+             << (double)hash_node_memory / (double)1024 / (double)1024 << endl;
+        cout << "_key_metas_memory: "
+             << (double)_key_metas_memory / (double)1024 / (double)1024 << endl;
+
+        cout << "=====================" << endl << endl;
     }
 };  // namespace zyz_trie
 
