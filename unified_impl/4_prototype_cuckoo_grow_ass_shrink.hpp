@@ -41,6 +41,7 @@ uint32_t burst_total_counter = 0;
 uint64_t burst_total_time = 0;
 // expand
 uint64_t expand_cost_time = 0;
+uint64_t expand_total_time = 0;
 // cuckoo hash
 uint64_t cuckoohash_cost_time = 0;
 uint64_t cuckoohash_total_num = 0;
@@ -789,6 +790,7 @@ class bi_trie {
         /*---- 1. Dynamic expand function ---*/
         int dynamic_expand() {
             uint64_t sta = get_time();
+            expand_total_time++;
 
             // Already max associativity
             // We cannot expand anymore, return -1
