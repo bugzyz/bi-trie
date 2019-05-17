@@ -1372,7 +1372,7 @@ class bi_trie {
 
                 // Only call this function the page will start to allocate memory in content
                 void init_page(size_t size_per_page) {
-                    content = (char*)malloc(size_per_page);
+                    if (content == nullptr) content = (char*)malloc(size_per_page);
                 }
 
                 // Alignment controls whether we place element in different alignment
@@ -1388,8 +1388,11 @@ class bi_trie {
                                           alignment);
                 }
 
-                ~page() { 
-                    if (content != nullptr) free(content);
+                ~page() {
+                    if (content != nullptr) {
+                        free(content);
+                        content = nullptr;
+                    }
                 }
             };
 
