@@ -1388,7 +1388,9 @@ class bi_trie {
                                           alignment);
                 }
 
-                ~page() { if (content != nullptr) { free(content); } }
+                ~page() { 
+                    if (content != nullptr) free(content);
+                }
             };
 
             page* pages;
@@ -1399,17 +1401,17 @@ class bi_trie {
             page_group() : pages(nullptr), cur_page_id(-1), is_special(false) {}
 
             // Only call this function the page group will start to allocate memory in pages
-            void init_pg(int page_number, bool spe) {
-                is_special = spe;
+            void init_pg(group_type init_type) {
+                is_special = init_type == group_type::SPECIAL_GROUP;
                 cur_page_id = 0;
-                pages = new page[spe ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER]();
-                pages[0].init_page(spe ? DEFAULT_SPECIAL_PAGE_SIZE
+                pages = new page[is_special ? DEFAULT_SPECIAL_PAGE_NUMBER : DEFAULT_NORMAL_PAGE_NUMBER]();
+                pages[0].init_page(is_special ? DEFAULT_SPECIAL_PAGE_SIZE
                                        : DEFAULT_NORMAL_PAGE_SIZE);
             }
 
             /*---- Get function ---*/
             inline char* get_content_pointer_in_page(const slot* const s) const {
-              return pages[s->get_page_id()].content + s->get_pos();
+                return pages[s->get_page_id()].content + s->get_pos();
             }
 
             inline T get_value_in_page(const slot* const s) const {
@@ -1436,7 +1438,7 @@ class bi_trie {
             bool try_insert(size_t try_insert_key_size) const {
                 if (cur_page_id + 1 < get_max_page_id()) return true;
                 if ((pages[cur_page_id].cur_pos +
-                     try_insert_key_size * sizeof(K_unit) + sizeof(T)) <=
+                     try_insert_key_size * sizeof(K_unit) + sizeof(T)) <
                     get_max_per_page_size())
                     return true;
                 return false;
@@ -1617,11 +1619,11 @@ class bi_trie {
         void init_a_new_page_group(group_type init_type, size_t page_group_index) {
             if (init_type == group_type::SPECIAL_GROUP) {
                 s_size++;
-                special_pg[page_group_index].init_pg(DEFAULT_SPECIAL_PAGE_NUMBER, true);
+                special_pg[page_group_index].init_pg(init_type);
                 return;
             } else if (init_type == group_type::NORMAL_GROUP) {
                 n_size++;
-                normal_pg[page_group_index].init_pg(DEFAULT_NORMAL_PAGE_NUMBER, false);
+                normal_pg[page_group_index].init_pg(init_type);
                 return;
             } else {
                 cout << "initing a undefined group type page group!" << endl;
@@ -1870,7 +1872,9 @@ class bi_trie {
     /*---- Set function ---*/
     void set_t_root(node* node) { t_root = node; }
 
-    void set_search_point_index(T v, int index) { v2k[v].set_index(index); }
+    void set_search_point_index(T v, int index) { 
+        v2k[v].set_index(index); 
+    }
 
     void set_v2k(T v, node* node, int index) {
         v2k[v] = search_point(node, index);
