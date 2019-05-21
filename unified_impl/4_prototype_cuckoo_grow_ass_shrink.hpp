@@ -1114,9 +1114,24 @@ class bi_trie {
              *  will write the content to original page group
              */
 
+            // In case, the key is invalidated in resize()
             if(!pm_agent.try_insert(key_size)) {
+                // While the resize() will free the original key's memory, we store
+                // the content of original key in temp_string
+                string temp_string = string(key, key_size);
+
                 bt->pm->resize(get_group_type(key_size), bt);
                 pm_agent = bt->pm->get_page_manager_agent(normal_pgid_, special_pgid_);
+
+                // Page manager agent will take charge of the element writing
+                // work and return a slot with position that element been written
+                target_slot->set_slot(
+                    pm_agent.insert_element(temp_string.data(), key_size, v));
+
+                // Set v2k
+                bt->set_v2k(v, this, get_column_store_index(target_slot));
+
+                return;
             }
 
             // Page manager agent will take charge of the element writing work
