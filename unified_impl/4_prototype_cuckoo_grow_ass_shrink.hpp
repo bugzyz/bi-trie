@@ -1372,7 +1372,9 @@ class bi_trie {
 
                 // Only call this function the page will start to allocate memory in content
                 void init_page(size_t size_per_page) {
-                    if (content == nullptr) content = (char*)malloc(size_per_page);
+                    if (content == nullptr) { 
+                        content = (char*)malloc(size_per_page); 
+                    }
                 }
 
                 // Alignment controls whether we place element in different alignment
@@ -1481,6 +1483,7 @@ class bi_trie {
 
             ~page_group() {
                 delete []pages;
+                pages = nullptr;
             }
 
             /*---- External memory report interface ---*/
@@ -1514,9 +1517,11 @@ class bi_trie {
                 init_a_new_page_group(group_type::SPECIAL_GROUP, i);
         }
 
-        ~page_manager(){
+        ~page_manager() {
             delete []normal_pg;
+            normal_pg = nullptr;
             delete []special_pg;
+            special_pg = nullptr;
         }
 
         // For hash_node to require a normal_pgid and special_pgid
@@ -1683,7 +1688,7 @@ class bi_trie {
         }
 
         /*---- Double swap function ---*/
-        void swap(page_manager &pm){
+        void swap(page_manager *pm){
             swap(pm, group_type::NORMAL_GROUP);
             swap(pm, group_type::SPECIAL_GROUP);
         }
