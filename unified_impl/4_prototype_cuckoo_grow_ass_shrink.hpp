@@ -2058,6 +2058,12 @@ class bi_trie {
         cout << "_key_metas_memory: "
              << (double)_key_metas_memory / (double)1024 / (double)1024 << endl;
 
+        cout << "totoal: "
+             << (double)(page_manager_memory + trie_node_memory +
+                         hash_node_memory) /
+                    (double)1024 / (double)1024
+             << endl;
+
         cout << "=====================" << endl << endl;
     }
 };  // namespace zyz_trie
