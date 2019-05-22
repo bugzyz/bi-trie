@@ -11,6 +11,7 @@
 #include <boost/unordered_map.hpp>
 
 // TODO: format
+// TODO: put the v2k erase() in insert_kv_in_hash_node() after resize() may be better
 // TODO: bucket grow
 
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
@@ -59,10 +60,17 @@ static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
 /*---- Fast path configuration ---*/
 static const unsigned int FAST_PATH_NODE_NUM = 20;
 
+// TODO: only for testing
+size_t BUCKET_NUM = 0;
+size_t ASSOCIATIVITY = 0;
+
 namespace zyz_trie {
 using namespace std;
 // K_unit = char, T = value type
-template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
+// TODO: only for testing
+template <class K_unit, class T, size_t TEMP_BUCKET_NUM = DEFAULT_BUCKET_NUM,
+          size_t TEMP_ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
+// template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class bi_trie {
    private:
     static bool key_equal(const K_unit* key_lhs, const size_t key_size_lhs,
@@ -1924,8 +1932,17 @@ class bi_trie {
     node* t_root;
 
    public:
-    bi_trie():pm(new page_manager(1, 1)),
-                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
+    // TODO: only for testing
+    bi_trie(size_t buc, size_t ass) {
+        BUCKET_NUM = buc;
+        ASSOCIATIVITY = ass;
+        cout << "set " << buc << ", " << ass << endl;
+        pm = new page_manager(1, 1);
+        t_root = new hash_node(nullptr, string(), pm, ASSOCIATIVITY);
+    }
+
+    // bi_trie():pm(new page_manager(1, 1)),
+    //             t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
 
     // Deconstructor
     ~bi_trie() {
