@@ -1,5 +1,5 @@
 #include "../util/my_timer.hpp"
-#include "../test_switcher.hpp"
+#include "test_switcher.hpp"
 
 #include <iostream>
 #include <vector>
