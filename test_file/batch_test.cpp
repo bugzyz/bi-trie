@@ -1,7 +1,7 @@
 bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
-#include "../unified_impl/4_prototype_cuckoo_grow_ass_shrink.hpp"
+#include "../unified_impl/test_switcher.hpp"
 
 #include <boost/unordered_map.hpp>
 #include <map>

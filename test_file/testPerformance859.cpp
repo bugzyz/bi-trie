@@ -6,11 +6,10 @@ abc1"Section_626\u002e869\u002d_Insurance_Field_Representatives_And_Operations_\
 bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
-#include "test_which.hpp"
+#include "../unified_impl/test_switcher.hpp"
 
 // debug
 #include <fstream>
-#include "debug.hpp"
 
 #include <boost/unordered_map.hpp>
 #include <map>
