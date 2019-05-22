@@ -1,11 +1,15 @@
+/*
+
+abc1"Section_626\u002e869\u002d_Insurance_Field_Representatives_And_Operations_\u002d_License\u002c_adjusters\u002e_\u002e_\u003d\u003d_Duties_\u003d\u003d_The_public_adjuster\u0027s_main_responsibilities_are_to\u003a_\u002aEvaluate_existing_insurance_policies_in_order_to_determine_what_coverage_may_be_applicable_to_a_claim_\u002aResearch\u002c_detail\u002c_and_substantiate_damage_to_buildings_and_contents_and_any_additional_expenses_\u002aEvaluate_business_interruption_losses_and_extra_expense_claims_for_businesses_\u002aDetermine_values_for_settling_covered_damages_\u002aPrepare\u002c_document_and_support_the_claim_on_behalf_of_the_insured_\u002aNegotiate_a_settlement_with_the_insurance_company_on_behalf_of_an_insured_\u002aRe\u002dopen_a_claim_and_negotiate_for_more_money_if_a_discrepancy_is_found_after_the_claim_has_been_settled_Typically_a_policyholder_hires_a_public_adjuster_to_document_and_expedite_their_claims\u002c_obtain_a_more_satisfactory_claim_recovery\u002c_more_quickly\u002c_and_completely_restore_their_residence_or_business_operations\u002c_and_insulate_themselves_from_the_stress_of_engaging_in_an_adversarial_role_with_a_large_corporation\u002e_However\u002c_the_cost_of_hiring_outside_experts\u002c_no_matter_how_well\u002dearned\u002c_can_be_an_added_burden_when_they_are_borne_entirely_by_the_policyholder\u002e_The_added_burden_can_be_alleviated_by_the_work_of_a_public_adjuster\u002e_However\u002c_policy_holders_who_are_not_properly_indemnified_by_their_insurance_carriers_may_be_left_with_little_choice_but_to_hire_professional_assistance_to_recover_the_claim_payment_to_which_they_are_entitled\u002e_Public_adjusters_must_be_able_to_recognize_claims_that_may_be_insubstantial_and_disputable_and_explain_such_problems_to_the_client\u002e_The_everyday_meanings_of_terms_like"	423293
+abc1"Section_626\u002e869\u002d_Insurance_Field_Representatives_And_Operations_\u002d_License\u002c_adjusters\u002e_\u002e_\u003d\u003d_Duties_\u003d\u003d_The_public_adjuster\u0027s_main_responsibilities_are_to\u003a_\u002aEvaluate_existing_insurance_policies_in_order_to_determine_what_coverage_may_be_applicable_to_a_claim_\u002aResearch\u002c_detail\u002c_and_substantiate_damage_to_buildings_and_contents_and_any_additional_expenses_\u002aEvaluate_business_interruption_losses_and_extra_expense_claims_for_businesses_\u002aDetermine_values_for_settling_covered_damages_\u002aPrepare\u002c_document_and_support_the_claim_on_behalf_of_the_insured_\u002aNegotiate_a_settlement_with_the_insurance_company_on_behalf_of_an_insured_\u002aRe\u002dopen_a_claim_and_negotiate_for_more_money_if_a_discrepancy_is_found_after_the_claim_has_been_settled_Typically_a_poliasyholder_hires_a_public_adjuster_to_document_and_expedite_their_claims\u002c_obtain_a_more_satisfactory_claim_recovery\u002c_more_quickly\u002c_and_completely_restore_their_residence_or_business_operations\u002c_and_insulate_themselves_from_the_stress_of_engaging_in_an_adversarial_role_with_a_large_corporation\u002e_However\u002c_the_cost_of_hiring_outside_experts\u002c_no_matter_how_well\u002dearned\u002c_can_be_an_added_burden_when_they_are_borne_entirely_by_the_policyholder\u002e_The_added_burden_can_be_alleviated_by_the_work_of_a_public_adjuster\u002e_However\u002c_policy_holders_who_are_not_properly_indemnified_by_their_insurance_carriers_may_be_left_with_little_choice_but_to_hire_professional_assistance_to_recover_the_claim_payment_to_which_they_are_entitled\u002e_Public_adjusters_must_be_able_to_recognize_claims_that_may_be_insubstantial_and_disputable_and_explain_such_problems_to_the_client\u002e_The_everyday_meanings_of_terms_like"	423294
+*/
 bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
-#include "test_which.hpp"
+#include "../unified_impl/test_switcher.hpp"
 
 // debug
 #include <fstream>
-#include "debug.hpp"
 
 #include <boost/unordered_map.hpp>
 #include <map>
@@ -28,17 +32,14 @@ int main() {
 
     // analyse by elem_per_bucket
     // associativity should be 4, 8 for alignment
-    elem_per_buck.push_back(4);
+    // elem_per_buck.push_back(4);
     elem_per_buck.push_back(8);
 
     // analyse by bucket_num
-    bucket_nums.push_back(5);
-    bucket_nums.push_back(11);
-    bucket_nums.push_back(31);
     bucket_nums.push_back(59);
-    bucket_nums.push_back(71);
-    bucket_nums.push_back(97);
-    bucket_nums.push_back(101);
+
+    // elem_per_buck.push_back(2);
+    // bucket_nums.push_back(3);
 
 #ifdef TEST_YAGO
     string testing_dataset = "dataset/id_yago/cut_str_normal";
@@ -60,6 +61,8 @@ int main() {
     ff1 << testing_dataset << ":" << endl;
 
     //------------testing--------------
+    cout << "\n========unordered map result==========\n";
+
     std::string url;
     uint32_t v;
     uint64_t staUm;
@@ -72,101 +75,149 @@ int main() {
     boost::unordered_map<uint32_t, string> m2;
 
     staUm = get_time();
-    uint64_t startUsedMemUm = getLftMem();
 
+    double virt = 0.0;
+    double res = 0.0;
+    myTrie::debuging::clear_process_mem_usage();
     uint32_t count = 0;
     while (f >> url >> v) {
         m1[url] = v;
         m2[v] = url;
         count++;
     }
-    uint64_t endUsedMemUm = getLftMem();
+    myTrie::debuging::process_mem_usage("unordered map", virt, res);
+    
     endUm = get_time();
-    f.close();
-    cout << "unordered_map use time: usec: \t\t\t" << endUm - staUm
-         << std::endl;
-    ff1 << "unordered_map_time: " << endUm - staUm << " "
-        << "mem used: " << endUsedMemUm - startUsedMemUm << "\n";
 
-    double virt = 0.0;
-    double res = 0.0;
+    f.close();
+    cout << "unordered_map use time: usec: " << endUm - staUm << std::endl;
+    ff1 << "unordered_map_time: " << endUm - staUm << " "
+        << "mem used: " << res << "\n";
+
     for (auto it = configs.begin(); it != configs.end(); it++) {
+        cout << "\n========htrie_map result==========\n";
+
         // ass is associativity
         size_t ass = it->first;
         size_t bn = it->second;
 
-
         myTrie::htrie_map<char, uint32_t> hm(ass, bn);
         std::fstream f1(testing_dataset);
-        
-        staTm = get_time();
 
         myTrie::debuging::clear_process_mem_usage();
+
+        staTm = get_time();
         while (f1 >> url >> v) {
+            static int ind = 0;
             hm.insertKV(url, v);
+            if ((++ind % 100000) == 0) cout << ind << endl;
         }
-        endTm = get_time();
-
-        cout << "finish trie_map constructing\n";
-        cout << "constructing time: " << endTm - staTm << endl;
-
-        myTrie::debuging::process_mem_usage(virt, res);
-
-        myTrie::debuging::clear_num();
-
-        hm.shrink();
-        cout << "-shrinking cost time: " << shrink_total_time << endl;
-        cout << "-expand cost time: " << expand_cost_time << endl;
-        cout << "-rehash cost time: " << rehash_cost_time << endl;
-
-        myTrie::debuging::print_tree_construct<char, uint32_t>(hm.t_root);
-        myTrie::debuging::print_tree_construct_v2k<char, uint32_t>(hm.v2k);
-        double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
-
         f1.close();
 
+        myTrie::debuging::process_mem_usage("htrie_map no cleaning",virt, res);
+        myTrie::debuging::clear_process_mem_usage();
+        // cleaning
+        //  hm.clean_prefix(true);
+
+        // shrinking
+        hm.shrink(); 
+
+        endTm = get_time();
+
+        myTrie::debuging::process_mem_usage("clean finish",virt, res);
+
+
+        /*-----------------insert performance calculating-----------------*/
+        cout << "==================\n";
+        cout << "constructing time: " << endTm - staTm << endl;
+
+        // time consuming printing
+        cout << "-shrinking cost time: " << shrink_total_time << endl;
+        cout << "-cleaning cost time: " << clean_prefix_total_time << endl;
+        cout << "-expand cost time: " << expand_cost_time << endl;
+        cout << "-rehash cost time: " << rehash_cost_time << endl;
+        cout << "==================\n\n";
+
+        // scan trie and print memory used
+        myTrie::debuging::clear_num();
+        myTrie::debuging::scan_tree<char, uint32_t>(hm);
+        double mem_cal_inside = myTrie::debuging::print_res<char, uint32_t>();
+
+        /*-----------------access performance calculating-----------------*/
         int64_t hm_k_total_time = 0;
         int64_t um_k_total_time = 0;
 
         double max_percent_k = 0.0;
         double min_percent_k = 0.0;
 
+        // load key and value into independent vectors
+        vector<string> string_vec;
+        vector<uint32_t> id_vec;
+
+        for(auto it = m1.begin();it!=m1.end();it++){
+            string_vec.push_back(it->first);
+            id_vec.push_back(it->second);
+        }
+
+        std::string url0;
+        std::string url1;
+        std::string url2;
+        std::string url3;
+        std::string url4;
+        std::string url5;
+        std::string url6;
+        std::string url7;
+        std::string url8;
+        std::string url9;
+
         // checking:
-        for (auto it = m1.begin(); it != m1.end(); it++) {
-            std::string url1 = it->first;
-            it++;
-            std::string url2 = it->first;
-            it++;
-            std::string url3 = it->first;
-            it++;
-            std::string url4 = it->first;
-            it++;
-            std::string url5 = it->first;
-            it++;
-            if (it == m1.end()) {
+        for (int i = 0; i < string_vec.size(); i = i + 10) {
+            url0 = string_vec[i++];
+            url1 = string_vec[i++];
+            url2 = string_vec[i++];
+            url3 = string_vec[i++];
+            url4 = string_vec[i++];
+            url5 = string_vec[i++];
+            url6 = string_vec[i++];
+            url7 = string_vec[i++];
+            url8 = string_vec[i++];
+            url9 = string_vec[i++];
+
+            if(!(i < string_vec.size()))
                 break;
-            }
 
             uint32_t gotfromhm;
             int64_t hm_get_start = get_time();
+            gotfromhm = hm.searchByKey(url0);
             gotfromhm = hm.searchByKey(url1);
             gotfromhm = hm.searchByKey(url2);
             gotfromhm = hm.searchByKey(url3);
             gotfromhm = hm.searchByKey(url4);
             gotfromhm = hm.searchByKey(url5);
+            gotfromhm = hm.searchByKey(url6);
+            gotfromhm = hm.searchByKey(url7);
+            gotfromhm = hm.searchByKey(url8);
+            gotfromhm = hm.searchByKey(url9);
             int64_t hm_get_end = get_time();
 
             uint32_t gotfromum;
             int64_t um_get_start = get_time();
+            gotfromum = m1[url0];
             gotfromum = m1[url1];
             gotfromum = m1[url2];
             gotfromum = m1[url3];
             gotfromum = m1[url4];
             gotfromum = m1[url5];
+            gotfromum = m1[url6];
+            gotfromum = m1[url7];
+            gotfromum = m1[url8];
+            gotfromum = m1[url9];
             int64_t um_get_end = get_time();
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
+
+            // cout << hm_used_time << " " << um_used_time << endl;
 
             if (um_used_time == 0) {
                 um_used_time = 1;
@@ -176,7 +227,7 @@ int main() {
             um_k_total_time += um_used_time;
 
             double cur_percent_k =
-                (double)hm_used_time / (double)um_used_time - 1.0;
+                (double)hm_used_time / (double)um_used_time;
 
             if (max_percent_k < cur_percent_k) {
                 max_percent_k = cur_percent_k;
@@ -186,7 +237,7 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << hm_k_total_time / count << endl;
+             <<  (double)hm_k_total_time /  (double)count << endl;
 
         // checking:
         int64_t hm_v_total_time = 0;
@@ -194,39 +245,66 @@ int main() {
 
         double max_percent_v = 0.0;
         double min_percent_v = 0.0;
-        for (auto it = m2.begin(); it != m2.end(); it++) {
-            uint32_t v1 = it->first;
-            it++;
-            uint32_t v2 = it->first;
-            it++;
-            uint32_t v3 = it->first;
-            it++;
-            uint32_t v4 = it->first;
-            it++;
-            uint32_t v5 = it->first;
-            it++;
-            if (it == m2.end()) {
-                break;
-            }
 
+        uint32_t v0;
+        uint32_t v1;
+        uint32_t v2;
+        uint32_t v3;
+        uint32_t v4;
+        uint32_t v5;
+        uint32_t v6;
+        uint32_t v7;
+        uint32_t v8;
+        uint32_t v9;
+
+        for (int i = 0; i < id_vec.size(); i = i + 10) {
+            v0 = id_vec[i++];
+            v1 = id_vec[i++];
+            v2 = id_vec[i++];
+            v3 = id_vec[i++];
+            v4 = id_vec[i++];
+            v5 = id_vec[i++];
+            v6 = id_vec[i++];
+            v7 = id_vec[i++];
+            v8 = id_vec[i++];
+            v9 = id_vec[i++];
+
+            if(!(i < id_vec.size()))
+                break;
+
+            std::string gotfromhm;
             int64_t hm_get_start = get_time();
-            std::string gotfromhm = hm.searchByValue(v1);
+            gotfromhm = hm.searchByValue(v0);
+            gotfromhm = hm.searchByValue(v1);
             gotfromhm = hm.searchByValue(v2);
             gotfromhm = hm.searchByValue(v3);
             gotfromhm = hm.searchByValue(v4);
             gotfromhm = hm.searchByValue(v5);
+            gotfromhm = hm.searchByValue(v6);
+            gotfromhm = hm.searchByValue(v7);
+            gotfromhm = hm.searchByValue(v8);
+            gotfromhm = hm.searchByValue(v9);
             int64_t hm_get_end = get_time();
 
+            std::string gotfromum;
             int64_t um_get_start = get_time();
-            std::string gotfromum = m2[v1];
-            gotfromum = m2[v2];
-            gotfromum = m2[v3];
-            gotfromum = m2[v4];
-            gotfromum = m2[v5];
+            gotfromhm = m2[v0];
+            gotfromhm = m2[v1];
+            gotfromhm = m2[v2];
+            gotfromhm = m2[v3];
+            gotfromhm = m2[v4];
+            gotfromhm = m2[v5];
+            gotfromhm = m2[v6];
+            gotfromhm = m2[v7];
+            gotfromhm = m2[v8];
+            gotfromhm = m2[v9];
             int64_t um_get_end = get_time();
+
 
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
+
+            // cout << hm_used_time << " " << um_used_time << endl;
 
             if (um_used_time == 0) {
                 um_used_time = 1;
@@ -236,7 +314,7 @@ int main() {
             um_v_total_time += um_used_time;
 
             double cur_percent_v =
-                (double)hm_used_time / (double)um_used_time - 1.0;
+                (double)hm_used_time / (double)um_used_time;
 
             if (max_percent_v < cur_percent_v) {
                 max_percent_v = cur_percent_v;
@@ -246,7 +324,7 @@ int main() {
             }
         }
         cout << "compare to unordered_map: accessing cost diff: "
-             << hm_v_total_time / count << endl;
+             << (double)hm_v_total_time /  (double)count << endl;
 
 #ifdef TEST_HAT
         cout << "unified_impl/1_tessil_hat_impl.hpp" << endl;
@@ -298,12 +376,18 @@ int main() {
             << (double)hm_k_total_time / (double)count << ","
             << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << ","
             << max_percent_k * 100.0 << "," << min_percent_k * 100.0;
+        cout << "key_search compared to unorderedmap: "
+             << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << "%"
+             << endl;
 
         // search by value
         ff1 << "," << hm_v_total_time << ","
             << (double)hm_v_total_time / (double)count << ","
             << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << ","
             << max_percent_v * 100.0 << "," << min_percent_v * 100.0 << ",";
+        cout << "value_search compared to unorderedmap: "
+             << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << "%"
+             << endl;
 
         // rehash counter and parent number
         ff1 << (double)rehash_total_num / (double)count << ","
@@ -335,10 +419,10 @@ int main() {
             << (double)myTrie::debuging::byte_used_in_page /
                    (double)myTrie::debuging::byte_pages_have * 100;
         ff1 << "," << myTrie::debuging::byte_pages_have / 1000 / 1000;
-        ff1 << ","
-            << (double)myTrie::debuging::total_page_number /
-                   (double)myTrie::debuging::h_n
-            << endl;
+        // ff1 << ","
+        //     << (double)myTrie::debuging::total_page_number /
+        //            (double)myTrie::debuging::h_n
+        //     << endl;
 
         ff1.flush();
 
@@ -383,7 +467,6 @@ int main() {
         // clear status
         rehash_cost_time = 0;
         rehash_total_num = 0;
-
 
         recal_element_num_of_1st_char_counter = 0;
         burst_total_counter = 0;
