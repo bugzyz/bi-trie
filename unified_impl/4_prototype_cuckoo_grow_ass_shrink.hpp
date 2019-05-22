@@ -1071,6 +1071,10 @@ class bi_trie {
             if (must_burst) {
                 const string& prefix = this->node::get_prefix();    
 
+                // While the resize() in burst() will free the original key's memory, we store
+                // the content of original key in temp_string
+                string temp_string = string(key, key_size);
+
                 // The replacing_node_of_this(trie_node) is the node replacing
                 // this(hash_node) node after burst() in original trie. 
                 trie_node* replacing_node_of_this =
@@ -1080,7 +1084,9 @@ class bi_trie {
 
                 // We can continue to insert the original element from
                 // replacing_node_of_this after burst() instead of from t_root
-                bt->insert_kv_in_bitrie(replacing_node_of_this, key, key_size, v, prefix.data(), prefix.size());
+                bt->insert_kv_in_bitrie(replacing_node_of_this,
+                                        temp_string.data(), key_size, v,
+                                        prefix.data(), prefix.size());
                 delete this;
                 return;
             }
