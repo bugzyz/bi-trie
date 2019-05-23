@@ -16,27 +16,17 @@
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
 /*---- For evaluation ---*/
 /*---- 1. External time cost report interface ---*/
-uint32_t burst_counter = 0;
-uint64_t burst_total_time = 0;
+unsigned int burst_counter = 0;
+unsigned int burst_total_time = 0;
 // expand
-uint64_t expand_counter = 0;
-uint64_t expand_cost_time = 0;
+unsigned int expand_counter = 0;
+unsigned int expand_cost_time = 0;
 // cuckoo hash
-uint64_t cuckoohash_counter = 0;
-uint64_t cuckoohash_cost_time = 0;
+unsigned int cuckoohash_counter = 0;
+unsigned int cuckoohash_cost_time = 0;
 // page manager resize
-uint64_t page_manager_resize_counter = 0;
-uint64_t page_manager_resize_cost_time = 0;
-
-/*---- 2. External memory report interface ---*/
-// page manager
-uint64_t page_manager_memory = 0;
-// trie_node
-uint64_t trie_node_memory = 0;
-uint64_t _fastpath_manager_memory = 0;
-// hash_node
-uint64_t hash_node_memory = 0;
-uint64_t _key_metas_memory = 0;
+unsigned int page_manager_resize_counter = 0;
+unsigned int page_manager_resize_cost_time = 0;
 
 /*---- Default configuration ---*/
 static const unsigned int DEFAULT_ASSOCIATIVITY = 8;
@@ -1978,27 +1968,69 @@ class bi_trie {
     }
 
     /*---- External memory report interface ---*/
-    void time_cost_report() {
-        cout << "==time cost report===" << endl;
+    string time_cost_report() {
+        cout << "" << endl;
 
-        // Time consuming printing
-        cout << "-bursto:\t" 
-             << (double)(burst_total_time / 1000) / (double)1000 << "\t"
-             << burst_counter << endl;
-        cout << "-expand:\t"
-             << (double)(expand_cost_time / 1000) / (double)1000 << "\t"
-             << expand_counter << endl;
-        cout << "-cuckoo:\t"
-             << (double)(cuckoohash_cost_time / 1000) / (double)1000 << "\t"
-             << cuckoohash_counter << endl;
-        cout << "-resize:\t"
-             << (double)(page_manager_resize_cost_time / 1000) / (double)1000 << "\t"
-             << page_manager_resize_counter << endl;
+        char* title_output_mes = (char*)malloc(1024);
+        int title_len = sprintf(
+            title_output_mes,
+            "==time cost "
+            "report===\n-bursto:\t%.3lf\t%u\n-expand:\t%.3lf\t%d\n-cuckoo:\t%."
+            "3lf\t%d\n-resize:\t%.3lf\t%u\n=====================\n",
+            (double)((double)(burst_total_time / 1000) / (double)1000), 
+            burst_counter,
+            (double)((double)(expand_cost_time / 1000) / (double)1000),
+            expand_counter,
+            (double)((double)(cuckoohash_cost_time / 1000) / (double)1000),
+            cuckoohash_counter,
+            (double)((double)(page_manager_resize_cost_time / 1000) / (double)1000),
+            page_manager_resize_counter);
+        cout << string(title_output_mes, title_len);
+        free(title_output_mes);
 
-        cout << "=====================" << endl << endl;
+        char* output_mes = (char*)malloc(1024);
+        int len = sprintf(
+            output_mes, "%.3lf,%d,%.3lf,%d,%.3lf,%d,%.3lf,%d",
+            (double)((double)(burst_total_time / 1000) / (double)1000), 
+            burst_counter,
+            (double)((double)(expand_cost_time / 1000) / (double)1000),
+            expand_counter,
+            (double)((double)(cuckoohash_cost_time / 1000) / (double)1000),
+            cuckoohash_counter,
+            (double)((double)(page_manager_resize_cost_time / 1000) / (double)1000),
+            page_manager_resize_counter);
+        string ret_mes = string(output_mes, len);
+        free(output_mes);
+
+        burst_counter = 0;
+        burst_total_time = 0;
+        // expand
+        expand_counter = 0;
+        expand_cost_time = 0;
+        // cuckoo hash
+        cuckoohash_counter = 0;
+        cuckoohash_cost_time = 0;
+        // page manager resize
+        page_manager_resize_counter = 0;
+        page_manager_resize_cost_time = 0;
+
+        return ret_mes;
     }
 
-    void memory_usage_report() {
+    /*---- 2. External memory report interface ---*/
+    string memory_usage_report() {
+        // page manager
+        uint64_t page_manager_memory = 0;
+        // trie_node
+        uint64_t trie_node_memory = 0;
+        uint64_t _fastpath_manager_memory = 0;
+        // hash_node
+        uint64_t hash_node_memory = 0;
+        uint64_t _key_metas_memory = 0;
+        // -Kmetas
+        uint64_t used_slot = 0;
+        uint64_t had_slot = 0;
+
         // Page manager calculation
         page_manager_memory = pm->get_page_manager_memory();
 
@@ -2035,35 +2067,53 @@ class bi_trie {
                 // Key meta memory calculation
                 _key_metas_memory += hnode->cur_associativity_ * BUCKET_NUM * sizeof(slot);
 
+                // Slot usage calculation
+                had_slot += hnode->cur_associativity_ * BUCKET_NUM;
+                for(int i=0;i != BUCKET_NUM; i++) {
+                    for(int j=0;j!=hnode->cur_associativity_; j++) {
+                        if(hnode->get_slot(i, j)->is_empty()) break;
+                        used_slot++; 
+                    }
+                }
             } else {
                 cout << "memory report get wrong type" << endl;
             }
         }
 
-        cout << "====memory report====" << endl;
+        char* title_output_mes = (char*)malloc(1024);
+        int title_len = sprintf(title_output_mes,
+                "====memory report====\npage_manager_memory: %.3lf\ntrie_node_memory:  %.3lf\n"
+                "_fastpath_manager_memory: %.3lf\nhash_node_memory: %.3lf\n"
+                "_key_metas_memory: %.3lf\ntotoal: %.3lf"
+                "\nslot_usage: %.2lf\n=====================\n",
+                (double)page_manager_memory / 1024 / (double)1024,
+                (double)trie_node_memory / 1024 / (double)1024,
+                (double)_fastpath_manager_memory / 1024 / (double)1024,
+                (double)hash_node_memory / 1024 / (double)1024,
+                (double)_key_metas_memory / 1024 / (double)1024,
+                (double)(page_manager_memory + trie_node_memory +
+                            hash_node_memory) /
+                    1024 / (double)1024,
+                (double)used_slot / (double)had_slot * (double)100);
+        cout << string(title_output_mes, title_len);
+        free(title_output_mes);
 
-        cout << "page_manager_memory: "
-             << (double)page_manager_memory / (double)1024 / (double)1024
-             << endl;
+        char* output_mes = (char*)malloc(1024);
+        int len =
+            sprintf(output_mes, "%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,%.3lf,",
+                    (double)page_manager_memory / 1024 / (double)1024,
+                    (double)trie_node_memory / 1024 / (double)1024,
+                    (double)_fastpath_manager_memory / 1024 / (double)1024,
+                    (double)hash_node_memory / 1024 / (double)1024,
+                    (double)_key_metas_memory / 1024 / (double)1024,
+                    (double)(page_manager_memory + trie_node_memory +
+                             hash_node_memory) /
+                        1024 / (double)1024,
+                    (double)used_slot / (double)had_slot * (double)100);
+        string ret_mes = string(output_mes, len);
+        free(output_mes);
 
-        cout << "trie_node_memory: "
-             << (double)trie_node_memory / (double)1024 / (double)1024 << endl;
-        cout << "_fastpath_manager_memory: "
-             << (double)_fastpath_manager_memory / (double)1024 / (double)1024
-             << endl;
-
-        cout << "hash_node_memory: "
-             << (double)hash_node_memory / (double)1024 / (double)1024 << endl;
-        cout << "_key_metas_memory: "
-             << (double)_key_metas_memory / (double)1024 / (double)1024 << endl;
-
-        cout << "totoal: "
-             << (double)(page_manager_memory + trie_node_memory +
-                         hash_node_memory) /
-                    (double)1024 / (double)1024
-             << endl;
-
-        cout << "=====================" << endl << endl;
+        return ret_mes;
     }
 };  // namespace zyz_trie
 
