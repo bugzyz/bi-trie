@@ -1607,7 +1607,7 @@ class bi_trie {
                 cout << "Speicial group expand to " << (s_size << expand_ratio) << endl;
             } else {
                 new_pm = new page_manager(n_size << expand_ratio, 0);
-                cout << "Normal group expand to " << (s_size << expand_ratio) << endl;
+                cout << "Normal group expand to " << (n_size << expand_ratio) << endl;
             }
 
             // Try insert, if failed, we reallocate the page groups,
