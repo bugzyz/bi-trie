@@ -1522,8 +1522,8 @@ class bi_trie {
 
        public:
         page_manager(size_t normal_page_group_number, size_t special_page_group_number)
-            : normal_pg(new page_group[128]),
-              special_pg(new page_group[128]),
+            : normal_pg(new page_group[normal_page_group_number]),
+              special_pg(new page_group[special_page_group_number]),
               n_size(0),
               s_size(0) {
             // Init normal page group according to the normal_page_group_number
@@ -1604,8 +1604,10 @@ class bi_trie {
             page_manager* new_pm;
             if (resize_type == group_type::SPECIAL_GROUP) {
                 new_pm = new page_manager(0, s_size << expand_ratio);
+                cout << "Speicial group expand to " << (s_size << expand_ratio) << endl;
             } else {
                 new_pm = new page_manager(n_size << expand_ratio, 0);
+                cout << "Normal group expand to " << (s_size << expand_ratio) << endl;
             }
 
             // Try insert, if failed, we reallocate the page groups,
