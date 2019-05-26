@@ -692,9 +692,9 @@ class bi_trie {
         size_t cur_associativity_;
 
         // normal page_group id
-        uint8_t normal_pgid_;
+        uint32_t normal_pgid_;
         // special page_group id
-        uint8_t special_pgid_;
+        uint32_t special_pgid_;
 
        public:
         /* Debug helper function */
