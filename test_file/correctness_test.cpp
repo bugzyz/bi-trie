@@ -49,7 +49,14 @@ int main(int argc, char *argv[]) {
 
     zyz_trie::bi_trie<char, uint32_t> *hm_ptr = new zyz_trie::bi_trie<char, uint32_t>(59, 8);
     zyz_trie::bi_trie<char, uint32_t> &hm = *hm_ptr;
-    std::fstream f1(testing_dataset);
+    std::ifstream f1(testing_dataset);
+
+    if(f1) {
+        cout << "open f1 successfully\n";
+    } else {
+        cout << "open f1 failed\n";
+        exit(0);
+    }
     uint32_t count = 0;
     // uint64_t orignal_mem_start = get_start_cur_memory_clear();
     typedef struct mallinfo malloc_info;
@@ -81,7 +88,13 @@ int main(int argc, char *argv[]) {
     cout << "\n==================\n";
     cout << "constructing time: " << constructed_time << endl;
 
-    std::fstream f2(testing_dataset);
+    std::ifstream f2(testing_dataset, std::ios::in);
+    if(f2) {
+        cout << "open f1 successfully\n";
+    } else {
+        cout << "open f1 failed\n";
+        exit(0);
+    }
     int ind2 = 0;
     while (f2 >> url >> v) {
         if(hm[url] != v) {
@@ -99,6 +112,7 @@ int main(int argc, char *argv[]) {
     cout << "test pass!" << endl;
 
     // Evaluation print out
+    result_output_f << testing_dataset << ",";
 #ifdef CUCKOO_THEN_EXPAND
     result_output_f << "true,";
 #else
