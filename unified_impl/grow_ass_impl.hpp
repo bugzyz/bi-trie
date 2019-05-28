@@ -12,6 +12,9 @@
 // TODO: format
 // TODO: put the v2k erase() in insert_kv_in_hash_node() after resize() may be better
 // TODO: bucket grow
+// TODO: move page manager agent into page manager class
+// TODO: remove zyz_trie
+// TODO: remove "Speicial group expand to "
 
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
 /*---- For evaluation ---*/
@@ -55,11 +58,18 @@ size_t ASSOCIATIVITY = 0;
 
 namespace zyz_trie {
 using namespace std;
-// K_unit = char, T = value type
+/**
+ * @brief Bi-trie provides the ability for user to insert key and value in a memory-efficient way.
+ * 
+ * @tparam K_unit Key's unit type. Normally, it is char which is the unit of string.
+ * @tparam T Value's type.
+ * @tparam BUCKET_NUM Bucket number in a hash node.
+ * @tparam ASSOCIATIVITY Associativity in a hash node.
+ */
+// template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 // TODO: only for testing
 template <class K_unit, class T, size_t TEMP_BUCKET_NUM = DEFAULT_BUCKET_NUM,
           size_t TEMP_ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
-// template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class bi_trie {
    private:
     static bool key_equal(const K_unit* key_lhs, const size_t key_size_lhs,
@@ -123,8 +133,16 @@ class bi_trie {
         return mix(h);
     }
 
-    static size_t hash(const K_unit* key, const size_t key_size, const size_t hashType = 1) {
-        if (hashType == 1) 
+    /**
+     * @brief Provide hash function for cuckoo hashing.
+     * 
+     * @param key The string's pointer being hashing.
+     * @param key_size The string's size being hashing.
+     * @param hash_type Chose a hash seed for hashing.
+     * @return size_t The hash value of string(key, key_size).
+     */
+    static size_t hash(const K_unit* key, const size_t key_size, const size_t hash_type = 1) {
+        if (hash_type == 1) 
             return fasthash64(key, key_size, 0xdeadbeefdeadbeefULL);
         else
             return fasthash64(key, key_size, 0xabcdefabcdef1234ULL);
@@ -163,7 +181,12 @@ class bi_trie {
     }
 
    private:
-    /* Storing location recording class */
+    /**
+     * @brief Storing location recording class.
+     * 
+     * The encode denotes the storing location of a element.
+     * 
+     */
     class slot {
        private:
         uint32_t encode;
@@ -173,7 +196,17 @@ class bi_trie {
         slot(bool is_special, uint64_t length, uint64_t pos, uint64_t page_id) : 
             encode(encode_slot(is_special, length, pos, page_id)) {}
 
-        // encode slot as | special | length | position | page_id |
+        /**
+         * @brief Encode the several parameters according to the NBITS configuration.
+         * 
+         * Encode slot as | special | length | position | page_id |.
+         * 
+         * @param is_special Whether the element is special.
+         * @param length Length of the element.
+         * @param pos Position of the element stored in a page.
+         * @param page_id Page id of the element stored in a page group.
+         * @return uint64_t Encoding value of the several parameters above.
+         */
         uint64_t encode_slot(bool is_special, uint64_t length, uint64_t pos, uint64_t page_id) {
             encode = page_id;
             if (is_special) {
@@ -188,7 +221,6 @@ class bi_trie {
                 assert(length < 1 << NBITS_LEN &&
                        (pos / DEFAULT_NORMAL_ALIGNMENT) < 1 << NBITS_POS &&
                        page_id < 1 << NBITS_PID);
-                // encode into a 64bit data
                 encode += (pos / DEFAULT_NORMAL_ALIGNMENT) << NBITS_PID;
                 encode += length << (NBITS_PID + NBITS_POS);
                 encode += ((uint64_t)0)  << (NBITS_PID + NBITS_LEN + NBITS_POS);
@@ -247,7 +279,10 @@ class bi_trie {
         }
     };
 
-    /* Helper class for hash_node get its page_groups */
+    /**
+     * @brief Helper class for hash_node get its page_groups.
+     * 
+     */
     class page_manager_agent {
         typename page_manager::page_group* n_group;
         typename page_manager::page_group* s_group;
@@ -285,15 +320,27 @@ class bi_trie {
                                    : n_group->get_value_in_page(s);
         }
 
-        /*---- Insert element function ---*/
-        // Try to insert element to its right group and return availability
+        /**
+         * @brief Try to insert element to its right group and return availability.
+         * 
+         * @param key_size Length of element being tried to insert in page group.
+         * @return true If the page group have enough space.
+         * @return false Otherwise.
+         */
         inline bool try_insert(const size_t key_size) const {
             return get_group_type(key_size) == group_type::SPECIAL_GROUP
                        ? s_group->try_insert(key_size)
                        : n_group->try_insert(key_size);
         }
 
-        // Insert element to its right group and return the slot(position)
+        /**
+         * @brief Insert element to its right group and return the slot(position).
+         * 
+         * @param key Pointer of element being inserted in page group.
+         * @param key_size Length of element being inserted in page group.
+         * @param v Value of element being inserted in page group.
+         * @return slot Slot that encoding the storing location of inserted element.
+         */
         inline slot insert_element(const K_unit* key, const size_t key_size, const T v) {
             return get_group_type(key_size) == group_type::SPECIAL_GROUP
                        ? s_group->write_kv_to_page(key, key_size, v)
@@ -301,9 +348,11 @@ class bi_trie {
         }
     };
 
-    /* Node's base class */
-    /* 
-     * We divide the node into two type, trie node and hash node that descriped above its class
+    /**
+     * @brief Node's base class.
+     * 
+     * We divide the node into two type, trie node and hash node that descriped above its class.
+     * 
      */
     class node {
        private:
@@ -375,7 +424,11 @@ class bi_trie {
 
         node_type get_node_type() const { return n_type_; }
 
-        // Get the fast-path parent for adding a fast path
+        /**
+         * @brief Get the fast-path parent for adding a fast path.
+         * 
+         * @return trie_node* (Grand)parent to add fast path for this node.
+         */
         trie_node* get_fast_path_parent() const {
             trie_node* cur_parent = (trie_node*)this;
             for (int i = 0; i != FAST_PATH_NODE_NUM; i++) {
@@ -385,35 +438,55 @@ class bi_trie {
             return cur_parent;
         }
 
-        // Virtual function for page_manager resize
+        /**
+         * @brief Virtual function for page_manager resize.
+         * 
+         * @param old_pm Source page manager for resizing.
+         * @param new_pm Dest page manager for resizing.
+         * @param resize_type Resizing type(special or normal).
+         */
         virtual void traverse_for_pgm_resize(page_manager* old_pm,
                                              page_manager* new_pm,
                                              group_type resize_type) = 0;
 
-        // Insert element that terminates in current node
-        found_result insert_value_in_node(const string& prefix, const T v,
+        /**
+         * @brief Insert element that terminates in 'this' node.
+         * 
+         * @param prefix Prefix of 'this' node.
+         * @param v Inserting value.
+         * @param bt Bi-trie that manages 'this' node.
+         */
+        void insert_value_in_node(const string& prefix, const T v,
                                           bi_trie* const bt) {
             value_ = v;
             have_value_ = true;
             bt->set_v2k(v, this, -1);
             prefix_ = prefix;
-            return found_result(have_value_, value_, -1, -1);
+            return;
         }
 
-        // Search element that terminates in current node
+        /**
+         * @brief Search element that terminates in 'this' node.
+         * 
+         * @return found_result The result that wether the target element exists.
+         */
         found_result search_kv_in_node() const {
             return found_result(have_value_, value_, -1, -1);
         }
 
-        // For bi_trie deconstructor
+        /**
+         * @brief Deleting 'this' node. (For bi_trie deconstructor).
+         * 
+         */
         virtual void delete_me() = 0;
 
         // Deconstructor
         virtual ~node() {}
     };
 
-    /* Burst-trie's trie node class */
-    /*
+    /**
+     * @brief Burst-trie's trie node class.
+     * 
      * Non-leaf node in burst trie,
      * Take in charge of leading the lookup function to reach the target hash
      * node, the leaf node, in normal trie searching way.
@@ -422,13 +495,14 @@ class bi_trie {
         friend class bi_trie;
 
        private:
-        /* Fast-path manager class */
-        /*
+        /**
+         * @brief Fast-path manager class.
+         * 
          * Provide the trie_node a fast way to skip several trie traverse.
          * Using the original way only traverse burst-trie char by char, but
          * using the fast path traverse burst-trie string by string.
          * Fast-path manager store the strings in hash value order, so that the
-         * searching can by transform to binary search
+         * searching can by transform to binary search.
          */
         class fast_path_manager {
            private:
@@ -455,7 +529,13 @@ class bi_trie {
            public:
             fast_path_manager() {}
 
-            // Insert new fast-path into the fast_path_manager in hash value order
+            /**
+             * @brief Insert new fast-path into the fast_path_manager in hash value order.
+             * 
+             * @param key Pointer of inserting fast path's string.
+             * @param key_size Size of inserting fast path's string.
+             * @param node_ptr Destination node of inserting fast path.
+             */
             void insert_fast_path(const char* key, size_t key_size, node* node_ptr) {
                 fast_path new_fast_path(hash(key, key_size, 1), string(key, key_size), node_ptr);
 
@@ -470,7 +550,13 @@ class bi_trie {
                 return;
             }
 
-            // Lookup the target node in binary search
+            /**
+             * @brief Lookup the target node in binary search.
+             * 
+             * @param key Pointer of lookuping fast path's string
+             * @param key_size Size of lookuping fast path's string
+             * @return node* Destination node of lookuping fast path
+             */
             inline node* lookup_fast_path(const char* key, size_t key_size) const {
                 unsigned int target_hash_val = hash(key, key_size);
 
@@ -510,16 +596,23 @@ class bi_trie {
             }
         };
 
-        /* Child_representation class */
-        /*
-         * The child representation is used to save the relationship of nodes in a trie.
-         * Child representation can be implemented in several way: Current version are implemented in list
-         *      Implementation: | memory-efficiency | effectiveness |
-         *      List:           |         10        |       8       |
-         *      Array:          |          1        |      10       |
-         *      std::map:       |          8        |       5       |
+        /**
+         * @brief Child_representation class.
+         *
+         * The child representation is used to save the relationship of nodes
+         * in a trie.
+         * 
          */
         class child_representation {
+          /*
+           * Child representation can be implemented in several way:
+           * Current version are implemented in list.
+           *
+           *      Implementation: | memory-efficiency | effectiveness |
+           *      List:           |         10        |       8       |
+           *      Array:          |          1        |      10       |
+           *      std::map:       |          8        |       5       |
+           */
            public:
             /* List node class */
             struct child_node {
@@ -547,8 +640,15 @@ class bi_trie {
            public:
             child_representation() : size_(0), first_child_(nullptr) {}
 
-            // If find one, return the reference
-            // If not, add one and return the reference
+            /**
+             * @brief Access specified element.
+             * 
+             * If find one, return the reference.
+             * If not, add one and return the reference.
+             * 
+             * @param c Char of a child node's being lookuped.
+             * @return node*& Reference to the requested element.
+             */
             node*& operator[](const char c) {
                 child_node* current_child_node = first_child_;
                 child_node* last_child_node = nullptr;
@@ -575,8 +675,15 @@ class bi_trie {
                 return last_child_node->next_child()->current;
             }
 
-            // If find one, return the node*
-            // If not, return nullptr
+            /**
+             * @brief Find specified element.
+             * 
+             * If find one, return the node*.
+             * If not, return nullptr.
+             * 
+             * @param c Char of a child node's being lookuped.
+             * @return node* Destination child node of char c.
+             */
             node* find(const char c) const {
                 child_node* current_child_node = first_child_;
                 while(current_child_node != nullptr) {
@@ -618,7 +725,13 @@ class bi_trie {
         trie_node(trie_node* p, const char* key, size_t key_size)
             : node(node_type::TRIE_NODE, p, key, key_size), fpm_(nullptr) {}
 
-        // Add a fast path of string(key, key_size) in fast path manager
+        /**
+         * @brief Add a fast path of string(key, key_size) in fast path manager
+         * 
+         * @param key Pointer of string of the fast path adding to fast path manager.
+         * @param key_size Size of string of the fast path adding to fast path manager.
+         * @param node Destination node.
+         */
         void add_fast_path(const char* key, size_t key_size, node* node) {
             if (fpm_ == nullptr)
                 fpm_ = new fast_path_manager();
@@ -640,7 +753,15 @@ class bi_trie {
         // Deconstructor
         ~trie_node() { if (fpm_ != nullptr) delete fpm_; }
 
-        // The virtual function implementing for page_manager page resize
+        /**
+         * @brief Virtual function for page_manager resize.
+         * 
+         * The virtual function implementing for page_manager page resize.
+         * 
+         * @param old_pm Source page manager for resizing.
+         * @param new_pm Dest page manager for resizing.
+         * @param resize_type Resizing type(special or normal).
+         */
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
             typename child_representation::child_node* cur_child = childs_.get_first_node();
@@ -651,10 +772,33 @@ class bi_trie {
             }
         }
 
-        // Add node in child representation
+        /**
+         * @brief Add node in child representation.
+         * 
+         * @param c Adding node's char.
+         * @param adding_node Adding node.
+         */
         void add_child(const K_unit c, node* adding_node) { childs_[c] = adding_node; }
 
-        // Finding target node
+        /**
+         * @brief Finding target node.
+         *
+         * This function will use two ways to find a target node.
+         * String by string: If 'this' node contains a fast path manager, then
+         * find the target in fast path manager.(faster)
+         * Char by char: If 'this' node doesn't contain a fast path manager,
+         * then find the target in child representation.
+         *
+         * @note: ref_pos is a reference for plusing different value.
+         * When using the string-by-string, ref_pos increases FAST_PATH_NODE_NUM.
+         * When using char-by-char, ref_pos increases 1.
+         *
+         * @param key Pointer of the lookuping element's string.
+         * @param ref_pos Reference of current lookuping position.
+         * @param key_size The total size of the lookuping element's string.
+         * @param bt Bi-trie that manages 'this' node.
+         * @return node* The target child node.
+         */
         node* find_trie_node_child(const K_unit* key, size_t& ref_pos,
                                    size_t key_size, const bi_trie* bt) const {
             // Find in fast path
@@ -676,8 +820,9 @@ class bi_trie {
         }
     };
 
-    /* Burst-trie's hash node class */
-    /*
+    /**
+     * @brief Burst-trie's hash node class
+     * 
      * Leaf node in burst trie,
      * Take in charge of leading the lookup function to find the lookuping
      * element, the value, in hashtable searching way.
@@ -737,7 +882,16 @@ class bi_trie {
             key_metas_ = new slot[cur_associativity_ * BUCKET_NUM]();
         }
 
-        // Page_manager resize: Move the elements from old page_manager into new page_manager
+        /**
+         * @brief Virtual function for page_manager resize.
+         * 
+         * The virtual function implementing for page_manager page resize.
+         * Move the elements from old page_manager into new page_manager.
+         * 
+         * @param old_pm Source page manager for resizing.
+         * @param new_pm Dest page manager for resizing.
+         * @param resize_type Resizing type(special or normal).
+         */
         void traverse_for_pgm_resize(page_manager* old_pm, page_manager* new_pm,
                                      group_type resize_type) {
             int old_normal_pgid = normal_pgid_;
@@ -783,9 +937,15 @@ class bi_trie {
             return key_metas_ + bucketid * cur_associativity_ + slotid;
         }
 
-        /* 
-         * For eliminating the index update in dynamic_expand
-         * we store the column-store-index in v2k instead of row-store-index
+        /**
+         * @brief Get the column store slot object
+         *
+         * For eliminating the index update in dynamic_expand, we store the
+         * column-store-index in v2k instead of row-store-index. So if we have a
+         * column-store-index, we use this function to get the target slot.
+         *
+         * @param column_store_index Index that counted in column-store way.
+         * @return slot* Target slot that match the column_store_index.
          */
         inline slot* get_column_store_slot(int column_store_index) const {
             return key_metas_ +
@@ -821,7 +981,14 @@ class bi_trie {
          *      1. Dynamic expand: Reduce unnecessary memory allocation
          *      2. Cuckoo hash: Increase slot utilization rate
          */
-        /*---- 1. Dynamic expand function ---*/
+        /**
+         * @brief Dynamic expand function.
+         * 
+         * This function will expand the key_metas to two times of original key_metas.
+         * If return -1, it means that current size of key_metas is maximum.
+         * 
+         * @return int A empty slotid.
+         */
         int dynamic_expand() {
             expand_counter++;
             uint64_t sta = get_time();
@@ -892,7 +1059,19 @@ class bi_trie {
         }
 
         /*---- 2.2 Cuckoo hash function ---*/
-        // Return a empty slot_id in bucketid
+        /**
+         * @brief Work as normal cuckoo hashing function.
+         *
+         * Firstly, store the original key_metas in case that the cuckoo hash
+         * function failed. Secondly, create a extra slot for the slot being
+         * kicked out. Thirdly, repeately pick a slot to swap the extra slot
+         * until we pick a empty slot that make the extra slot to be
+         * empty(success) or the repeat time exceed the threshold(fail).
+         *
+         * @param bucketid Bucketid that needs a empty slot.
+         * @param bt Bi-trie that manages 'this' node.
+         * @return int A empty slot_id in bucketid.
+         */
         int cuckoo_hash(size_t bucketid, bi_trie* bt) {
             cuckoohash_counter++;
             uint64_t sta = get_time();
@@ -907,7 +1086,7 @@ class bi_trie {
 
             /*
              * key_metas:   | x | x | x | x |   extra_slot: | y |
-             *              | x | x | x | x |   slot wait to be cuckoo-hashed
+             *              | x | x | x | x |   slot waited to be cuckoo-hashed
              *              | x | x | x | x |
              */
             slot* extra_slot = new slot(0, 0, 0, 0);
@@ -997,7 +1176,17 @@ class bi_trie {
         }
 
         /*---- Searching function ---*/
-        // Return the found result of matching string(key, key_size) in current bucket 
+        /**
+         * @brief Search the target element in specific bucket that match string(key, key_size).
+         *
+         * @param bucketid Searching bucket.
+         * @param key Pointer of searching element's string.
+         * @param key_size Size of searching element's string.
+         * @param pm_agent Reference of page manager agent that contains current
+         * hash node's needed page group.
+         * @return found_result Found result of matching string(key, key_size)
+         * in current bucket.
+         */
         found_result find_in_bucket(size_t bucketid, const K_unit* key,
                                     size_t key_size, page_manager_agent& pm_agent) {
             for (int i = 0; i != cur_associativity_; i++) {
@@ -1012,7 +1201,16 @@ class bi_trie {
             return found_result(false, T(), bucketid, -1);
         }
 
-        // Return the found result of matching string(key, key_size) in current hash_node 
+        /**
+         * @brief Search the target element in hash node that match string(key, key_size).
+         * 
+         * @param key Pointer of searching element's string.
+         * @param key_size Size of searching element's string.
+         * @param pm Reference of page manager agent that contains current
+         * hash node's needed page group.
+         * @return found_result Found result of matching string(key, key_size)
+         * in current hash node.
+         */
         found_result search_kv_in_hashnode(const K_unit* key, size_t key_size,
                                        page_manager* pm) {
             page_manager_agent pm_agent = 
@@ -1035,6 +1233,15 @@ class bi_trie {
                 return res1;
         }
 
+        /**
+         * @brief Insert a element into a hash node.
+         * 
+         * @param key Pointer of inserting element's string.
+         * @param key_size Size of inserting element's string.
+         * @param bt Bi-trie that manages 'this' node.
+         * @param v Value of searching element's string.
+         * @param fr Found result that contains the inserting bucketid, slotid, existence information.
+         */
         void insert_kv_in_hashnode(const K_unit* key, size_t key_size, bi_trie* bt,
                                                  T v, found_result fr) {
             size_t bucketid = fr.get_bucketid();
@@ -1148,8 +1355,9 @@ class bi_trie {
         }
     };
 
-    /* Bursting element temporarily stored class */
-    /*
+    /**
+     * @brief Bursting element temporarily stored class.
+     * 
      * When a hash_node is about to burst, it will create a burst_package with
      * all its elements. And the burst() function will receive a burst_package
      * and do the burst work.
@@ -1165,7 +1373,6 @@ class bi_trie {
      * pop(), top() to traverse its element. The way traverse burst_package like
      * a stack will eliminate the element rewrites in page_manager resize()
      * while the written elements are removed from elems_.
-     *
      */
     class burst_package {
        private:
@@ -1185,10 +1392,15 @@ class bi_trie {
             }
         }
 
-        /*---- Element updating function ---*/
-        /*
+        /**
+         * @brief Update the element in current burst package from old page
+         * manager to new page manager.
+         *
          * Invoked by page_manager's notify_burst_package() function when occur
-         * a page_manager resize()
+         * a page_manager resize().
+         * 
+         * @param new_pm New page manager that current burst package's element moving to.
+         * @param resize_type The moving type of the elements.
          */
         void update_burst_package(page_manager* new_pm, group_type resize_type) {
             size_t n_group_id = new_pm->require_group_id(group_type::NORMAL_GROUP);
@@ -1262,8 +1474,9 @@ class bi_trie {
         }
     };
 
-    /*
-     * burst()
+    /**
+     * @brief Burst the original hash node into a sub burst trie.
+     * 
      * When the hash_node's element cannot dynamic-expand() and cuckoo-hash()
      * anymore, we burst the element in current hash_node into a burst-trie with
      * several small size of hash_node or trie_node linking with hash_nodes
@@ -1281,6 +1494,11 @@ class bi_trie {
      *  |hash_node(size:25)|trie_node(size:1)|hash_node(size:25)|)
      *                              |
      *                      hash_node(size:49)
+     * 
+     * @param bp Burst package that contains the elements in original hash node.
+     * @param orig_parent Parent of original hash node.
+     * @param orig_prefix Prefix of original hash node.
+     * @return trie_node* Sub burst trie's root after burst().
      */
     trie_node* burst(burst_package bp, trie_node* orig_parent, const string &orig_prefix) {
         burst_counter++;
@@ -1343,35 +1561,39 @@ class bi_trie {
         return ret_trie_root;
     }
 
-    /* Storage manager class */
-    /*
-     * Page manager divides its storage into two part: Normal and Special
-     * Each part contains several page group. Each page group contains several
-     * page. Keys and values are placed in page like:
-     * key0value0key1value1key2value2 Each hash_node only store elements in ONE
-     * page group, denoted by normal_pgid and special_pgid in hash_node.
-     *
-     * Each element can be found by the slot's information:
-     *      The is_special, length, pg_id, pos variables in slot will lead to a
-     * location that store the element
-     *
-     * |=======================Page manager=======================|
-     * |                             |                            |
-     * | Normal page group:          | Special page group:        |
-     * |                             |                            |
-     * | |===Page group 0===|        | |===Page group 0===|       |
-     * | |                  |        | |                  |       |
-     * | | |=Page 0=|       |        | | |=Page 0=|       |       |
-     * | | |        |       |        | | |        |       |       |
-     * | | |  keys  | ...   | ...    | | |  keys  | ...   | ...   |
-     * | | | values |       |        | | | values |       |       |
-     * | | |========|       |        | | |========|       |       |
-     * | |                  |        | |                  |       |
-     * | |==================|        | |==================|       |
-     * |                             |                            |
-     * |==========================================================|
+
+    /**
+     * @brief Storage manager class.
+     * 
      */
     class page_manager {
+        /*
+        * Page manager divides its storage into two part: Normal and Special
+        * Each part contains several page group. Each page group contains several
+        * page. Keys and values are placed in page like:
+        * key0value0key1value1key2value2 Each hash_node only store elements in ONE
+        * page group, denoted by normal_pgid and special_pgid in hash_node.
+        *
+        * Each element can be found by the slot's information:
+        *      The is_special, length, pg_id, pos variables in slot will lead to a
+        * location that store the element
+        *
+        * |=======================Page manager=======================|
+        * |                             |                            |
+        * | Normal page group:          | Special page group:        |
+        * |                             |                            |
+        * | |===Page group 0===|        | |===Page group 0===|       |
+        * | |                  |        | |                  |       |
+        * | | |=Page 0=|       |        | | |=Page 0=|       |       |
+        * | | |        |       |        | | |        |       |       |
+        * | | |  keys  | ...   | ...    | | |  keys  | ...   | ...   |
+        * | | | values |       |        | | | values |       |       |
+        * | | |========|       |        | | |========|       |       |
+        * | |                  |        | |                  |       |
+        * | |==================|        | |==================|       |
+        * |                             |                            |
+        * |==========================================================|
+        */
        public:
         class page_group {
             class page {
@@ -1457,7 +1679,15 @@ class bi_trie {
             }
 
             /*---- Insert element function ---*/
-            // Try to insert element to current page group and return availability
+            /**
+             * @brief Try to insert a element to page manager.
+             * 
+             * Try to insert element to current page group and return availability.
+             * 
+             * @param try_insert_key_size Size of a try-inserted element.
+             * @return true Page manager have enough space.
+             * @return false Page manager is full.
+             */
             bool try_insert(size_t try_insert_key_size) const {
                 if (cur_page_id + 1 < get_max_page_id()) return true;
                 if ((pages[cur_page_id].cur_pos +
@@ -1467,8 +1697,14 @@ class bi_trie {
                 return false;
             }
 
-            // Insert string(key, key_size) and value to page and return the
-            // slot(position)
+            /**
+             * @brief Insert string(key, key_size) and value to page.
+             * 
+             * @param key Pointer of the inserted element's string.
+             * @param key_size Size of the inserted element's string.
+             * @param v Value of the inserted element.
+             * @return slot The inserted location.
+             */
             slot write_kv_to_page(const K_unit* key, size_t key_size, T v) {
                 // Test whether the need_size is more than the left space
                 // If yes, init new page, write key and value
@@ -1542,7 +1778,15 @@ class bi_trie {
             special_pg = nullptr;
         }
 
-        // For hash_node to require a normal_pgid and special_pgid
+        /**
+         * @brief For hash_node to require a normal_pgid and special_pgid
+         *
+         * This function will check the usage of current page group to chose a
+         * page group id to return in balance.
+         *
+         * @param gt The requiring group type(Normal or Special).
+         * @return size_t A balanced page group id.
+         */
         inline size_t require_group_id(group_type gt) {
             // Processing page_group
             size_t cur_size =
@@ -1572,16 +1816,28 @@ class bi_trie {
                                         s_pg == -1 ? nullptr : special_pg + s_pg);
         }
 
+
         /* 
          * Oberserver design pattern
          * page_manager is a Subject that have the function of register, remove,
          * notify(traverse_for_pgm_resize) those burst_package in burst()
          */
         vector<burst_package*> notify_list;
+
+        /**
+         * @brief Add a burst package into current page manager's notify list.
+         * 
+         * @param add_bp_ptr A burst package in a on-going burst() function.
+         */
         void register_burst_package(burst_package *add_bp_ptr) {
             notify_list.push_back(add_bp_ptr);
         }
 
+        /**
+         * @brief Remove a burst package from current page manager's notify list.
+         * 
+         * @param rm_bp_ptr A burst package in a finished burst() function.
+         */
         void remove_burst_package(const burst_package *const rm_bp_ptr){
             for(auto it = notify_list.begin(); it!=notify_list.end(); it++) {
                 if( *it == rm_bp_ptr){ 
@@ -1591,12 +1847,25 @@ class bi_trie {
             }
         }
 
+        /**
+         * @brief Update those burst packages in notify_list.
+         * 
+         * @param new_pm New page manager the element moved to.
+         * @param resize_type Whether move the special or normal elements.
+         */
         void notify_burst_package(page_manager *new_pm, group_type resize_type) {
             for (auto bp_ptr : notify_list) {
                 bp_ptr->update_burst_package(new_pm, resize_type);
             }
         }
 
+        /**
+         * @brief Expand the page manager.
+         * 
+         * @param resize_type Whether move the special or normal elements.
+         * @param bt Bi-trie that manages this page manager
+         * @param expand_ratio The resizing ratio.
+         */
         void resize(group_type resize_type, bi_trie* bt,
                     size_t expand_ratio = 1) {
             uint64_t sta = get_time();
@@ -1714,10 +1983,12 @@ class bi_trie {
         }
     };
 
-    /* String recovery class */
-    /*
+    /**
+     * @brief String recovery class
+     * 
+     * Use a search point, we can recover the complete string from the bi-trie.
      * A search point contains a node and a index, denoting the location that a
-     * element been stored
+     * element been stored.
      */
     class search_point {
        private:
@@ -1786,10 +2057,12 @@ class bi_trie {
         }
     };
 
-    /* Found result recording class */
-    /*
+    /**
+     * @brief Found result recording class
+     * 
      * Record the information that a element existence, location(bucketid,
      * slotid), value
+     * 
      */
     class found_result {
         bool found;
@@ -1812,9 +2085,15 @@ class bi_trie {
         int get_slotid() const { return slotid; }
     };
 
-    /* Insert kv function */
-    /*
-     * Element: key:string(key, key_size) and value:v will be inserted into bitrie
+    /**
+     * @brief Insert a element into 'this' bi-trie.
+     * 
+     * @param start_node The node we start to find the inserting node.
+     * @param key Pointer of the inserting element's string.
+     * @param key_size Size of the inserting element's string.
+     * @param v Value of the inserting element.
+     * @param prefix_key Prefix pointer of the inserting element's string before start_node.
+     * @param prefix_key_size Prefix size of the inserting element's string before start_node.
      */
     void insert_kv_in_bitrie(node* start_node, const K_unit* key,
                              size_t key_size, T v,
@@ -1861,9 +2140,13 @@ class bi_trie {
         return;
     }
 
-    /* Insert kv function */
-    /*
-     * Find the element that key equals to string(key, key_size) in bitrie
+    /**
+     * @brief Find a element in 'this' bi-trie.
+     * 
+     * @param start_node The node we start to find the inserting node.
+     * @param key Pointer of the searching element's string.
+     * @param key_size Size of the searching element's string.
+     * @return found_result Found result that contains the element's bucketid, slotid, existence and value.
      */
     found_result search_kv_in_bitrie(node* start_node, const K_unit* key, size_t key_size) const {
         node* current_node = start_node;
@@ -1910,9 +2193,18 @@ class bi_trie {
         v2k.erase(v2k.find(v));
     }
 
-    // Function for batch updating the searchPoints to v2k
-    void apply_the_changed_search_point(map<T, int>& searchPoints) {
-        for (auto it = searchPoints.begin(); it != searchPoints.end(); it++)
+    /**
+     * @brief Batch updating the search_points to v2k
+     *
+     * This function will be called in cuckoo_hash() while the cuckoo hashing
+     * will modify the key_metas's layout that modifies the index of elements.
+     * So in cuckoo_hash(), we store the modified elements' index in a map and batch
+     * update the modified elements' index here.
+     *
+     * @param search_points Contain the modified elements' value and index.
+     */
+    void apply_the_changed_search_point(map<T, int>& search_points) {
+        for (auto it = search_points.begin(); it != search_points.end(); it++)
             set_search_point_index(it->first, it->second);
     }
 
@@ -1940,27 +2232,63 @@ class bi_trie {
     }
 
     /*---- External accessing interface ---*/
+    /**
+     * @brief Access specified element by value(T).
+     * 
+     * @param v The value of the element to find.
+     * @return string The key of the element to find.
+     */
     string operator[](T v) { return v2k[v].get_string(pm); }
 
+    /**
+     * @brief Access specified element by key(string).
+     * 
+     * @param key_string The key of the element to find.
+     * @return T The value of the element to find.
+     */
     T operator[](const string& key_string) const {
         return search_kv_in_bitrie(t_root, key_string.data(), key_string.size())
             .get_value();
     }
 
+    /**
+     * @brief Checks if the bi-trie have the element that value equals to v.
+     * 
+     * @param v Checking target element's value.
+     * @return true Target element exist.
+     * @return false Target element doesn't exist.
+     */
     bool exist(T v) const { return v2k.find(v) == v2k.end(); }
 
+    /**
+     * @brief Checks if the bi-trie have the element that key equals to key_string.
+     * 
+     * @param key_string Checking target element's key.
+     * @return true Target element exist.
+     * @return false Target element doesn't exist.
+     */
     bool exist(const string& key_string) const {
         return search_kv_in_bitrie(t_root, key_string.data(), key_string.size())
             .exist();
     }
 
     // insert operation
+    /**
+     * @brief Insert a element into bi-trie.
+     * 
+     * @param key_string Inserting element's key.
+     * @param v Inserting element's value.
+     */
     void insert_kv(const string& key_string, T v) {
         insert_kv_in_bitrie(t_root, key_string.data(), key_string.size(), v);
         return;
     }
 
     /*---- External cleaning interface ---*/
+    /**
+     * @brief Shrink-to-fit bi-trie's storage.
+     * 
+     */
     void storage_resize() {
         // zero at last means that we don't need to expand the page_manager
         pm->resize(group_type ::NORMAL_GROUP, this, 0);
@@ -2115,6 +2443,6 @@ class bi_trie {
 
         return ret_mes;
     }
-};  // namespace zyz_trie
+};
 
-}  // namespace zyz_trie
+}
