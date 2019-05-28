@@ -1743,8 +1743,6 @@ class bi_trie {
                 buffer[mid - prefix_length++] = cur_node->get_char();
             }
 
-            string temp = string(buffer + mid - prefix_length, prefix_length);
-
             int suffix_length = 0;
             // Get the suffix string
             if (index_ != -1) {
