@@ -12,9 +12,6 @@
 // TODO: format
 // TODO: put the v2k erase() in insert_kv_in_hash_node() after resize() may be better
 // TODO: bucket grow
-// TODO: move page manager agent into page manager class
-// TODO: remove zyz_trie
-// TODO: remove "Speicial group expand to "
 
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
 /*---- For evaluation ---*/
@@ -56,7 +53,6 @@ static const unsigned int FAST_PATH_NODE_NUM = 20;
 size_t BUCKET_NUM = 0;
 size_t ASSOCIATIVITY = 0;
 
-namespace zyz_trie {
 using namespace std;
 /**
  * @brief Bi-trie provides the ability for user to insert key and value in a memory-efficient way.
@@ -276,75 +272,6 @@ class bi_trie {
                 << "," << get_page_id() << ","
                 << string(pm_agent.get_content_pointer(this), get_length()) << ","
                 << pm_agent.get_value(this) << endl;
-        }
-    };
-
-    /**
-     * @brief Helper class for hash_node get its page_groups.
-     * 
-     */
-    class page_manager_agent {
-        typename page_manager::page_group* n_group;
-        typename page_manager::page_group* s_group;
-
-       public:
-        page_manager_agent(typename page_manager::page_group* ng,
-                           typename page_manager::page_group* sg)
-            : n_group(ng), s_group(sg) {}
-
-        /*---- Set function ---*/
-        inline void set_page_group(const group_type get_type,
-                typename page_manager::page_group *const update_page_group) {
-            get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
-                                                  : (n_group = update_page_group);
-        }
-
-        /*---- Get function ---*/
-        inline typename page_manager::page_group* get_page_group(slot* s) const {
-            return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP
-                       ? s_group
-                       : n_group;
-        }
-
-        inline typename page_manager::page_group* get_page_group(const group_type get_type) const {
-            return get_type == group_type::SPECIAL_GROUP ? s_group : n_group;
-        }
-
-        inline char* get_content_pointer(const slot* const s) const {
-            return s->is_special() ? s_group->get_content_pointer_in_page(s)
-                                   : n_group->get_content_pointer_in_page(s);
-        }
-
-        inline T get_value(const slot* const s) const {
-            return s->is_special() ? s_group->get_value_in_page(s)
-                                   : n_group->get_value_in_page(s);
-        }
-
-        /**
-         * @brief Try to insert element to its right group and return availability.
-         * 
-         * @param key_size Length of element being tried to insert in page group.
-         * @return true If the page group have enough space.
-         * @return false Otherwise.
-         */
-        inline bool try_insert(const size_t key_size) const {
-            return get_group_type(key_size) == group_type::SPECIAL_GROUP
-                       ? s_group->try_insert(key_size)
-                       : n_group->try_insert(key_size);
-        }
-
-        /**
-         * @brief Insert element to its right group and return the slot(position).
-         * 
-         * @param key Pointer of element being inserted in page group.
-         * @param key_size Length of element being inserted in page group.
-         * @param v Value of element being inserted in page group.
-         * @return slot Slot that encoding the storing location of inserted element.
-         */
-        inline slot insert_element(const K_unit* key, const size_t key_size, const T v) {
-            return get_group_type(key_size) == group_type::SPECIAL_GROUP
-                       ? s_group->write_kv_to_page(key, key_size, v)
-                       : n_group->write_kv_to_page(key, key_size, v);
         }
     };
 
@@ -1873,10 +1800,8 @@ class bi_trie {
             page_manager* new_pm;
             if (resize_type == group_type::SPECIAL_GROUP) {
                 new_pm = new page_manager(0, s_size << expand_ratio);
-                cout << "Speicial group expand to " << (s_size << expand_ratio) << endl;
             } else {
                 new_pm = new page_manager(n_size << expand_ratio, 0);
-                cout << "Normal group expand to " << (n_size << expand_ratio) << endl;
             }
 
             // Try insert, if failed, we reallocate the page groups,
@@ -1980,6 +1905,76 @@ class bi_trie {
         void swap(page_manager *pm){
             swap(pm, group_type::NORMAL_GROUP);
             swap(pm, group_type::SPECIAL_GROUP);
+        }
+    };
+
+    /**
+     * @brief Helper class for hash_node get its page_groups.
+     * 
+     */
+    class page_manager_agent {
+        private:
+        typename page_manager::page_group* n_group;
+        typename page_manager::page_group* s_group;
+
+        public:
+        page_manager_agent(typename page_manager::page_group* ng,
+                        typename page_manager::page_group* sg)
+            : n_group(ng), s_group(sg) {}
+
+        /*---- Set function ---*/
+        inline void set_page_group(const group_type get_type,
+                typename page_manager::page_group *const update_page_group) {
+            get_type == group_type::SPECIAL_GROUP ? (s_group = update_page_group)
+                                                : (n_group = update_page_group);
+        }
+
+        /*---- Get function ---*/
+        inline typename page_manager::page_group* get_page_group(slot* s) const {
+            return get_group_type(s->get_length()) == group_type::SPECIAL_GROUP
+                    ? s_group
+                    : n_group;
+        }
+
+        inline typename page_manager::page_group* get_page_group(const group_type get_type) const {
+            return get_type == group_type::SPECIAL_GROUP ? s_group : n_group;
+        }
+
+        inline char* get_content_pointer(const slot* const s) const {
+            return s->is_special() ? s_group->get_content_pointer_in_page(s)
+                                : n_group->get_content_pointer_in_page(s);
+        }
+
+        inline T get_value(const slot* const s) const {
+            return s->is_special() ? s_group->get_value_in_page(s)
+                                : n_group->get_value_in_page(s);
+        }
+
+        /**
+         * @brief Try to insert element to its right group and return availability.
+         * 
+         * @param key_size Length of element being tried to insert in page group.
+         * @return true If the page group have enough space.
+         * @return false Otherwise.
+         */
+        inline bool try_insert(const size_t key_size) const {
+            return get_group_type(key_size) == group_type::SPECIAL_GROUP
+                    ? s_group->try_insert(key_size)
+                    : n_group->try_insert(key_size);
+        }
+
+        /**
+         * @brief Insert element to its right group and return the slot(position).
+         * 
+         * @param key Pointer of element being inserted in page group.
+         * @param key_size Length of element being inserted in page group.
+         * @param v Value of element being inserted in page group.
+         * @return slot Slot that encoding the storing location of inserted element.
+         */
+        inline slot insert_element(const K_unit* key, const size_t key_size, const T v) {
+            return get_group_type(key_size) == group_type::SPECIAL_GROUP
+                    ? s_group->write_kv_to_page(key, key_size, v)
+                    : n_group->write_kv_to_page(key, key_size, v);
         }
     };
 
@@ -2444,5 +2439,3 @@ class bi_trie {
         return ret_mes;
     }
 };
-
-}
