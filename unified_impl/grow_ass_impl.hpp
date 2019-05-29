@@ -10,7 +10,6 @@
 #include <boost/unordered_map.hpp>
 
 // TODO: format
-// TODO: put the v2k erase() in insert_kv_in_hash_node() after resize() may be better
 // TODO: bucket grow
 
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
