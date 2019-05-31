@@ -2236,7 +2236,7 @@ class bi_trie {
      * @return true Target element exist.
      * @return false Target element doesn't exist.
      */
-    bool exist(T v) const { return v2k.find(v) == v2k.end(); }
+    bool exist(T v) const { return v2k.find(v) != v2k.end(); }
 
     /**
      * @brief Checks if the bi-trie have the element that key equals to key_string.
