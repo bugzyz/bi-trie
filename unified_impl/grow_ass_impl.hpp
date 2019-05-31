@@ -48,10 +48,6 @@ static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
 /*---- Fast path configuration ---*/
 static const unsigned int FAST_PATH_NODE_NUM = 20;
 
-// TODO: only for testing
-size_t BUCKET_NUM = 0;
-size_t ASSOCIATIVITY = 0;
-
 using namespace std;
 /**
  * @brief Bi-trie provides the ability for user to insert key and value in a memory-efficient way.
@@ -61,10 +57,7 @@ using namespace std;
  * @tparam BUCKET_NUM Bucket number in a hash node.
  * @tparam ASSOCIATIVITY Associativity in a hash node.
  */
-// template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
-// TODO: only for testing
-template <class K_unit, class T, size_t TEMP_BUCKET_NUM = DEFAULT_BUCKET_NUM,
-          size_t TEMP_ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
+template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
 class bi_trie {
    private:
     static bool key_equal(const K_unit* key_lhs, const size_t key_size_lhs,
@@ -2207,17 +2200,8 @@ class bi_trie {
     node* t_root;
 
    public:
-    // TODO: only for testing
-    bi_trie(size_t buc, size_t ass) {
-        BUCKET_NUM = buc;
-        ASSOCIATIVITY = ass;
-        cout << "set " << buc << ", " << ass << endl;
-        pm = new page_manager(1, 1);
-        t_root = new hash_node(nullptr, string(), pm, ASSOCIATIVITY);
-    }
-
-    // bi_trie():pm(new page_manager(1, 1)),
-    //             t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
+    bi_trie():pm(new page_manager(1, 1)),
+                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
 
     // Deconstructor
     ~bi_trie() {
