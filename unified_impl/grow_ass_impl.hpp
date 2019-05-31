@@ -46,7 +46,7 @@ static const unsigned int DEFAULT_SPECIAL_PAGE_NUMBER = (1 << NBITS_PID_S);
 static const unsigned int DEFAULT_SPECIAL_ALIGNMENT = 32;
 static const unsigned int DEFAULT_NORMAL_ALIGNMENT = 1;
 /*---- Fast path configuration ---*/
-static const unsigned int FAST_PATH_NODE_NUM = 20;
+static const unsigned int DEFAULT_FAST_PATH_NODE_NUM = 20;
 
 using namespace std;
 /**
@@ -57,7 +57,9 @@ using namespace std;
  * @tparam BUCKET_NUM Bucket number in a hash node.
  * @tparam ASSOCIATIVITY Associativity in a hash node.
  */
-template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM, size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY>
+template <class K_unit, class T, size_t BUCKET_NUM = DEFAULT_BUCKET_NUM,
+          size_t ASSOCIATIVITY = DEFAULT_ASSOCIATIVITY,
+          size_t FAST_PATH_NODE_NUM = DEFAULT_FAST_PATH_NODE_NUM>
 class bi_trie {
    private:
     static bool key_equal(const K_unit* key_lhs, const size_t key_size_lhs,
@@ -2201,7 +2203,7 @@ class bi_trie {
 
    public:
     bi_trie():pm(new page_manager(1, 1)),
-                t_root(new hash_node(nullptr, string(), pm, ASSOCIATIVITY)) {}
+                t_root(new hash_node(nullptr, string(), pm)) {}
 
     // Deconstructor
     ~bi_trie() {
