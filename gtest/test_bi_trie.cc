@@ -212,6 +212,69 @@ TEST_F(Bi_trie, Search_element_in_hash_node) {
     ASSERT_EQ(bt[value], key);
 }
 
+// Test the duplicate element inserting on trie node
+TEST_F(Bi_trie, Insert_duplicate_element_on_trie_node) {
+    bi_trie<char, uint32_t, TEST_ONLY_BUCKET, TEST_ONLY_ASSOCIATIVITY, TEST_ONLY_FAST_PATH_NODE> bt;
+    const vector<pair<string, unsigned int>> &dataset = *dataset_ptr;
+
+    int i = 0;
+    for (auto it = dataset.begin(); it!=dataset.end();it++) {
+        bt.insert_kv(it->first, it->second);
+    }
+
+    string key = "a";
+    unsigned int value = 123456;
+
+    bt.insert_kv(key, value);
+
+    ASSERT_EQ(bt.exist(key), true);
+    ASSERT_EQ(bt.exist(value), true);
+    ASSERT_EQ(bt[key], value);
+    ASSERT_EQ(bt[value], key);
+}
+
+// Test the duplicate element inserting on hash node
+TEST_F(Bi_trie, Insert_duplicate_element_on_hash_node) {
+    bi_trie<char, uint32_t, TEST_ONLY_BUCKET, TEST_ONLY_ASSOCIATIVITY, TEST_ONLY_FAST_PATH_NODE> bt;
+    const vector<pair<string, unsigned int>> &dataset = *dataset_ptr;
+
+    int i = 0;
+    for (auto it = dataset.begin(); it!=dataset.end();it++) {
+        bt.insert_kv(it->first, it->second);
+    }
+
+    string key = "abc1";
+    unsigned int value = 123456;
+
+    bt.insert_kv(key, value);
+
+    ASSERT_EQ(bt.exist(key), true);
+    ASSERT_EQ(bt.exist(value), true);
+    ASSERT_EQ(bt[key], value);
+    ASSERT_EQ(bt[value], key);
+}
+
+// Test the duplicate element inserting in hash node
+TEST_F(Bi_trie, Insert_duplicate_element_in_hash_node) {
+    bi_trie<char, uint32_t, TEST_ONLY_BUCKET, TEST_ONLY_ASSOCIATIVITY, TEST_ONLY_FAST_PATH_NODE> bt;
+    const vector<pair<string, unsigned int>> &dataset = *dataset_ptr;
+
+    int i = 0;
+    for (auto it = dataset.begin(); it!=dataset.end();it++) {
+        bt.insert_kv(it->first, it->second);
+    }
+
+    string key = "abc10";
+    unsigned int value = 123456;
+
+    bt.insert_kv(key, value);
+
+    ASSERT_EQ(bt.exist(key), true);
+    ASSERT_EQ(bt.exist(value), true);
+    ASSERT_EQ(bt[key], value);
+    ASSERT_EQ(bt[value], key);
+}
+
 // Test the element that contains a fast path searching
 TEST_F(Bi_trie, Using_normal_path) {
     bi_trie<char, uint32_t, TEST_ONLY_BUCKET, TEST_ONLY_ASSOCIATIVITY, TEST_ONLY_FAST_PATH_NODE> bt;
