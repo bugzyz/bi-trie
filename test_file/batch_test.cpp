@@ -2,6 +2,7 @@ bool test_and_print_wrong_test = true;
 bool manually_test = false;
 
 #include "../unified_impl/test_switcher.hpp"
+#include "../util/my_memory.hpp"
 
 #include <boost/unordered_map.hpp>
 #include <map>
@@ -12,15 +13,13 @@ bool manually_test = false;
 #include <stdint.h>
 #include <sys/time.h>
 
-#include <unistd.h>
-
 using namespace std;
-
-void process_mem_usage(string part_name);
 
 int main() {
     std::cout << "starto!\n";
 
+    string output_file = "slice_data/result";
+    std::fstream result_output_f(output_file, std::ios::out | std::ios::app);
 
 #ifdef TEST_YAGO
     string testing_dataset = "dataset/id_yago/cut_str_normal";
@@ -50,12 +49,20 @@ int main() {
     double res = 0.0;
     
     uint32_t count = 0;
+    // uint64_t orignal_mem_start = get_start_cur_memory_clear();
+    typedef struct mallinfo malloc_info;
+    malloc_info mem_start, mem_end;
+
+    mem_start = mallinfo();
     while (f >> url >> v) {
         m1[url] = v;
         m2[v] = url;
         count++;
     }
-    process_mem_usage("unordered map");
+    mem_end = mallinfo();
+    // uint64_t orignal_mem_end = get_end_cur_memory_clear();
+    // cout << "original mem: " << orignal_mem_end - orignal_mem_start << " mb" << endl;
+    cout << "original mem: " << mem_end - mem_start << " mb" << endl;
     
     endUm = get_time();
 
@@ -72,6 +79,10 @@ int main() {
     associativitys.push_back(8);
 
     // analyse by bucket_num
+    buckets.push_back(463);
+    buckets.push_back(271);
+    buckets.push_back(101);
+    buckets.push_back(71);
     buckets.push_back(59);
     buckets.push_back(31);
     buckets.push_back(11);
@@ -79,56 +90,65 @@ int main() {
 
     // pair<Bucket, associativity>
     vector<pair<size_t, size_t>> configs;
-    for (auto buc : buckets) {
-        for (auto ass : associativitys) {
+    for (auto ass : associativitys) {
+        for (auto buc : buckets) {
             configs.push_back(std::pair<size_t, size_t>(buc, ass));
         }
     }
 
     for (auto it = configs.begin(); it != configs.end(); it++) {
-        cout << "\n========htrie_map result==========\n";
+        // Evaluation record
+        double constructed_time = 0;
+
+        double search_key_avg_time = 0;
+        double search_value_avg_time = 0;
+
+        unsigned int search_key_compared_with_baseline = 0;
+        unsigned int search_value_compared_with_baseline = 0;
+
+        double max_percent_k = 0.0;
+        double min_percent_k = 100.0;
+
+        double max_percent_v = 0.0;
+        double min_percent_v = 100.0;
+
+        int mem_used = 0;
+
         size_t buc = it->first;
         size_t ass = it->second;
         cout << "testing: (" << buc << ", " << ass << ")" << endl;
 
-        zyz_trie::bi_trie<char, uint32_t> hm(buc, ass);
-        // zyz_trie::bi_trie<char, uint32_t> hm;
+        bi_trie<char, uint32_t> *hm_ptr = new bi_trie<char, uint32_t>();
+        bi_trie<char, uint32_t> &hm = *hm_ptr;
         std::fstream f1(testing_dataset);
 
         staTm = get_time();
         int ind = 0;
+
+        mem_start = mallinfo();
         while (f1 >> url >> v) {
             ind++;
 
             hm.insert_kv(url, v);
             if ((ind % 100000) == 0) cout << ind << endl;
-            // if(ind == 400000) return 0;
         }
-        f1.close();
-
-        process_mem_usage("htrie_map no cleaning");
-
         // cleaning
         hm.storage_resize();
-
+        mem_end = mallinfo();
+        mem_used = mem_end - mem_start;
+        cout << "opt mem: " << mem_used << " mb" << endl;
         endTm = get_time();
+        constructed_time = (double)(endTm - staTm) / (double)1000 / (double)1000;
 
-        process_mem_usage("clean finish");
-
+        f1.close();
 
         /*-----------------insert performance calculating-----------------*/
         cout << "\n==================\n";
-        cout << "constructing time: " << endTm - staTm << endl;
-        hm.time_cost_report();
-
-        hm.memory_usage_report();
+        cout << "constructing time: " << constructed_time << endl;
 
         /*-----------------access performance calculating-----------------*/
         int64_t hm_k_total_time = 0;
         int64_t um_k_total_time = 0;
-
-        double max_percent_k = 0.0;
-        double min_percent_k = 0.0;
 
         // load key and value into independent vectors
         vector<string> string_vec;
@@ -197,17 +217,11 @@ int main() {
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
 
-            // cout << hm_used_time << " " << um_used_time << endl;
-
-            if (um_used_time == 0) {
-                um_used_time = 1;
-            }
-
             hm_k_total_time += hm_used_time;
             um_k_total_time += um_used_time;
 
             double cur_percent_k =
-                (double)hm_used_time / (double)um_used_time;
+                (double)hm_used_time / (double)um_used_time * (double)100;
 
             if (max_percent_k < cur_percent_k) {
                 max_percent_k = cur_percent_k;
@@ -216,15 +230,18 @@ int main() {
                 min_percent_k = cur_percent_k;
             }
         }
-        cout << "compare to unordered_map: accessing cost diff: "
-             <<  (double)hm_k_total_time /  (double)count << endl;
+        search_key_avg_time = (double)hm_k_total_time /  (double)count;
+        cout << "search_key_avg_time: "
+             <<  search_key_avg_time << endl;
+
+        search_key_compared_with_baseline =
+            (double)hm_k_total_time / (double)um_k_total_time * 100.0;
+        cout << "search_key_compared_with_baseline: "
+             << search_key_compared_with_baseline << "%" << endl;
 
         // checking:
         int64_t hm_v_total_time = 0;
         int64_t um_v_total_time = 0;
-
-        double max_percent_v = 0.0;
-        double min_percent_v = 0.0;
 
         uint32_t v0;
         uint32_t v1;
@@ -284,17 +301,11 @@ int main() {
             int64_t um_used_time = um_get_end - um_get_start;
             int64_t hm_used_time = hm_get_end - hm_get_start;
 
-            // cout << hm_used_time << " " << um_used_time << endl;
-
-            if (um_used_time == 0) {
-                um_used_time = 1;
-            }
-
             hm_v_total_time += hm_used_time;
             um_v_total_time += um_used_time;
 
             double cur_percent_v =
-                (double)hm_used_time / (double)um_used_time;
+                (double)hm_used_time / (double)um_used_time * (double)100;
 
             if (max_percent_v < cur_percent_v) {
                 max_percent_v = cur_percent_v;
@@ -303,16 +314,14 @@ int main() {
                 min_percent_v = cur_percent_v;
             }
         }
-        cout << "compare to unordered_map: accessing cost diff: "
-             << (double)hm_v_total_time /  (double)count << endl;
 
-        cout << "key_search compared to unorderedmap: "
-             << (double)hm_k_total_time / (double)um_k_total_time * 100.0 << "%"
-             << endl;
+        search_value_avg_time = (double)hm_v_total_time / (double)count;
+        cout << "search_value_avg_time: " << search_value_avg_time << endl;
 
-        cout << "value_search compared to unorderedmap: "
-             << (double)hm_v_total_time / (double)um_v_total_time * 100.0 << "%"
-             << endl;
+        search_value_compared_with_baseline =
+            (double)hm_v_total_time / (double)um_v_total_time * 100.0;
+        cout << "search_key_compared_with_baseline: "
+             << search_value_compared_with_baseline << "%" << endl;
 
         // correctness check
         if (test_and_print_wrong_test) {
@@ -334,9 +343,9 @@ int main() {
                 }
             }
 
-            cout << "test key finish!\n";
-            cout << "wrong key_searching num: " << wrong_search_key.size()
-                 << endl;
+            // cout << "test key finish!\n";
+            // cout << "wrong key_searching num: " << wrong_search_key.size()
+            //      << endl;
 
             for (auto it = m2.begin(); it != m2.end(); it++) {
                 if (it->second != hm[it->first]) {
@@ -346,9 +355,9 @@ int main() {
                 }
             }
 
-            cout << "test value finish!\n";
-            cout << "wrong value_searching num: " << wrong_search_value.size()
-                 << endl;
+            // cout << "test value finish!\n";
+            // cout << "wrong value_searching num: " << wrong_search_value.size()
+            //      << endl;
 
             if (wrong_search_value.size() != 0 ||
                 wrong_search_key.size() != 0) {
@@ -362,37 +371,57 @@ int main() {
                 cout << "get value: " << hm[url] << endl;
             }
         }
+
+        // Evaluation print out
+        result_output_f << buc;
+        result_output_f << ",";
+        result_output_f << ass;
+        result_output_f << ",";
+
+#ifdef CUCKOO_THEN_EXPAND
+        result_output_f << "true,";
+#else
+        result_output_f << "false,";
+#endif
+#ifdef ID_STR_NON_OPT
+        result_output_f << "true,";
+#else
+        result_output_f << "false,";
+#endif
+#ifdef STR_ID_NON_OPT
+        result_output_f << "true,";
+#else
+        result_output_f << "false,";
+#endif
+#ifdef BURST_NON_OPT
+        result_output_f << "true,";
+#else
+        result_output_f << "false,";
+#endif
+
+        char *buffer = (char *)malloc(1024);
+        int buffer_len = 0;
+        string outside_memory_mes = "";
+        string inside_memory_mes = "";
+        string inside_time_mes = "";
+        string outside_time_mes = "";
+
+        outside_memory_mes = string(buffer, sprintf(buffer, "%d,", mem_used));
+
+        inside_memory_mes = hm.memory_usage_report();
+
+        outside_time_mes = string(buffer, sprintf(buffer, "%.2lf,%.2lf,%.2lf,%u,%u,%.2lf,%.2lf,%.2lf,%.2lf,",
+                      constructed_time, search_key_avg_time,
+                      search_value_avg_time, search_key_compared_with_baseline,
+                      search_value_compared_with_baseline, max_percent_k,
+                      min_percent_k, max_percent_v, min_percent_v));
+
+        inside_time_mes = hm.time_cost_report();
+
+        result_output_f << outside_memory_mes << inside_memory_mes
+                        << outside_time_mes << inside_time_mes << endl;
+        result_output_f.flush();
+        free(buffer);
     }
-}
-
-void process_mem_usage(string part_name) {
-    using namespace std;
-
-    // 'file' stat seems to give the most reliable results
-    //
-    ifstream stat_stream("/proc/self/stat", ios_base::in);
-
-    // dummy vars for leading entries in stat that we don't care about
-    string pid, comm, state, ppid, pgrp, session, tty_nr;
-    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
-    string utime, stime, cutime, cstime, priority, nice;
-    string O, itrealvalue, starttime;
-
-    // the two fields we want
-    //
-    unsigned long vsize;
-    long rss;
-
-    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
-        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
-        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
-        starttime >> vsize >> rss;  // don't care about the rest
-
-    stat_stream.close();
-
-    long page_size_kb = sysconf(_SC_PAGE_SIZE) /
-                        1024;  // in case x86-64 is configured to use 2MB pages
-
-    std::cout << part_name << " : vm_usage: " << vsize / 1024 / 1024 << " res: " << rss * page_size_kb
-              << std::endl;
+    result_output_f.close();
 }
