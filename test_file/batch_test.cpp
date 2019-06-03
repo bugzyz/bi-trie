@@ -118,8 +118,8 @@ int main() {
         size_t ass = it->second;
         cout << "testing: (" << buc << ", " << ass << ")" << endl;
 
-        zyz_trie::bi_trie<char, uint32_t> *hm_ptr = new zyz_trie::bi_trie<char, uint32_t>(buc, ass);
-        zyz_trie::bi_trie<char, uint32_t> &hm = *hm_ptr;
+        bi_trie<char, uint32_t> *hm_ptr = new bi_trie<char, uint32_t>();
+        bi_trie<char, uint32_t> &hm = *hm_ptr;
         std::fstream f1(testing_dataset);
 
         staTm = get_time();
