@@ -15,7 +15,7 @@ void checkDataset(string testing_dataset) {
         charnum += url.size();
         count++;
     }
-    cout << testing_dataset << ": " << charnum / count << endl;
+    cout << testing_dataset << ": line:" << count << ", avg size: " << charnum / count << endl;
 }
 
 int main() {
