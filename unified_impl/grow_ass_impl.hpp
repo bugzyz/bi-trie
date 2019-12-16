@@ -15,7 +15,8 @@
 // TODO: wait to be deleted, and the bi_trie friend class in hash_node and trie_node
 /*---- For evaluation ---*/
 /*---- 1. External time cost report interface ---*/
-unsigned int burst_counter = 0;
+unsigned int normal_burst_counter = 0;
+unsigned int redundant_burst_counter = 0;
 unsigned int burst_total_time = 0;
 // expand
 unsigned int expand_counter = 0;
@@ -1422,7 +1423,7 @@ class bi_trie {
      * @return trie_node* Sub burst trie's root after burst().
      */
     trie_node* burst(burst_package bp, trie_node* orig_parent, const string &orig_prefix) {
-        burst_counter++;
+        normal_burst_counter++;
         uint64_t sta = get_time();
 
         // Add bp to page_manager's notify_list in case occur a page_manager resize()
@@ -1447,6 +1448,7 @@ class bi_trie {
 
         const char* common_prefix_key = common_prefix.data();
         const unsigned int common_prefix_key_size = common_prefix.size();
+        redundant_burst_counter += common_prefix_key_size;
 
         // New prefix = prior prefix + common chain prefix
         string prefix = orig_prefix + common_prefix;
@@ -2300,7 +2302,7 @@ class bi_trie {
         int len = sprintf(
             output_mes, "%.3lf,%d,%.3lf,%d,%.3lf,%d,%.3lf,%d",
             (double)((double)(burst_total_time / 1000) / (double)1000), 
-            burst_counter,
+            normal_burst_counter,
             (double)((double)(expand_cost_time / 1000) / (double)1000),
             expand_counter,
             (double)((double)(cuckoohash_cost_time / 1000) / (double)1000),
@@ -2310,7 +2312,8 @@ class bi_trie {
         string ret_mes = string(output_mes, len);
         free(output_mes);
 
-        burst_counter = 0;
+        normal_burst_counter = 0;
+        redundant_burst_counter = 0;
         burst_total_time = 0;
         // expand
         expand_counter = 0;
@@ -2321,6 +2324,8 @@ class bi_trie {
         // page manager resize
         page_manager_resize_counter = 0;
         page_manager_resize_cost_time = 0;
+
+        cout << "normal_burst_counter: " << normal_burst_counter << ", redundant_burst_counter: " << redundant_burst_counter << endl;
 
         return ret_mes;
     }
