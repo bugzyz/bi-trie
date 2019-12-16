@@ -2312,6 +2312,8 @@ class bi_trie {
         string ret_mes = string(output_mes, len);
         free(output_mes);
 
+        cout << "normal_burst_counter: " << normal_burst_counter << ", redundant_burst_counter: " << redundant_burst_counter << endl;
+
         normal_burst_counter = 0;
         redundant_burst_counter = 0;
         burst_total_time = 0;
@@ -2324,8 +2326,6 @@ class bi_trie {
         // page manager resize
         page_manager_resize_counter = 0;
         page_manager_resize_cost_time = 0;
-
-        cout << "normal_burst_counter: " << normal_burst_counter << ", redundant_burst_counter: " << redundant_burst_counter << endl;
 
         return ret_mes;
     }
