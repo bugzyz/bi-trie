@@ -24,7 +24,7 @@ int main() {
 #ifdef TEST_YAGO
     string testing_dataset = "dataset/id_yago/cut_str_normal";
 #else
-    string testing_dataset = "dataset/str_normal";
+    string testing_dataset = "dataset/id_lubm_640/str_normal";
 #endif
 
     cout << "testing file: " << testing_dataset << endl;
@@ -76,17 +76,17 @@ int main() {
     // analyse by elem_per_bucket
     // associativity should be 4, 8 for alignment
     associativitys.push_back(4);
-    associativitys.push_back(8);
+    // associativitys.push_back(8);
 
     // analyse by bucket_num
-    buckets.push_back(463);
-    buckets.push_back(271);
-    buckets.push_back(101);
-    buckets.push_back(71);
+    // buckets.push_back(463);
+    // buckets.push_back(271);
+    // buckets.push_back(101);
+    // buckets.push_back(71);
     buckets.push_back(59);
-    buckets.push_back(31);
-    buckets.push_back(11);
-    buckets.push_back(5);
+    // buckets.push_back(31);
+    // buckets.push_back(11);
+    // buckets.push_back(5);
 
     // pair<Bucket, associativity>
     vector<pair<size_t, size_t>> configs;
@@ -320,7 +320,7 @@ int main() {
 
         search_value_compared_with_baseline =
             (double)hm_v_total_time / (double)um_v_total_time * 100.0;
-        cout << "search_key_compared_with_baseline: "
+        cout << "search_value_compared_with_baseline: "
              << search_value_compared_with_baseline << "%" << endl;
 
         // correctness check
