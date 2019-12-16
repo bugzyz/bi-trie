@@ -2288,7 +2288,7 @@ class bi_trie {
             "report===\n-bursto:\t%.3lf\t%u\n-expand:\t%.3lf\t%d\n-cuckoo:\t%."
             "3lf\t%d\n-resize:\t%.3lf\t%u\n=====================\n",
             (double)((double)(burst_total_time / 1000) / (double)1000), 
-            burst_counter,
+            normal_burst_counter,
             (double)((double)(expand_cost_time / 1000) / (double)1000),
             expand_counter,
             (double)((double)(cuckoohash_cost_time / 1000) / (double)1000),
